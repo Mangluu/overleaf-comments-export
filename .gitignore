@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# venvs
+.venv/
+venv/
+env/
+
+# Builds
+dist/
+build/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Local config and outputs
+config.json
+*.log
+
+# Local exports (don't commit reviewer comments by accident)
+/comments-*.md
+/comments.json
+/comments.jsonl
+/agents.md
+/by-reviewer/
