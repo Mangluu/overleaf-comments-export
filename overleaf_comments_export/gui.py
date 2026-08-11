@@ -90,30 +90,33 @@ What this app reads from your machine
   your comments.
 
 Where it reads the cookie from, by browser:
-• Safari   → ~/Library/Cookies/Cookies.binarycookies (file is binary; macOS
-             may ask permission to read it the first time)
-• Firefox  → ~/Library/Application Support/Firefox/Profiles/*/cookies.sqlite
-             (plain SQLite, no Keychain access required)
-• Chrome / Edge / Brave / Chromium → cookies are AES-encrypted on disk; the
-             decryption key lives in macOS Keychain, so reading them prompts
-             for your login password every single time.
+• Paste it myself → nothing on this computer is read at all; you supply the
+             cookie directly. The most private option, and the one that works
+             on every operating system.
+• Safari   → its cookie file (macOS may ask permission the first time)
+• Firefox  → its cookies.sqlite file (no Keychain access required)
+• Chrome / Edge / Brave / Chromium → cookies are encrypted on disk and the key
+             lives in the system Keychain, so reading them prompts for your
+             login password every single time.
 
 The cookie is used only to make HTTPS requests to www.overleaf.com.
-Nothing is sent anywhere else.
+Nothing is sent anywhere else. There is no telemetry.
 
 What's saved to disk
 ────────────────────
-• Your last-used inputs (browser choice, project URL, output folder) are saved
-  to ~/.overleaf_comments_export.json so the form pre-fills next time. You can
-  delete this file at any time.
-• The export itself (Markdown + JSON + log) goes only to the folder you choose.
-• Diagnostic logs are written to ~/Library/Logs/OverleafCommentsExport/.
+• Your last-used inputs (browser choice, project link, output folder) go in a
+  small settings file so the form fills itself in next time. Delete it any
+  time — its exact location is shown at the bottom of this window.
+• The export itself (Markdown + JSON + log) goes only to the folder you pick.
+• Diagnostic logs go to your user log folder.
 
-What's never stored
-───────────────────
-• Your Overleaf password — the app never asks for it.
-• The session cookie — it's only held in memory during one export and discarded
-  when the app quits.
+About the session cookie
+────────────────────────
+• It is normally kept in memory only, and forgotten when the app closes.
+• It is written to the settings file ONLY if you tick "Remember cookie on
+  this computer". That file is not encrypted, so leave the box unticked on
+  a shared machine.
+• Your Overleaf password is never asked for and never stored.
 """
 
 
@@ -507,6 +510,7 @@ class App:
         ).pack(anchor="w", pady=(0, 8))
         txt = tk.Text(frame, wrap="word", height=22)
         txt.insert("1.0", PRIVACY_INFO_TEXT)
+        txt.insert("end", f"\nSettings file on this computer:\n{CONFIG_PATH}\n")
         txt.configure(state="disabled")
         txt.pack(fill="both", expand=True)
         scroll = ttk.Scrollbar(frame, command=txt.yview)
