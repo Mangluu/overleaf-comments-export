@@ -10,6 +10,7 @@ import traceback
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
+from .client import UserFacingError
 from .export import ExportResult, run_export
 
 
@@ -31,8 +32,9 @@ def _config_path() -> Path:
 CONFIG_PATH = _config_path()
 
 BROWSER_LABELS = {
-    "safari": "Safari (recommended — no Keychain prompt)",
-    "firefox": "Firefox (no Keychain prompt)",
+    "safari": "Safari — reads its cookie file, no password prompt",
+    "firefox": "Firefox — reads its cookie file, no password prompt",
+    "manual": "Paste the cookie myself — works on every computer",
     "auto": "Auto-detect (try all installed browsers)",
     "chrome": "Google Chrome (will prompt for Keychain password)",
     "chromium": "Chromium (will prompt for Keychain password)",
@@ -40,8 +42,45 @@ BROWSER_LABELS = {
     "brave": "Brave (will prompt for Keychain password)",
 }
 
-PRIVACY_FRIENDLY = ("safari", "firefox")
+PRIVACY_FRIENDLY = ("safari", "firefox", "manual")
 ADVANCED_BROWSERS = ("auto", "chrome", "chromium", "edge", "brave")
+
+COOKIE_HELP_TEXT = """\
+How to copy your Overleaf session cookie
+────────────────────────────────────────
+You only need to do this when reading the cookie straight from your browser
+does not work (common with Chrome on Windows, and with browsers installed
+from the Snap store on Linux).
+
+1. Open your paper in Overleaf, in any browser, and make sure you are
+   signed in.
+
+2. Open the developer tools:
+   • Windows / Linux : press F12
+   • Mac             : press Command + Option + I
+
+3. Find the cookie list:
+   • Chrome / Edge / Brave : click the "Application" tab, then in the left
+     sidebar open "Cookies" and click "https://www.overleaf.com"
+   • Firefox               : click the "Storage" tab, then "Cookies"
+   • Safari                : click the "Storage" tab, then "Cookies"
+     (Safari needs Develop menu enabled: Settings → Advanced →
+      "Show features for web developers")
+
+4. In the list, find the row named exactly:  overleaf_session2
+
+5. Double-click its "Value" and copy the whole thing. It is a long piece of
+   text that usually starts with  s%3A
+
+6. Paste it into the box in this window and click Export Comments.
+
+Notes
+─────
+• The cookie is like a temporary key to your account. Do not share it with
+  anyone. It stops working when you sign out of Overleaf.
+• This app does not save the cookie anywhere. It is kept in memory only
+  while the export runs, unless you tick "Remember cookie".
+"""
 
 PRIVACY_INFO_TEXT = """\
 What this app reads from your machine
@@ -161,6 +200,34 @@ class App:
         row += 1
 
         self._refresh_browser_choices()
+
+        # Cookie paste row (shown only when "Paste the cookie myself" is picked)
+        self.cookie_label = ttk.Label(outer, text="Session cookie:")
+        self.cookie_label.grid(row=row, column=0, sticky="w", pady=4)
+        cookie_row = ttk.Frame(outer)
+        cookie_row.grid(row=row, column=1, columnspan=2, sticky="ew", pady=4)
+        cookie_row.columnconfigure(0, weight=1)
+        self.cookie_var = tk.StringVar(value=self.config.get("cookie_value", ""))
+        self.cookie_entry = ttk.Entry(
+            cookie_row, textvariable=self.cookie_var, show="•"
+        )
+        self.cookie_entry.grid(row=0, column=0, sticky="ew")
+        ttk.Button(
+            cookie_row, text="How?", width=6, command=self._show_cookie_help
+        ).grid(row=0, column=1, padx=(6, 0))
+        self.remember_cookie_var = tk.BooleanVar(
+            value=bool(self.config.get("remember_cookie", False))
+        )
+        self.cookie_remember_cb = ttk.Checkbutton(
+            outer,
+            text="Remember cookie on this computer (stored unencrypted)",
+            variable=self.remember_cookie_var,
+        )
+        self.cookie_row_widgets = (self.cookie_label, cookie_row, self.cookie_remember_cb)
+        row += 1
+        self.cookie_remember_cb.grid(row=row, column=1, columnspan=2, sticky="w")
+        row += 1
+        self._toggle_cookie_row()
 
         # Project URL
         ttk.Label(outer, text="Overleaf project URL:").grid(
@@ -386,6 +453,34 @@ class App:
     def _on_browser_change(self) -> None:
         key = self.browser_var.get()
         self.browser_help.config(text=BROWSER_LABELS.get(key, key))
+        self._toggle_cookie_row()
+
+    def _toggle_cookie_row(self) -> None:
+        """Only show the cookie box when the user chose to paste it."""
+        widgets = getattr(self, "cookie_row_widgets", None)
+        if not widgets:
+            return
+        show = self.browser_var.get() == "manual"
+        for w in widgets:
+            if show:
+                w.grid()
+            else:
+                w.grid_remove()
+
+    def _show_cookie_help(self) -> None:
+        win = tk.Toplevel(self.root)
+        win.title("How to copy your Overleaf cookie")
+        win.geometry("640x560")
+        win.transient(self.root)
+        frame = ttk.Frame(win, padding=12)
+        frame.pack(fill="both", expand=True)
+        txt = tk.Text(frame, wrap="word")
+        txt.insert("1.0", COOKIE_HELP_TEXT)
+        txt.configure(state="disabled")
+        txt.pack(fill="both", expand=True)
+        ttk.Button(frame, text="Close", command=win.destroy).pack(
+            anchor="e", pady=(8, 0)
+        )
 
     def _refresh_browser_choices(self) -> None:
         """Update the combobox's items based on the advanced toggle."""
@@ -453,9 +548,21 @@ class App:
         reviewer_text = self.reviewer_filter_var.get().strip()
         reviewer_filter = [r.strip() for r in reviewer_text.split(",") if r.strip()]
 
+        cookie_value = self.cookie_var.get().strip() or None
+        if self.browser_var.get() == "manual" and not cookie_value:
+            messagebox.showerror(
+                "Missing cookie",
+                "Paste your Overleaf session cookie, or pick a browser to read "
+                "it from automatically. Click \"How?\" for step-by-step help.",
+            )
+            return
+
         _save_config(
             {
                 "browser": self.browser_var.get(),
+                # Only persisted if the user explicitly opts in.
+                "cookie_value": cookie_value if self.remember_cookie_var.get() else "",
+                "remember_cookie": bool(self.remember_cookie_var.get()),
                 "show_advanced_browsers": bool(self.show_advanced_var.get()),
                 "show_options": bool(self.show_options_var.get()),
                 "project_url": url,
@@ -484,6 +591,7 @@ class App:
             out_dir=Path(out_dir).expanduser(),
             project_title=self.title_var.get().strip() or None,
             browser=self.browser_var.get(),
+            cookie_value=cookie_value,
             include_open=bool(self.include_open_var.get()),
             include_resolved=bool(self.include_resolved_var.get()),
             include_changes=bool(self.include_changes_var.get()),
@@ -547,9 +655,21 @@ class App:
     def _on_error(self, err: BaseException, tb: str) -> None:
         self.progress.stop()
         self.run_btn.configure(state="normal")
+        if isinstance(err, UserFacingError):
+            # Expected, explainable failure — show the plain-English message
+            # only. The traceback would just frighten a non-technical user.
+            self._append_log(str(err))
+            messagebox.showwarning("Export could not finish", str(err))
+            return
         self._append_log(f"ERROR: {err}")
         self._append_log(tb)
-        messagebox.showerror("Export failed", f"{type(err).__name__}: {err}")
+        messagebox.showerror(
+            "Export failed",
+            f"{type(err).__name__}: {err}\n\n"
+            "This looks like a bug. The full details are in the log box, and in "
+            "the log file next to your export. You can report it at\n"
+            "https://github.com/Mangluu/overleaf-comments-export/issues",
+        )
 
     def _open_markdown(self) -> None:
         if not self.last_result:

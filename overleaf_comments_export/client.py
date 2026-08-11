@@ -4,6 +4,7 @@ import html
 import json
 import logging
 import re
+import time
 from typing import Any, Optional
 from urllib.parse import unquote, urlparse
 
@@ -14,6 +15,52 @@ logger = logging.getLogger(__name__)
 OVERLEAF_BASE = "https://www.overleaf.com"
 
 PROJECT_URL_RE = re.compile(r"/project/(?P<id>[0-9a-fA-F]{24})")
+
+RETRY_STATUSES = (429, 500, 502, 503, 504)
+
+
+class UserFacingError(RuntimeError):
+    """An error with a message written for a non-technical user.
+
+    The GUI/CLI print these verbatim without a traceback; anything else is
+    treated as an unexpected bug and shown with full detail.
+    """
+
+
+def _network_hint(exc: Exception) -> str:
+    """Plain-English explanation for a requests connection failure."""
+    text = str(exc)
+    if (
+        "NameResolution" in text
+        or "Failed to resolve" in text
+        or "nodename nor servname" in text
+        or "Name or service not known" in text
+        or "getaddrinfo" in text
+    ):
+        return (
+            "Could not look up www.overleaf.com.\n\n"
+            "This is a network problem on this computer, not a problem with your "
+            "Overleaf project. Check that you are online, then try again. If you "
+            "are on a VPN or a work/university network, try turning the VPN off "
+            "or switching networks."
+        )
+    if isinstance(exc, requests.exceptions.SSLError):
+        return (
+            "The secure connection to Overleaf could not be verified.\n\n"
+            "This usually means a VPN, antivirus, or corporate proxy is "
+            "intercepting traffic. Try again on a different network."
+        )
+    if isinstance(exc, requests.exceptions.Timeout):
+        return (
+            "Overleaf did not respond in time.\n\n"
+            "The connection may be slow or Overleaf may be busy. Wait a moment "
+            "and try again."
+        )
+    return (
+        "Could not reach Overleaf.\n\n"
+        "Check that you are online and that https://www.overleaf.com opens in "
+        "your browser, then try again."
+    )
 
 
 def parse_project_id(project_url: str) -> str:
@@ -36,16 +83,20 @@ class OverleafClient:
         self._api = None
         self._session: Optional[requests.Session] = None
 
-    SUPPORTED_BROWSERS = ("safari", "firefox", "auto", "chrome", "chromium", "edge", "brave")
+    SUPPORTED_BROWSERS = (
+        "safari", "firefox", "auto", "chrome", "chromium", "edge", "brave", "manual",
+    )
     # Browsers that don't trigger macOS Keychain or password prompts:
     PRIVACY_FRIENDLY_BROWSERS = ("safari", "firefox")
 
-    def connect(self, browser: str = "auto") -> None:
-        """Authenticate via the user's browser cookie.
+    def connect(self, browser: str = "auto", cookie_value: str | None = None) -> None:
+        """Authenticate as the user.
 
-        If browser is "auto", we let pyoverleaf auto-detect.
-        Otherwise we read the overleaf.com cookies for the named browser
-        directly via browser-cookie3 and build our own session.
+        `cookie_value` (or browser="manual") uses a session cookie pasted by the
+        user — this works identically on every OS and browser, and is the
+        fallback when a browser's cookie store can't be read (Chrome 127+ on
+        Windows, snap-packaged browsers on Linux, locked-down macOS).
+        Otherwise cookies are read from the named browser, or auto-detected.
         """
         browser = (browser or "auto").lower()
         if browser not in self.SUPPORTED_BROWSERS:
@@ -54,18 +105,57 @@ class OverleafClient:
                 + ", ".join(self.SUPPORTED_BROWSERS)
             )
 
-        if browser == "auto":
+        if cookie_value:
+            session = self._connect_via_cookie_value(cookie_value)
+        elif browser == "manual":
+            raise UserFacingError(
+                "No session cookie was provided.\n\n"
+                "Paste the value of your Overleaf 'overleaf_session2' cookie, or "
+                "choose a browser to read it from automatically."
+            )
+        elif browser == "auto":
             session = self._connect_via_pyoverleaf()
         else:
             session = self._connect_via_browser_cookie3(browser)
 
-        session.headers.setdefault(
-            "User-Agent",
-            "overleaf-comments-export/0.1 (Mozilla/5.0 compatible)",
+        # Assign, don't setdefault: requests.Session pre-fills User-Agent with
+        # "python-requests/x.y", which setdefault would leave in place.
+        session.headers["User-Agent"] = (
+            f"overleaf-comments-export/{_tool_version()} (Mozilla/5.0 compatible)"
         )
         session.headers.setdefault("Accept", "application/json, text/plain, */*")
         session.headers.setdefault("Referer", f"{self.base_url}/")
         self._session = session
+
+    def _connect_via_cookie_value(self, pasted: str) -> requests.Session:
+        """Build a session from a cookie the user pasted.
+
+        Accepts a bare value, `overleaf_session2=<value>`, or a whole
+        `document.cookie` dump — whatever the user actually managed to copy.
+        """
+        pairs = _parse_cookie_string(pasted)
+        if not pairs:
+            raise UserFacingError(
+                "That does not look like an Overleaf session cookie.\n\n"
+                "In your browser open Overleaf, press F12, go to "
+                "Application → Cookies → https://www.overleaf.com, and copy the "
+                "Value of the row named 'overleaf_session2'."
+            )
+        if not any(k in ("overleaf_session2", "overleaf.sid") for k in pairs):
+            raise UserFacingError(
+                "The pasted cookie does not contain 'overleaf_session2'.\n\n"
+                "Copy the Value of the cookie named exactly 'overleaf_session2' "
+                "(Application → Cookies → https://www.overleaf.com)."
+            )
+
+        session = requests.Session()
+        domain = urlparse(self.base_url).hostname or "www.overleaf.com"
+        # Set on the registrable domain so it is sent to www. and api. hosts.
+        cookie_domain = ".overleaf.com" if domain.endswith("overleaf.com") else domain
+        for name, value in pairs.items():
+            session.cookies.set(name, value, domain=cookie_domain, path="/")
+        self._api = None  # no pyoverleaf; file tree comes from the HTML scrape
+        return session
 
     def _connect_via_pyoverleaf(self) -> requests.Session:
         try:
@@ -169,23 +259,64 @@ class OverleafClient:
             raise RuntimeError("call connect() before using the client")
         return self._session
 
+    def _request(self, url: str, *, attempts: int = 3, **kwargs: Any) -> requests.Response:
+        """GET with retry on transient failures, and plain-English errors.
+
+        Retries connection errors, timeouts, and 429/5xx (honouring Retry-After).
+        Never retries 4xx other than 429 — those won't fix themselves.
+        """
+        last_exc: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                r = self.session.get(url, timeout=30, **kwargs)
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+                last_exc = e
+                if attempt == attempts - 1:
+                    raise UserFacingError(_network_hint(e)) from e
+                time.sleep(2**attempt)
+                continue
+            if r.status_code in RETRY_STATUSES and attempt < attempts - 1:
+                wait = r.headers.get("Retry-After")
+                try:
+                    delay = min(float(wait), 30.0) if wait else 2**attempt
+                except ValueError:
+                    delay = 2**attempt
+                logger.warning(
+                    "%s returned %s — retrying in %.0fs", url, r.status_code, delay
+                )
+                time.sleep(delay)
+                continue
+            return r
+        raise UserFacingError(_network_hint(last_exc or Exception()))  # pragma: no cover
+
     def _get(self, path: str, expect_json: bool = True) -> Any:
         url = f"{self.base_url}{path}"
-        r = self.session.get(url, timeout=30)
+        r = self._request(url)
         if r.status_code in (401, 403):
-            raise RuntimeError(
-                f"Overleaf returned {r.status_code} for {path}. Your session may have "
-                "expired or you may not have access to this project. Refresh the "
-                "Overleaf tab in your browser and re-run."
+            raise UserFacingError(
+                "Overleaf refused the request (not signed in).\n\n"
+                "Your saved session has expired. Open https://www.overleaf.com in "
+                "your browser, make sure you are signed in and can see this "
+                "project, then run the export again."
+            )
+        if r.status_code == 404:
+            raise UserFacingError(
+                "Overleaf could not find that project.\n\n"
+                "Check the project link is correct and that this account has "
+                "access to it. Open the project in your browser and copy the "
+                "address from the address bar."
             )
         r.raise_for_status()
         if not expect_json:
             return r.text
         ctype = r.headers.get("Content-Type", "")
         if "application/json" not in ctype:
-            raise RuntimeError(
-                f"Expected JSON from {path} but got Content-Type={ctype!r}. "
-                "This usually means the endpoint moved or you got redirected to login."
+            raise UserFacingError(
+                "Overleaf returned a web page instead of data.\n\n"
+                "This usually means you were signed out. Open Overleaf in your "
+                "browser, sign in, and try again. If you are already signed in, "
+                "Overleaf may have changed its internal API — please report this "
+                "at https://github.com/Mangluu/overleaf-comments-export/issues"
             )
         return r.json()
 
@@ -213,6 +344,8 @@ class OverleafClient:
         Returns None if the endpoint isn't accessible (e.g. 404 on older deployments)."""
         try:
             return self._get(f"/project/{project_id}/ranges")
+        except UserFacingError:
+            raise  # auth/network problems are fatal, not "no ranges"
         except requests.HTTPError as e:
             if e.response is not None and e.response.status_code == 404:
                 logger.warning(
@@ -285,7 +418,7 @@ class OverleafClient:
         """
         path = f"/project/{project_id}"
         url = f"{self.base_url}{path}"
-        r = self.session.get(url, timeout=30, allow_redirects=False)
+        r = self._request(url, allow_redirects=False)
         if r.status_code in (301, 302, 303, 307, 308):
             loc = r.headers.get("Location", "")
             if "login" in loc.lower():
@@ -413,6 +546,33 @@ class OverleafClient:
                 preview,
             )
         return out
+
+
+def _tool_version() -> str:
+    from . import __version__
+
+    return __version__
+
+
+def _parse_cookie_string(pasted: str) -> dict[str, str]:
+    """Parse whatever the user pasted into {cookie_name: value}.
+
+    Handles a bare cookie value, `name=value`, and a full `document.cookie`
+    dump. Falls back to treating the whole string as the session value.
+    """
+    s = (pasted or "").strip().strip('"').strip("'")
+    if not s:
+        return {}
+    out: dict[str, str] = {}
+    for part in s.split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        name, _, value = part.partition("=")
+        name, value = name.strip(), value.strip().strip('"')
+        if name and value:
+            out[name] = value
+    return out or {"overleaf_session2": s}
 
 
 def _decode_meta_content(raw: str) -> Any:

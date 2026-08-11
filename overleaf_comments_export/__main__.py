@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from pathlib import Path
 
-from .client import OverleafClient
+from . import __version__
+from .client import OverleafClient, UserFacingError
 from .export import ExportResult, run_export
 
 
@@ -40,12 +42,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Which browser to read cookies from. Default: auto-detect.",
     )
     parser.add_argument(
+        "--cookie",
+        default=None,
+        metavar="VALUE",
+        help="Overleaf session cookie, pasted from your browser (DevTools → "
+        "Application → Cookies → overleaf_session2). Use this when reading "
+        "cookies from the browser fails. Also read from the OVERLEAF_SESSION "
+        "environment variable.",
+    )
+    parser.add_argument(
         "--base-url",
         default="https://www.overleaf.com",
         help="Override the Overleaf base URL (for self-hosted instances).",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="More logging."
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
     )
     parser.add_argument(
         "--render-mode",
@@ -118,23 +132,31 @@ def main(argv: list[str] | None = None) -> int:
         stream=sys.stderr,
     )
 
-    result: ExportResult = run_export(
-        project_url=args.project_url,
-        out_dir=args.out,
-        project_title=args.project_title,
-        base_url=args.base_url,
-        browser=args.browser,
-        verbose=args.verbose,
-        include_raw=args.include_raw,
-        include_open=args.include_open,
-        include_resolved=args.include_resolved,
-        include_changes=args.include_changes,
-        reviewer_filter=args.reviewer,
-        render_mode=args.render_mode,
-        write_jsonl=args.write_jsonl,
-        per_reviewer_reports=args.per_reviewer,
-        progress=lambda msg: print(msg, file=sys.stderr),
-    )
+    cookie_value = args.cookie or os.environ.get("OVERLEAF_SESSION") or None
+
+    try:
+        result: ExportResult = run_export(
+            project_url=args.project_url,
+            out_dir=args.out,
+            project_title=args.project_title,
+            base_url=args.base_url,
+            browser=args.browser,
+            cookie_value=cookie_value,
+            verbose=args.verbose,
+            include_raw=args.include_raw,
+            include_open=args.include_open,
+            include_resolved=args.include_resolved,
+            include_changes=args.include_changes,
+            reviewer_filter=args.reviewer,
+            render_mode=args.render_mode,
+            write_jsonl=args.write_jsonl,
+            per_reviewer_reports=args.per_reviewer,
+            progress=lambda msg: print(msg, file=sys.stderr),
+        )
+    except UserFacingError as e:
+        # Expected, explainable failures: no traceback, just what to do next.
+        print(f"\n{e}", file=sys.stderr)
+        return 1
     print(f"\nDone. Open: {result.markdown_path}")
     return 0
 

@@ -101,10 +101,30 @@ by browser on macOS:
 | Chrome / Edge / Brave | Cookies are AES-encrypted with a Keychain-stored key; **you'll get a Keychain password prompt every run.** Hidden behind an opt-in in the GUI. |
 
 On Windows, Chrome 127+ uses App-Bound Encryption that `browser-cookie3`
-doesn't fully decrypt yet — prefer Firefox or Edge on Windows.
+can't decrypt. On Linux, snap-packaged browsers sandbox their cookie stores.
 
-On Linux, snap-packaged browsers sandbox their cookies — install browsers as
-native packages if you can.
+**If reading the cookie from your browser fails, paste it instead** — this
+works on every OS and browser:
+
+```bash
+overleaf-comments-export --project-url <url> --out ./out --cookie "PASTE_HERE"
+```
+
+Or set it once: `export OVERLEAF_SESSION="PASTE_HERE"`. In the GUI, choose
+**"Paste the cookie myself"** and click **How?** for step-by-step instructions.
+
+To find it: open Overleaf, press F12, go to Application (or Storage) →
+Cookies → `https://www.overleaf.com`, and copy the Value of `overleaf_session2`.
+Treat it like a password; it stops working when you sign out.
+
+## Troubleshooting
+
+| What you see | What it means |
+|---|---|
+| "Could not look up www.overleaf.com" | This computer is offline, or a VPN/DNS problem. Not an Overleaf issue. |
+| "Overleaf refused the request (not signed in)" | Your session expired. Sign in again in the browser, then re-run. |
+| "Could not read Overleaf cookies from chrome" | Use the paste-the-cookie method above. |
+| "Overleaf could not find that project" | Wrong link, or this account has no access. |
 
 ## Status & maintenance
 

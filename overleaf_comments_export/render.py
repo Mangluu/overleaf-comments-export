@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Iterable, Literal
 
+from . import __version__
 from .model import AnchoredComment, SourceContext, Thread, TrackedChange
 
 SCHEMA_VERSION = "1.3"
@@ -132,6 +133,7 @@ def render_markdown(
     # ---- YAML front-matter ----
     out.append("---")
     out.append(f"schema_version: {SCHEMA_VERSION}")
+    out.append(f"tool_version: {__version__}")
     out.append(f"project_id: {project_id}")
     out.append(f'project_title: "{project_title}"')
     out.append(f"pulled_at: {pulled_at_iso}")
@@ -281,6 +283,9 @@ def _status_badge(thread: Thread | None, stale: bool) -> str:
         bits.append("resolved")
     else:
         bits.append("open")
+    replies = max(0, len(thread.messages) - 1) if thread else 0
+    if replies:
+        bits.append(f"{replies} repl{'y' if replies == 1 else 'ies'}")
     if stale:
         bits.append("⚠ stale")
     return " · ".join(bits)
@@ -301,19 +306,22 @@ def _emit_comment_compact(out: list[str], c: AnchoredComment, thread: Thread | N
     if thread is None or not thread.messages:
         out.append("- _(no messages)_")
     else:
-        for msg in sorted(thread.messages, key=lambda m: m.timestamp_ms):
+        # Overleaf threads are flat: the first message (oldest) is the comment
+        # itself, everything after it is a reply. Replies are indented under it
+        # with "↳" so the original ask is unmistakable.
+        ordered = sorted(thread.messages, key=lambda m: m.timestamp_ms)
+        for i, msg in enumerate(ordered):
             who = _humanize_user(msg.user_name, msg.user_email, msg.user_id)
             when = _fmt_ts(msg.timestamp_ms)
             edited = " _(edited)_" if msg.edited_at_ms else ""
             body = (msg.content or "").strip()
-            # If body is single-line, render inline; multi-line gets a
-            # blockquote so it stays readable.
+            bullet, indent = ("- ", "  ") if i == 0 else ("  - ↳ ", "    ")
             if "\n" in body:
-                out.append(f"- **{who}** · {when}{edited}:")
+                out.append(f"{bullet}**{who}** · {when}{edited}:")
                 for line in body.splitlines():
-                    out.append(f"  > {line}")
+                    out.append(f"{indent}> {line}")
             else:
-                out.append(f"- **{who}** · {when}{edited}: {body}")
+                out.append(f"{bullet}**{who}** · {when}{edited}: {body}")
     out.append("")
 
 
@@ -352,7 +360,15 @@ def _emit_change(out: list[str], ch: TrackedChange, *, mode: RenderMode = "compa
             lead = "…" if (ctx.truncated_before or clipped_b) else ""
             tail = "…" if (ctx.truncated_after or clipped_a) else ""
             if before or after:
-                out.append(f"  > {lead}{before} **▸here◂** {after}{tail}")
+                # Show the changed text in place: struck through for a
+                # deletion, bracketed for an insertion.
+                snippet = (ctx.anchor or content).replace("\n", " ").strip()
+                if len(snippet) > COMPACT_CONTEXT_CHARS:
+                    snippet = snippet[: COMPACT_CONTEXT_CHARS - 1].rstrip() + "…"
+                marked = (
+                    f"~~{snippet}~~" if ch.kind == "deletion" else f"**▸{snippet}◂**"
+                )
+                out.append(f"  > {lead}{before} {marked} {after}{tail}")
     out.append("")
 
 

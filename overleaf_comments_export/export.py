@@ -8,8 +8,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from . import __version__
 from .anchors import build_line_starts, resolve_anchor
-from .client import OverleafClient, parse_project_id
+from .client import OverleafClient, UserFacingError, parse_project_id
 from .model import (
     AnchoredComment,
     DocText,
@@ -216,6 +217,24 @@ def _extract_context(
     )
 
 
+def _deletion_context(doc: DocText, offset: int, deleted: str, line_no: int) -> SourceContext:
+    """Context for a tracked deletion.
+
+    The deleted text is no longer in the document, so it can't be located by
+    offset — it *is* the anchor, sitting between the surrounding live text.
+    """
+    text = doc.text
+    offset = max(0, min(offset, len(text)))
+    return SourceContext(
+        before=_normalize_ws(text[max(0, offset - CONTEXT_CHARS_BEFORE) : offset]),
+        anchor=_normalize_ws(deleted),
+        after=_normalize_ws(text[offset : offset + CONTEXT_CHARS_AFTER]),
+        truncated_before=offset > CONTEXT_CHARS_BEFORE,
+        truncated_after=offset + CONTEXT_CHARS_AFTER < len(text),
+        line_no=line_no,
+    )
+
+
 def _thread_matches_reviewer(thread: Thread | None, reviewer_filter: list[str]) -> bool:
     """True if the thread has at least one message from any reviewer in the
     filter list. `reviewer_filter` is a list of case-insensitive substrings
@@ -261,7 +280,9 @@ def _slug_reviewer(name: str) -> str:
 
 
 def _comment_to_jsonl_record(
-    c: AnchoredComment, thread: Thread | None
+    c: AnchoredComment,
+    thread: Thread | None,
+    user_map: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Self-contained JSONL record per comment (with embedded thread, since
     JSONL records are read independently)."""
@@ -275,8 +296,9 @@ def _comment_to_jsonl_record(
         "nearest_heading": c.nearest_heading,
         "anchored_text": c.anchored_text,
         "stale": c.stale,
+        "reply_count": max(0, len(thread.messages) - 1) if thread else 0,
         "context": _serialize_context(c.context),
-        "thread": _serialize_thread(thread) if thread is not None else None,
+        "thread": _serialize_thread(thread, user_map) if thread is not None else None,
     }
 
 
@@ -308,6 +330,7 @@ def run_export(
     project_title: str | None = None,
     base_url: str = "https://www.overleaf.com",
     browser: str = "auto",
+    cookie_value: str | None = None,
     verbose: bool = False,
     include_raw: bool = False,
     include_open: bool = True,
@@ -342,8 +365,11 @@ def run_export(
     logger.info("Project id: %s", project_id)
 
     client = OverleafClient(base_url=base_url)
-    progress(f"Authenticating via {browser} browser cookie…")
-    client.connect(browser=browser)
+    if cookie_value:
+        progress("Authenticating with the pasted session cookie…")
+    else:
+        progress(f"Authenticating via {browser} browser cookie…")
+    client.connect(browser=browser, cookie_value=cookie_value)
 
     progress("Fetching threads…")
     threads_raw = client.get_threads(project_id)
@@ -444,9 +470,10 @@ def run_export(
                 heading = nearest_heading(doc.headings, line)
                 uid = str(meta.get("user_id") or "") or None
                 user = user_map.get(uid or "", {}) if uid else {}
-                context = _extract_context(
-                    doc, ro, content if kind == "insertion" else "", line
-                )
+                if kind == "insertion":
+                    context = _extract_context(doc, ro, content, line)
+                else:
+                    context = _deletion_context(doc, ro, content, line)
                 changes.append(
                     TrackedChange(
                         id=str(ch.get("id") or ch.get("_id") or ""),
@@ -574,6 +601,7 @@ def run_export(
         threads_raw=threads_raw,
         ranges_payload=ranges_payload,
         include_raw=include_raw,
+        user_map=user_map,
     )
     json_payload["filters_applied"] = {
         "include_open": include_open,
@@ -591,7 +619,7 @@ def run_export(
         jsonl_path = out_dir / "comments.jsonl"
         with jsonl_path.open("w", encoding="utf-8") as f:
             for c in anchored:
-                rec = _comment_to_jsonl_record(c, threads.get(c.thread_id))
+                rec = _comment_to_jsonl_record(c, threads.get(c.thread_id), user_map)
                 f.write(json.dumps(rec, default=str))
                 f.write("\n")
         progress(f"Wrote {jsonl_path.name} ({len(anchored)} record(s))")
@@ -682,15 +710,31 @@ def _serialize_context(ctx: SourceContext | None) -> dict[str, Any] | None:
     }
 
 
-def _serialize_thread(thread: Thread) -> dict[str, Any]:
+def _serialize_thread(
+    thread: Thread, user_map: dict[str, dict[str, str]] | None = None
+) -> dict[str, Any]:
+    """Serialize a thread, tagging the first message as the comment itself and
+    the rest as replies (Overleaf threads are flat, ordered by time)."""
+    ordered = sorted(thread.messages, key=lambda x: x.timestamp_ms)
+    resolver = user_map or {}
+    resolved_by = resolver.get(thread.resolved_by_user_id or "", {})
     return {
         "id": thread.id,
         "resolved": thread.resolved,
         "resolved_at": _iso(thread.resolved_at_ms),
-        "resolved_by_user_id": thread.resolved_by_user_id,
+        "resolved_by": {
+            "id": thread.resolved_by_user_id,
+            "name": resolved_by.get("name"),
+            "email": resolved_by.get("email"),
+        }
+        if thread.resolved_by_user_id
+        else None,
+        "reply_count": max(0, len(ordered) - 1),
         "messages": [
             {
                 "id": m.id,
+                "role": "comment" if i == 0 else "reply",
+                "reply_index": None if i == 0 else i - 1,
                 "user": {
                     "id": m.user_id,
                     "name": m.user_name,
@@ -700,7 +744,7 @@ def _serialize_thread(thread: Thread) -> dict[str, Any]:
                 "timestamp": _iso(m.timestamp_ms),
                 "edited_at": _iso(m.edited_at_ms),
             }
-            for m in sorted(thread.messages, key=lambda x: x.timestamp_ms)
+            for i, m in enumerate(ordered)
         ],
     }
 
@@ -720,6 +764,7 @@ def _build_structured_json(
     threads_raw: dict[str, Any],
     ranges_payload: Any,
     include_raw: bool = False,
+    user_map: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Produce a clean, AI-ingestion-friendly JSON document.
 
@@ -750,6 +795,7 @@ def _build_structured_json(
 
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
+        "tool_version": __version__,
         "project": {
             "id": project_id,
             "title": project_title,
@@ -774,7 +820,9 @@ def _build_structured_json(
         # Threads are stored ONCE at the top level keyed by thread_id;
         # comments reference them via `thread_id`. This avoids duplicating
         # potentially long discussions inside every comment.
-        "threads": {tid: _serialize_thread(t) for tid, t in threads.items()},
+        "threads": {
+            tid: _serialize_thread(t, user_map) for tid, t in threads.items()
+        },
         "files": files,
         "comments": [
             {
@@ -788,6 +836,9 @@ def _build_structured_json(
                 "nearest_heading": c.nearest_heading,
                 "anchored_text": c.anchored_text,
                 "stale": c.stale,
+                "reply_count": max(
+                    0, len(threads[c.thread_id].messages) - 1
+                ) if c.thread_id in threads else 0,
                 "context": _serialize_context(c.context),
             }
             for c in anchored
@@ -872,6 +923,11 @@ rendered output where truncation is true.
 ## How to address comments
 
 - Refer to comments by `short_id` (e.g., "C014"), not by `thread_id`.
+- Each thread's FIRST message (`role: "comment"`) is the reviewer's actual
+  ask. Later messages (`role: "reply"`, shown indented with `↳` in the
+  Markdown) are follow-up discussion, often between co-authors. Answer the
+  ask, taking the discussion into account; do not re-litigate sub-points the
+  replies already settled.
 - For each open comment, propose an edit to the .tex source. If the comment
   is a question, answer it; if it's a request, attempt the change.
 - Stale comments (`stale: true`) may not point to the current location in the
