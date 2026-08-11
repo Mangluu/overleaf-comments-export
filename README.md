@@ -33,7 +33,13 @@ an Overleaf project URL and a logged-in browser session.
 pip install overleaf-comments-export
 ```
 
-Requires Python 3.10+. Works on macOS, Linux, and Windows.
+Requires Python 3.10 or newer (tested up to 3.14). Works on macOS, Linux, and
+Windows.
+
+The graphical window needs Python's Tk toolkit, which most Linux distributions
+package separately (`sudo apt install python3-tk` on Debian/Ubuntu). The
+command line never needs it, and `--gui` tells you what to install if it is
+missing.
 
 ## Quick start
 
@@ -68,6 +74,7 @@ In your output folder, by default:
 | `comments.json` | Structured data — `summary`, top-level `threads`, `files`, `comments`, `tracked_changes`, etc. Schema described in `agents.md`. |
 | `comments.jsonl` | One self-contained JSON record per comment for streaming/pipelines. |
 | `agents.md` | A brief instruction file telling an AI agent how to consume the batch. |
+| `response-letter.md` | (Optional, `--response-letter`) A point-by-point reply document, pre-filled with every open comment grouped by who raised it, with blanks for your response. |
 | `by-reviewer/<name>.md` | (Optional, `--per-reviewer`) One Markdown per reviewer with only their threads. |
 | `comments.log` | Diagnostic log for the run. |
 
@@ -85,6 +92,9 @@ overleaf-comments-export --project-url … --out ./out --render-mode detailed
 
 # Per-reviewer sub-reports under ./out/by-reviewer/
 overleaf-comments-export --project-url … --out ./out --per-reviewer
+
+# Draft a point-by-point response letter for the open comments
+overleaf-comments-export --project-url … --out ./out --response-letter
 ```
 
 Full flag reference: `overleaf-comments-export --help`.

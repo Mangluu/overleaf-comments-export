@@ -12,6 +12,35 @@ from .client import OverleafClient, UserFacingError
 from .export import ExportResult, run_export
 
 
+def _no_tkinter_message() -> str:
+    """Platform-specific instructions for installing Python's GUI toolkit."""
+    if sys.platform == "darwin":
+        fix = (
+            "Install Python from python.org (it includes the GUI toolkit), or\n"
+            "with Homebrew run:\n\n"
+            "  brew install python-tk"
+        )
+    elif sys.platform.startswith("win"):
+        fix = (
+            "Re-run the Python installer from python.org, choose \"Modify\", and\n"
+            "tick \"tcl/tk and IDLE\"."
+        )
+    else:
+        fix = (
+            "Install it with your package manager, for example:\n\n"
+            "  Debian/Ubuntu : sudo apt install python3-tk\n"
+            "  Fedora        : sudo dnf install python3-tkinter\n"
+            "  Arch          : sudo pacman -S tk"
+        )
+    return (
+        "The window cannot open because this Python has no GUI toolkit "
+        "installed.\n\n"
+        f"{fix}\n\n"
+        "Or skip the window entirely and use the command line:\n\n"
+        "  overleaf-comments-export --project-url <your project link> --out ./comments"
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="overleaf-comments-export",
@@ -108,6 +137,13 @@ def main(argv: list[str] | None = None) -> int:
         help="Skip writing comments.jsonl (the streaming-friendly companion).",
     )
     parser.add_argument(
+        "--response-letter",
+        action="store_true",
+        help="Also write response-letter.md: a point-by-point reply document "
+        "pre-filled with every open comment, grouped by who raised it, with "
+        "blanks for your response.",
+    )
+    parser.add_argument(
         "--per-reviewer",
         action="store_true",
         help="Also write one Markdown per reviewer into by-reviewer/.",
@@ -121,8 +157,31 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.gui or (not args.project_url and not args.out):
-        from .gui import launch_gui
-        return launch_gui()
+        try:
+            from .gui import launch_gui
+        except ImportError:
+            # tkinter is NOT bundled with Python everywhere — most Linux
+            # distributions ship it as a separate system package, and it is
+            # missing from some minimal/conda builds.
+            print(_no_tkinter_message(), file=sys.stderr)
+            return 1
+        try:
+            return launch_gui()
+        except Exception as e:
+            # Typically TclError on a headless machine (SSH, server, container).
+            if "display" in str(e).lower() or type(e).__name__ == "TclError":
+                print(
+                    "There is no screen to open a window on.\n\n"
+                    "This looks like a computer without a desktop (a server, or "
+                    "a remote session). Use the command line instead, for "
+                    "example:\n\n"
+                    "  overleaf-comments-export --project-url <your project link> "
+                    "--out ./comments\n\n"
+                    "Run with --help to see every option.",
+                    file=sys.stderr,
+                )
+                return 1
+            raise
 
     if not args.project_url or not args.out:
         parser.error("--project-url and --out are required in CLI mode (or pass --gui).")
@@ -152,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
             render_mode=args.render_mode,
             write_jsonl=args.write_jsonl,
             per_reviewer_reports=args.per_reviewer,
+            response_letter=args.response_letter,
             progress=lambda msg: print(msg, file=sys.stderr),
         )
     except UserFacingError as e:

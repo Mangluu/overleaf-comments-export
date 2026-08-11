@@ -4,9 +4,26 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-08-11
+
 ### Added
+- `--response-letter` writes `response-letter.md`: a point-by-point reply
+  document pre-filled with every open comment, grouped by whoever raised it,
+  each with its quote, location, the discussion so far, and blanks for your
+  response and the change you made. Available as a tick box in the window too.
 - Unexpected crashes now print where to report them, with the version number.
-- Issue templates, a contributing guide, and a roadmap.
+- Issue templates, a contributing guide, a roadmap, and this changelog.
+
+### Fixed
+- Asking for the window on a machine without Python's Tk toolkit produced a
+  raw `ModuleNotFoundError`. It now explains what to install, per operating
+  system, and points at the command line as an alternative. Tk is **not**
+  bundled with Python on most Linux distributions, so this affected a real
+  share of users.
+- Asking for the window on a machine with no screen (a server, or an SSH
+  session) now explains that and suggests the command line, instead of
+  raising `TclError`.
+- Python 3.14 is now tested in CI and declared in the package metadata.
 
 ## [0.3.0] — 2026-08-11
 
@@ -48,6 +65,7 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.2.0

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overleaf-comments-export"
-version = "0.3.0"
+version = "0.4.0"
 description = "Export comment threads and tracked changes from an Overleaf project to Markdown + JSON, optimized for AI-agent consumption."
 readme = "README.md"
 license = { text = "MIT" }
@@ -34,6 +34,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Text Processing :: Markup :: LaTeX",
     "Topic :: Scientific/Engineering",
 ]
@@ -46,7 +47,10 @@ dependencies = [
 
 [project.optional-dependencies]
 gui = [
-    # tkinter ships with Python; sv-ttk adds a modern look-and-feel.
+    # NOTE: tkinter itself cannot be installed from PyPI. It ships with the
+    # python.org installers, but most Linux distributions package it
+    # separately (python3-tk / python3-tkinter / tk). The CLI never needs it,
+    # and `--gui` explains how to install it if it is missing.
     "sv-ttk>=2.6",
 ]
 test = [

@@ -425,6 +425,9 @@ class App:
         self.per_reviewer_var = tk.BooleanVar(
             value=bool(self.config.get("per_reviewer_reports", False))
         )
+        self.response_letter_var = tk.BooleanVar(
+            value=bool(self.config.get("response_letter", False))
+        )
         self.include_raw_var = tk.BooleanVar(
             value=bool(self.config.get("include_raw", False))
         )
@@ -432,6 +435,11 @@ class App:
             extras_row,
             text="comments.jsonl (streaming companion)",
             variable=self.write_jsonl_var,
+        ).pack(anchor="w")
+        ttk.Checkbutton(
+            extras_row,
+            text="Response letter draft (response-letter.md)",
+            variable=self.response_letter_var,
         ).pack(anchor="w")
         ttk.Checkbutton(
             extras_row,
@@ -579,6 +587,7 @@ class App:
                 "render_mode": self.render_mode_var.get(),
                 "write_jsonl": bool(self.write_jsonl_var.get()),
                 "per_reviewer_reports": bool(self.per_reviewer_var.get()),
+                "response_letter": bool(self.response_letter_var.get()),
                 "include_raw": bool(self.include_raw_var.get()),
             }
         )
@@ -603,6 +612,7 @@ class App:
             render_mode=self.render_mode_var.get(),
             write_jsonl=bool(self.write_jsonl_var.get()),
             per_reviewer_reports=bool(self.per_reviewer_var.get()),
+            response_letter=bool(self.response_letter_var.get()),
             include_raw=bool(self.include_raw_var.get()),
         )
         self.worker = threading.Thread(
@@ -653,6 +663,8 @@ class App:
             self._append_log(f"JSONL:    {result.jsonl_path}")
         if result.agents_path is not None:
             self._append_log(f"Agents:   {result.agents_path}")
+        if result.response_letter_path is not None:
+            self._append_log(f"Letter:   {result.response_letter_path}")
         if result.by_reviewer_dir is not None:
             self._append_log(f"Per-reviewer: {result.by_reviewer_dir}")
 

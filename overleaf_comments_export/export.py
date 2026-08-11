@@ -19,7 +19,7 @@ from .model import (
     Thread,
     TrackedChange,
 )
-from .render import render_markdown
+from .render import render_markdown, render_response_letter
 from .sections import find_headings, nearest_heading
 
 SCHEMA_VERSION = "1.3"
@@ -76,6 +76,7 @@ class ExportResult:
     jsonl_path: Path | None = None
     by_reviewer_dir: Path | None = None
     agents_path: Path | None = None
+    response_letter_path: Path | None = None
 
 
 def _build_user_map(threads_raw: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -340,6 +341,7 @@ def run_export(
     render_mode: str = "compact",
     write_jsonl: bool = True,
     per_reviewer_reports: bool = False,
+    response_letter: bool = False,
     progress: ProgressCallback | None = None,
 ) -> ExportResult:
     """Programmatic entry point used by both the CLI and the GUI."""
@@ -668,6 +670,15 @@ def run_export(
             written += 1
         progress(f"Wrote {written} per-reviewer report(s) into by-reviewer/")
 
+    letter_path: Path | None = None
+    if response_letter:
+        letter_path = out_dir / "response-letter.md"
+        letter_path.write_text(
+            render_response_letter(title, project_id, threads, anchored),
+            encoding="utf-8",
+        )
+        progress(f"Wrote {letter_path.name}")
+
     agents_path = out_dir / "agents.md"
     agents_path.write_text(_build_agents_md(title, project_id, json_path.name, md_path.name), encoding="utf-8")
     progress(f"Wrote {agents_path.name}")
@@ -688,6 +699,7 @@ def run_export(
         jsonl_path=(out_dir / "comments.jsonl") if write_jsonl else None,
         by_reviewer_dir=(out_dir / "by-reviewer") if per_reviewer_reports else None,
         agents_path=agents_path,
+        response_letter_path=letter_path,
     )
 
 

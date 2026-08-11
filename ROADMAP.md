@@ -14,15 +14,12 @@ place to start if you would like to contribute.
 - Filters: open, resolved, tracked changes, by reviewer; per-reviewer reports
 - Paste-your-own-cookie auth, so it works on every OS and browser
 - Plain-English errors and automatic retries
+- Response letter scaffold (`--response-letter`)
 
 ## Next
 
 Things I think are worth doing, roughly in order.
 
-- **Response letter scaffold** (`--response-letter`) — pre-fill a
-  point-by-point reply document with every open comment, its quote, and its
-  location, leaving blanks for your response. The rebuttal is the actual
-  deliverable for most people using this.
 - **Write out the full `.tex` source** (`--include-source`) — the export
   currently gives an AI a snippet around each comment and nothing else, so it
   cannot see the paragraph it is being asked to rewrite.

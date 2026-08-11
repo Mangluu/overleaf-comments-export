@@ -277,6 +277,103 @@ def render_markdown(
     return "\n".join(out).rstrip() + "\n"
 
 
+def render_response_letter(
+    project_title: str,
+    project_id: str,
+    threads: dict[str, Thread],
+    anchored: list[AnchoredComment],
+) -> str:
+    """A point-by-point reply document, pre-filled with every open comment.
+
+    Grouped by the person who raised each point, because that is how journals
+    ask for rebuttals. Each entry carries its `C###` id so it can be traced
+    back to the full export.
+    """
+    out: list[str] = []
+    pulled = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Only points that still need answering, keyed by whoever raised them.
+    by_reviewer: dict[str, list[AnchoredComment]] = defaultdict(list)
+    for c in anchored:
+        thread = threads.get(c.thread_id)
+        if thread is None or thread.resolved or not thread.messages:
+            continue
+        first = min(thread.messages, key=lambda m: m.timestamp_ms)
+        who = _humanize_user(first.user_name, first.user_email, first.user_id)
+        by_reviewer[who].append(c)
+
+    total = sum(len(v) for v in by_reviewer.values())
+
+    out.append(f"# Response to reviewers — {project_title}")
+    out.append("")
+    out.append(f"_Draft generated {pulled}. {total} point(s) to address._")
+    out.append("")
+    out.append(
+        "Fill in the **Response** and **Change made** lines under each point. "
+        "The `C###` ids match `comments.json`, so you can ask an AI assistant "
+        "to draft any of them by id."
+    )
+    out.append("")
+    out.append("---")
+    out.append("")
+
+    if not total:
+        out.append("No open comments. Nothing to respond to.")
+        out.append("")
+        return "\n".join(out).rstrip() + "\n"
+
+    out.append("## Summary of changes")
+    out.append("")
+    out.append("_A short paragraph on the main revisions goes here._")
+    out.append("")
+
+    for reviewer in sorted(by_reviewer):
+        items = by_reviewer[reviewer]
+        out.append(f"## {reviewer} — {len(items)} point(s)")
+        out.append("")
+        for c in items:
+            thread = threads[c.thread_id]
+            ordered = sorted(thread.messages, key=lambda m: m.timestamp_ms)
+            where = c.nearest_heading or "no enclosing section"
+            # Don't leak "<unknown-6a21dec…>" into a document someone sends to
+            # an editor; the line number alone is enough there.
+            if c.pathname.startswith("<unknown-"):
+                locus = f"line {c.line_no}"
+            else:
+                locus = f"`{c.pathname}` line {c.line_no}"
+            out.append(f"### {c.short_id} — § {where} ({locus})")
+            out.append("")
+            quote = (c.anchored_text or "").strip().replace("\n", " ")
+            if quote:
+                out.append(f"**Referring to:** “{quote}”")
+                out.append("")
+            out.append("**Comment:**")
+            out.append("")
+            for line in (ordered[0].content or "").strip().splitlines() or [""]:
+                out.append(f"> {line}")
+            out.append("")
+            if len(ordered) > 1:
+                out.append("**Discussion so far:**")
+                out.append("")
+                for msg in ordered[1:]:
+                    who = _humanize_user(msg.user_name, msg.user_email, msg.user_id)
+                    body = (msg.content or "").strip().replace("\n", " ")
+                    out.append(f"> ↳ {who}: {body}")
+                out.append("")
+            out.append("**Response:**")
+            out.append("")
+            out.append("_TODO_")
+            out.append("")
+            out.append("**Change made:**")
+            out.append("")
+            out.append("_TODO — what changed, and where._")
+            out.append("")
+            out.append("---")
+            out.append("")
+
+    return "\n".join(out).rstrip() + "\n"
+
+
 def _status_badge(thread: Thread | None, stale: bool) -> str:
     bits = []
     if thread and thread.resolved:
