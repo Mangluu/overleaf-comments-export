@@ -123,7 +123,7 @@ bundle = "com.example.overleaf_comments_export"
 version = "0.2.0"
 url = "https://github.com/Mangluu/overleaf-comments-export"
 license = "MIT license"
-author = "Shivang"
+author = "Shivang Gupta"
 author_email = "shivang@users.noreply.github.com"  # replace with your real address
 
 [tool.briefcase.app.overleaf-comments-export]
