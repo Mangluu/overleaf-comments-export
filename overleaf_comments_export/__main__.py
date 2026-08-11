@@ -144,6 +144,14 @@ def main(argv: list[str] | None = None) -> int:
         "blanks for your response.",
     )
     parser.add_argument(
+        "--stable",
+        action="store_true",
+        help="Write output that only changes when the comments change: one "
+        "comments.md instead of a dated filename, and no timestamps. Use this "
+        "when you keep the export in a git repository, so a diff shows the new "
+        "comments and nothing else.",
+    )
+    parser.add_argument(
         "--per-reviewer",
         action="store_true",
         help="Also write one Markdown per reviewer into by-reviewer/.",
@@ -212,6 +220,7 @@ def main(argv: list[str] | None = None) -> int:
             write_jsonl=args.write_jsonl,
             per_reviewer_reports=args.per_reviewer,
             response_letter=args.response_letter,
+            stable=args.stable,
             progress=lambda msg: print(msg, file=sys.stderr),
         )
     except UserFacingError as e:

@@ -15,6 +15,7 @@ place to start if you would like to contribute.
 - Paste-your-own-cookie auth, so it works on every OS and browser
 - Plain-English errors and automatic retries
 - Response letter scaffold (`--response-letter`)
+- Git friendly output that does not churn between runs (`--stable`)
 
 ## Next
 
@@ -23,8 +24,9 @@ Things I think are worth doing, roughly in order.
 - **Write out the full `.tex` source** (`--include-source`) — the export
   currently gives an AI a snippet around each comment and nothing else, so it
   cannot see the paragraph it is being asked to rewrite.
-- **Diff two exports** (`--since`) — reviews arrive in waves; show what is new
-  since the last pull so you only work on the new material.
+- **Diff two exports** (`--since`) — reviews arrive in waves. `--stable` already
+  lets git show you this. `--since` would say it in words, without needing a
+  repository.
 - **What's left checklist** — a checkbox list keyed by short ID, so you can see
   how much of the review you have worked through. **help wanted**
 - **Figure and table captions** — a comment anchored inside a `figure`

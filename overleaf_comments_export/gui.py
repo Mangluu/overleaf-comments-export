@@ -428,6 +428,7 @@ class App:
         self.response_letter_var = tk.BooleanVar(
             value=bool(self.config.get("response_letter", False))
         )
+        self.stable_var = tk.BooleanVar(value=bool(self.config.get("stable", False)))
         self.include_raw_var = tk.BooleanVar(
             value=bool(self.config.get("include_raw", False))
         )
@@ -440,6 +441,12 @@ class App:
             extras_row,
             text="Response letter draft (response-letter.md)",
             variable=self.response_letter_var,
+        ).pack(anchor="w")
+        ttk.Checkbutton(
+            extras_row,
+            text="Keep it in git (one comments.md, no timestamps, so a diff "
+            "shows only new comments)",
+            variable=self.stable_var,
         ).pack(anchor="w")
         ttk.Checkbutton(
             extras_row,
@@ -588,6 +595,7 @@ class App:
                 "write_jsonl": bool(self.write_jsonl_var.get()),
                 "per_reviewer_reports": bool(self.per_reviewer_var.get()),
                 "response_letter": bool(self.response_letter_var.get()),
+                "stable": bool(self.stable_var.get()),
                 "include_raw": bool(self.include_raw_var.get()),
             }
         )
@@ -613,6 +621,7 @@ class App:
             write_jsonl=bool(self.write_jsonl_var.get()),
             per_reviewer_reports=bool(self.per_reviewer_var.get()),
             response_letter=bool(self.response_letter_var.get()),
+            stable=bool(self.stable_var.get()),
             include_raw=bool(self.include_raw_var.get()),
         )
         self.worker = threading.Thread(

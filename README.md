@@ -61,7 +61,7 @@ Python 3.10 or newer, tested up to 3.14, on macOS, Windows, and Linux.
 
 | File | What it is |
 |---|---|
-| `comments-<date>.md` | The readable export. Grouped by file, then section, then line. Stable ids `C001`, `T001`. |
+| `comments-<date>.md` | The readable export, or `comments.md` with `--stable`. Grouped by file, then section, then line. Stable ids `C001`, `T001`. |
 | `comments.json` | The same data, structured. Threads, anchors, tracked changes, source context. |
 | `comments.jsonl` | One self-contained record per comment, for pipelines. |
 | `agents.md` | A short brief telling an AI assistant how to read the other two. |
@@ -91,9 +91,34 @@ surrounding text, so a deletion reads as `before ~~removed~~ after`.
 --reviewer "Emma"        # only threads this person touched
 --no-resolved            # only what is still open
 --render-mode detailed   # more source context around each comment
+--stable                 # output that only changes when the comments change
 ```
 
 Run `overleaf-comments-export --help` for the full list.
+
+## Keeping the comments in git
+
+By default each run writes `comments-<date>.md`, so you end up with one file per
+run. That is fine for a one-off export and useless for version control.
+
+`--stable` writes a single `comments.md` with no timestamps in it. Re-run it and
+the file does not move unless the comments actually moved.
+
+```bash
+overleaf-comments-export --project-url <link> --out ./review --stable
+git add review/comments.md
+git commit -m "reviewer comments as of today"
+```
+
+Next time you pull the comments, `git diff` shows the new ones and nothing else.
+
+```diff
+ thread_count: 41
++thread_count: 42
+
++**C042** _open_ — "the axis labels"
++- **A. Reviewer** · 2026-08-14 09:12 UTC: units are missing here
+```
 
 ## Signing in
 

@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-08-11
+
+### Added
+- `--stable` writes output that only changes when the comments change. One
+  `comments.md` rather than a new dated file every run, and no timestamps
+  inside it. Re-running with nothing new produces a byte-identical file, so the
+  export can live in a git repository and a diff shows the new comments and
+  nothing else. There is a tick box for it in the window as well.
+
+### Fixed
+- Output ordering no longer depends on the order Overleaf happened to return
+  things. Threads and orphan ids are sorted, and reviewers with the same number
+  of comments are listed by name. Two runs over the same data now produce the
+  same bytes.
+
 ### Changed
 - Rewrote the README around what the tool actually produces, with a real
   sample of the output, an honest limitations section, and links to the other
@@ -72,7 +87,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.2.0

@@ -115,8 +115,16 @@ def render_markdown(
     changes: list[TrackedChange],
     *,
     mode: RenderMode = "compact",
+    stable: bool = False,
 ) -> str:
-    pulled_at_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    """Render the export as Markdown.
+
+    `stable` omits everything that changes from one run to the next, so the
+    file can live in a git repository and only move when the comments do.
+    """
+    pulled_at_iso = (
+        None if stable else datetime.now(timezone.utc).isoformat(timespec="seconds")
+    )
 
     open_count = sum(1 for t in threads.values() if not t.resolved)
     resolved_count = sum(1 for t in threads.values() if t.resolved)
@@ -136,7 +144,8 @@ def render_markdown(
     out.append(f"tool_version: {__version__}")
     out.append(f"project_id: {project_id}")
     out.append(f'project_title: "{project_title}"')
-    out.append(f"pulled_at: {pulled_at_iso}")
+    if pulled_at_iso is not None:
+        out.append(f"pulled_at: {pulled_at_iso}")
     out.append(f"thread_count: {len(threads)}")
     out.append(f"open_count: {open_count}")
     out.append(f"resolved_count: {resolved_count}")
@@ -170,7 +179,7 @@ def render_markdown(
             f"(quoted text moved or no longer matches the live doc — best-effort relocation applied)"
         )
     if reviewer_counter:
-        top = reviewer_counter.most_common(5)
+        top = sorted(reviewer_counter.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
         out.append(
             "- **Most active reviewers:** "
             + ", ".join(f"{name} ({n})" for name, n in top)
@@ -282,6 +291,8 @@ def render_response_letter(
     project_id: str,
     threads: dict[str, Thread],
     anchored: list[AnchoredComment],
+    *,
+    stable: bool = False,
 ) -> str:
     """A point-by-point reply document, pre-filled with every open comment.
 
@@ -290,7 +301,7 @@ def render_response_letter(
     back to the full export.
     """
     out: list[str] = []
-    pulled = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    pulled = None if stable else datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Only points that still need answering, keyed by whoever raised them.
     by_reviewer: dict[str, list[AnchoredComment]] = defaultdict(list)
@@ -306,7 +317,11 @@ def render_response_letter(
 
     out.append(f"# Response to reviewers — {project_title}")
     out.append("")
-    out.append(f"_Draft generated {pulled}. {total} point(s) to address._")
+    out.append(
+        f"_{total} point(s) to address._"
+        if pulled is None
+        else f"_Draft generated {pulled}. {total} point(s) to address._"
+    )
     out.append("")
     out.append(
         "Fill in the **Response** and **Change made** lines under each point. "

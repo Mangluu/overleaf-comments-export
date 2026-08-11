@@ -342,6 +342,7 @@ def run_export(
     write_jsonl: bool = True,
     per_reviewer_reports: bool = False,
     response_letter: bool = False,
+    stable: bool = False,
     progress: ProgressCallback | None = None,
 ) -> ExportResult:
     """Programmatic entry point used by both the CLI and the GUI."""
@@ -583,9 +584,12 @@ def run_export(
         orphan_threads=orphan_threads,
         changes=changes,
         mode=mode_lit,
+        stable=stable,
     )
 
-    md_path = out_dir / f"comments-{date.today().isoformat()}.md"
+    # A dated filename makes every run a new file, so git shows additions
+    # instead of a diff. In stable mode there is one file that gets updated.
+    md_path = out_dir / ("comments.md" if stable else f"comments-{date.today().isoformat()}.md")
     md_path.write_text(markdown, encoding="utf-8")
     progress(f"Wrote {md_path.name}")
 
@@ -604,6 +608,7 @@ def run_export(
         ranges_payload=ranges_payload,
         include_raw=include_raw,
         user_map=user_map,
+        stable=stable,
     )
     json_payload["filters_applied"] = {
         "include_open": include_open,
@@ -665,6 +670,7 @@ def run_export(
                 orphan_threads=sub_orphans,
                 changes=sub_changes,
                 mode=mode_lit,
+                stable=stable,
             )
             (by_reviewer_dir / f"{slug}.md").write_text(sub_md, encoding="utf-8")
             written += 1
@@ -674,7 +680,7 @@ def run_export(
     if response_letter:
         letter_path = out_dir / "response-letter.md"
         letter_path.write_text(
-            render_response_letter(title, project_id, threads, anchored),
+            render_response_letter(title, project_id, threads, anchored, stable=stable),
             encoding="utf-8",
         )
         progress(f"Wrote {letter_path.name}")
@@ -777,6 +783,7 @@ def _build_structured_json(
     ranges_payload: Any,
     include_raw: bool = False,
     user_map: dict[str, dict[str, str]] | None = None,
+    stable: bool = False,
 ) -> dict[str, Any]:
     """Produce a clean, AI-ingestion-friendly JSON document.
 
@@ -812,7 +819,7 @@ def _build_structured_json(
             "id": project_id,
             "title": project_title,
         },
-        "pulled_at": datetime.now(timezone.utc).isoformat(),
+        **({} if stable else {"pulled_at": datetime.now(timezone.utc).isoformat()}),
         "summary": {
             "thread_count": len(threads),
             "open_count": open_count,
@@ -833,7 +840,8 @@ def _build_structured_json(
         # comments reference them via `thread_id`. This avoids duplicating
         # potentially long discussions inside every comment.
         "threads": {
-            tid: _serialize_thread(t, user_map) for tid, t in threads.items()
+            tid: _serialize_thread(threads[tid], user_map)
+            for tid in sorted(threads)
         },
         "files": files,
         "comments": [
@@ -877,7 +885,7 @@ def _build_structured_json(
             }
             for ch in changes
         ],
-        "orphan_thread_ids": [t.id for t in orphan_threads],
+        "orphan_thread_ids": sorted(t.id for t in orphan_threads),
     }
     if include_raw:
         payload["raw"] = {
