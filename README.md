@@ -1,182 +1,179 @@
 # overleaf-comments-export
 
-> **⚠️ Unofficial tool.** This is a third-party utility that talks to Overleaf's
-> undocumented internal HTTP endpoints. It is not affiliated with or endorsed
-> by Overleaf. Endpoints may change without notice. Use at your own risk and
-> in accordance with [Overleaf's Terms of Service](https://www.overleaf.com/legal).
-
-Export the comment threads and tracked changes from an Overleaf project into
-clean Markdown + structured JSON — designed so an AI assistant (Claude,
-ChatGPT, etc.) can ingest reviewer feedback and help you address it.
+Get the review comments out of an Overleaf paper, into Markdown and JSON you
+can read, keep, commit, and hand to an AI assistant.
 
 [![CI](https://github.com/Mangluu/overleaf-comments-export/actions/workflows/ci.yml/badge.svg)](https://github.com/Mangluu/overleaf-comments-export/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/overleaf-comments-export.svg)](https://pypi.org/project/overleaf-comments-export/)
+[![Downloads](https://img.shields.io/pypi/dm/overleaf-comments-export.svg)](https://pypi.org/project/overleaf-comments-export/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%20to%203.14-blue.svg)](https://www.python.org/)
 
-## Why
+Overleaf leaves comments out of both the source download and the Git sync, so
+the only way to work through them is inside the editor, one at a time. On a
+paper with ninety comments from three co-authors that stops being workable.
 
-Overleaf doesn't provide a way to export comments or tracked changes for use
-outside the editor. If you want to:
+## What the output looks like
 
-- have an AI agent draft point-by-point replies to reviewers,
-- archive reviewer discussions outside of Overleaf,
-- batch-address feedback across a large paper, or
-- split feedback by reviewer to delegate work,
+```markdown
+## Summary
 
-… you currently have to copy comments by hand. This tool automates that, given
-an Overleaf project URL and a logged-in browser session.
+- **Threads:** 2 (2 open, 0 resolved)
+- **Tracked changes:** 0
+- **Most active reviewers:** A. Reviewer (2), Co Author (1)
 
-## Install
+### § Method
+
+**Line 142** — 2 comments
+
+> …We propose **▸a novel framework◂** for measuring perceived quality across conditions.
+
+**C014** _open · 1 reply_ — "a novel framework"
+- **A. Reviewer** · 2026-02-25 06:13 UTC: Needs a citation. Which studies show this?
+  - ↳ **Co Author** · 2026-02-26 10:00 UTC: Agree, Smith 2023 would work here.
+
+**C015** _open_ — "coherent"
+- **A. Reviewer** · 2026-02-27 13:46 UTC: This word is doing a lot of work. Define it.
+```
+
+Every comment sits in its section, next to the words it was attached to, with
+its replies underneath and a stable id you can point at.
+
+## Install and run
 
 ```bash
 pip install overleaf-comments-export
-```
-
-Requires Python 3.10 or newer (tested up to 3.14). Works on macOS, Linux, and
-Windows.
-
-The graphical window needs Python's Tk toolkit, which most Linux distributions
-package separately (`sudo apt install python3-tk` on Debian/Ubuntu). The
-command line never needs it, and `--gui` tells you what to install if it is
-missing.
-
-## Quick start
-
-### CLI
-
-```bash
-overleaf-comments-export \
-    --project-url https://www.overleaf.com/project/<24-hex-id> \
-    --out ./paper-comments \
-    --browser safari
-```
-
-The first time you run it, sign in to Overleaf in your browser of choice;
-the tool reads the session cookie from there.
-
-### GUI
-
-```bash
 overleaf-comments-export --gui
 ```
 
-Opens a small Tkinter window with all options surfaced. Best for non-technical
-users.
-
-## What it produces
-
-In your output folder, by default:
-
-| File | Purpose |
-|---|---|
-| `comments-<date>.md` | Human-readable Markdown grouped by file → section → line, with stable IDs (`C001`, `C002`, …) and source-context snippets around each anchor. |
-| `comments.json` | Structured data — `summary`, top-level `threads`, `files`, `comments`, `tracked_changes`, etc. Schema described in `agents.md`. |
-| `comments.jsonl` | One self-contained JSON record per comment for streaming/pipelines. |
-| `agents.md` | A brief instruction file telling an AI agent how to consume the batch. |
-| `response-letter.md` | (Optional, `--response-letter`) A point-by-point reply document, pre-filled with every open comment grouped by who raised it, with blanks for your response. |
-| `by-reviewer/<name>.md` | (Optional, `--per-reviewer`) One Markdown per reviewer with only their threads. |
-| `comments.log` | Diagnostic log for the run. |
-
-## Filtering
+That opens a small window. Paste your project link, choose a folder, press the
+button. If you prefer the terminal:
 
 ```bash
-# Only open comments
-overleaf-comments-export --project-url … --out ./out --no-resolved
-
-# Only one reviewer's threads
-overleaf-comments-export --project-url … --out ./out --reviewer "Emma"
-
-# Compact (default) vs. detailed (multi-line code-fence) layout
-overleaf-comments-export --project-url … --out ./out --render-mode detailed
-
-# Per-reviewer sub-reports under ./out/by-reviewer/
-overleaf-comments-export --project-url … --out ./out --per-reviewer
-
-# Draft a point-by-point response letter for the open comments
-overleaf-comments-export --project-url … --out ./out --response-letter
+overleaf-comments-export \
+    --project-url https://www.overleaf.com/project/YOUR_PROJECT_ID \
+    --out ./paper-comments
 ```
 
-Full flag reference: `overleaf-comments-export --help`.
+Python 3.10 or newer, tested up to 3.14, on macOS, Windows, and Linux.
 
-## Browser authentication
+## What you get
 
-The tool reads the `overleaf_session2` cookie from your browser. Trade-offs
-by browser on macOS:
-
-| Browser | Notes |
+| File | What it is |
 |---|---|
-| Safari | Recommended. No Keychain prompt; macOS may ask once for permission to read `~/Library/Cookies/`. |
-| Firefox | No Keychain prompt; plain SQLite cookie store. |
-| Chrome / Edge / Brave | Cookies are AES-encrypted with a Keychain-stored key; **you'll get a Keychain password prompt every run.** Hidden behind an opt-in in the GUI. |
+| `comments-<date>.md` | The readable export. Grouped by file, then section, then line. Stable ids `C001`, `T001`. |
+| `comments.json` | The same data, structured. Threads, anchors, tracked changes, source context. |
+| `comments.jsonl` | One self-contained record per comment, for pipelines. |
+| `agents.md` | A short brief telling an AI assistant how to read the other two. |
+| `response-letter.md` | Optional. A point-by-point reply document with a blank slot under every open comment. |
+| `by-reviewer/<name>.md` | Optional. One file per reviewer, so you can work through them one person at a time. |
 
-On Windows, Chrome 127+ uses App-Bound Encryption that `browser-cookie3`
-can't decrypt. On Linux, snap-packaged browsers sandbox their cookie stores.
+## Working through comments with an AI
 
-**If reading the cookie from your browser fails, paste it instead** — this
-works on every OS and browser:
+This is what the export is shaped for. Hand an assistant the folder and it can
+work on any comment by id, because it already knows the quoted passage, the
+section it lives in, and what the replies said.
+
+Some things that work well.
+
+- Draft a reply to C014 that answers the reviewer and says what we changed.
+- Which comments are asking for the same thing? Group them.
+- Fill in the response letter for every comment from A. Reviewer.
+
+Tracked changes come through too, as insertions and deletions with the
+surrounding text, so a deletion reads as `before ~~removed~~ after`.
+
+## Useful options
 
 ```bash
-overleaf-comments-export --project-url <url> --out ./out --cookie "PASTE_HERE"
+--response-letter        # draft a point-by-point reply document
+--per-reviewer           # one report per reviewer
+--reviewer "Emma"        # only threads this person touched
+--no-resolved            # only what is still open
+--render-mode detailed   # more source context around each comment
 ```
 
-Or set it once: `export OVERLEAF_SESSION="PASTE_HERE"`. In the GUI, choose
-**"Paste the cookie myself"** and click **How?** for step-by-step instructions.
+Run `overleaf-comments-export --help` for the full list.
 
-To find it: open Overleaf, press F12, go to Application (or Storage) →
-Cookies → `https://www.overleaf.com`, and copy the Value of `overleaf_session2`.
-Treat it like a password; it stops working when you sign out.
+## Signing in
 
-## Troubleshooting
+The tool needs the session your browser already has. It reads that session and
+nothing else, and it only ever reads.
+
+| How | Notes |
+|---|---|
+| Safari or Firefox | Reads the cookie file directly. No password prompt. |
+| Paste it yourself | Works on every computer and browser. The window shows you how, step by step. |
+| Chrome, Edge, Brave | Works on macOS but asks for your Keychain password every run. Chrome 127 and newer on Windows cannot be read at all, so use the paste option there. |
+
+To paste it, open Overleaf, press F12, go to Application or Storage, then
+Cookies, then `https://www.overleaf.com`, and copy the value of
+`overleaf_session2`. Treat it like a password. It stops working when you sign
+out. Nothing is stored unless you tick the box that says so.
+
+```bash
+overleaf-comments-export --project-url <link> --out ./out --cookie "PASTE_HERE"
+```
+
+## When something goes wrong
 
 | What you see | What it means |
 |---|---|
-| "Could not look up www.overleaf.com" | This computer is offline, or a VPN/DNS problem. Not an Overleaf issue. |
-| "Overleaf refused the request (not signed in)" | Your session expired. Sign in again in the browser, then re-run. |
-| "Could not read Overleaf cookies from chrome" | Use the paste-the-cookie method above. |
-| "Overleaf could not find that project" | Wrong link, or this account has no access. |
+| Could not look up www.overleaf.com | This computer is offline, or a VPN is in the way. Nothing to do with your project. |
+| Overleaf refused the request | The session expired. Sign in again in your browser and re-run. |
+| Could not read Overleaf cookies | Use the paste method above. |
+| The window cannot open | Python's Tk toolkit is missing. The message tells you what to install for your system. |
 
-## Feedback, questions, and contributing
+Anything else, please [open an issue](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose).
+Never paste your session cookie into an issue.
 
-This tool is actively maintained, and feedback shapes what gets built next.
+## Related projects
 
-- **Something broke, or the output was wrong?**
-  [Open an issue.](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose)
-  You do not need to be a programmer — paste what the tool said and that is
-  plenty. If Overleaf changes something, everything here stops working at once,
-  and you may be the first person to notice.
-- **Want it to do something it doesn't?**
-  [Suggest a feature.](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose)
-  Tell me what you are trying to do, not just the feature — the real task
-  usually leads somewhere better.
-- **Just a question, or want to show what you built with it?**
-  [Discussions.](https://github.com/Mangluu/overleaf-comments-export/discussions)
-- **Want to contribute code?** See [CONTRIBUTING.md](CONTRIBUTING.md). It takes
-  about two minutes to get the tests running, and there are items marked
-  *help wanted* in [ROADMAP.md](ROADMAP.md).
+Several people hit this same wall independently. Different approaches suit
+different people, so here are the others.
 
-Never include your session cookie in an issue — it is a password for your
-Overleaf account, and nobody needs it to fix a bug.
+- [adakite/extract-overleaf-comments](https://github.com/adakite/extract-overleaf-comments)
+  works from a saved copy of the page, and can put comments in the PDF margins.
+- [salokr/overleaf-comment-exporter](https://github.com/salokr/overleaf-comment-exporter)
+  is a browser extension, so there is nothing to install on the command line.
+- [IcarusLemon/overleaf-comments-cli](https://github.com/IcarusLemon/overleaf-comments-cli)
+  is another command line exporter, driving a real browser under the hood.
 
-Maintained by [Shivang Gupta](https://github.com/Mangluu), who wrote it to deal
-with the review comments on his own papers.
+All of them exist because of
+[this three year old request](https://github.com/overleaf/overleaf/issues/1126).
+An official export would make every one of us unnecessary, which would be the
+better outcome.
 
-## What's coming next
+## Honest limitations
 
-See [ROADMAP.md](ROADMAP.md). Short version: a response-letter scaffold,
-writing out the full source so an AI can see more than a snippet, and a diff
-between two exports so you can work through review comments in waves.
+This is an unofficial tool. It uses Overleaf's internal endpoints, which are
+undocumented and can change with any release. It identifies itself honestly in
+every request, backs off when asked to, and cannot modify your project. Even
+so, it may stop working one day without warning. If that happens, please say so
+in an issue, because you may be the first to notice.
 
-Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+It is not affiliated with or endorsed by Overleaf. Use it on projects you have
+access to, in line with
+[Overleaf's terms](https://www.overleaf.com/legal).
 
-## A caution
+## Feedback and contributing
 
-This tool uses Overleaf's internal endpoints, which are undocumented and can
-change without notice. It identifies itself honestly in every request, backs
-off when asked to, and only ever reads — it cannot modify your project. Even
-so, it may stop working the day Overleaf changes something. If that happens,
-please say so in an issue.
+Feedback shapes what gets built next.
+
+- Something broke, or the output was wrong. [Open an issue.](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose)
+  You do not need to be a programmer. Paste what the tool said and that is plenty.
+- Want it to do something it does not. [Suggest a feature.](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose)
+  Describe the task, not only the feature. The real task usually leads somewhere better.
+- A question, or something you built with it. [Discussions.](https://github.com/Mangluu/overleaf-comments-export/discussions)
+- Code. See [CONTRIBUTING.md](CONTRIBUTING.md). Two minutes to get the tests
+  running, and there are items marked *help wanted* in [ROADMAP.md](ROADMAP.md).
+
+What is coming next is in [ROADMAP.md](ROADMAP.md). What already changed is in
+[CHANGELOG.md](CHANGELOG.md).
+
+Maintained by [Shivang Gupta](https://github.com/Mangluu), who wrote it to
+handle the review comments on his own papers.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

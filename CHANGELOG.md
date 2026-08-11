@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Changed
+- Rewrote the README around what the tool actually produces, with a real
+  sample of the output, an honest limitations section, and links to the other
+  Overleaf comment exporters people have built.
+- Added a release checklist to the contributing guide, so the docs move with
+  the code.
+
 ## [0.4.0] — 2026-08-11
 
 ### Added

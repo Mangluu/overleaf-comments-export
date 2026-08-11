@@ -68,6 +68,24 @@ something I would turn down. Small fixes can go straight to a PR.
 CI runs the tests on Linux, macOS, and Windows across Python 3.10 to 3.13. It
 must be green before merge.
 
+## Releasing
+
+The docs are part of the release, not an afterthought. Anything user-facing
+that ships without a line in the changelog and a mention in the README is a
+half-finished release.
+
+1. `pytest` is green.
+2. `CHANGELOG.md` has an entry under the new version, written for the person
+   who will hit the problem it fixes, not for the person who fixed it.
+3. `README.md` mentions the new option, and the sample output still matches
+   what the tool actually prints. Regenerate the sample if the format moved.
+4. `ROADMAP.md` moves the item from Next to Shipped.
+5. Bump `version` in `pyproject.toml`. Nothing else carries a version number.
+6. Commit, then `git tag vX.Y.Z && git push origin main --tags`. Pushing the
+   tag publishes to PyPI on its own.
+7. Write the GitHub release notes. Lead with what changed for users, and say
+   plainly what was broken before.
+
 ## A note on scope
 
 This tool reads. It does not write back to Overleaf — no posting replies, no
