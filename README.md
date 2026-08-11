@@ -66,6 +66,7 @@ Python 3.10 or newer, tested up to 3.14, on macOS, Windows, and Linux.
 | `comments.jsonl` | One self-contained record per comment, for pipelines. |
 | `agents.md` | A short brief telling an AI assistant how to read the other two. |
 | `response-letter.md` | Optional. A point-by-point reply document with a blank slot under every open comment. |
+| `annotated/` | Optional. Your LaTeX with the comments embedded, ready to compile. |
 | `by-reviewer/<name>.md` | Optional. One file per reviewer, so you can work through them one person at a time. |
 
 ## Working through comments with an AI
@@ -92,9 +93,35 @@ surrounding text, so a deletion reads as `before ~~removed~~ after`.
 --no-resolved            # only what is still open
 --render-mode detailed   # more source context around each comment
 --stable                 # output that only changes when the comments change
+--annotated-tex          # a copy of your source with the comments embedded
 ```
 
 Run `overleaf-comments-export --help` for the full list.
+
+## Comments inside the PDF
+
+`--annotated-tex` writes a copy of your LaTeX into `annotated/`, with each
+comment placed where it was made.
+
+```bash
+overleaf-comments-export --project-url <link> --out ./review --annotated-tex
+```
+
+```tex
+We propose a novel framework\pdfcomment[author={A. Reviewer}]{[C014] A. Reviewer:
+Needs a citation. | Reply (Co Author): Smith 2023 would work} for measuring
+quality.
+```
+
+Compile that and the PDF carries the comments, which is what people have been
+asking Overleaf for since 2023. Use `--annotate-style todonotes` to put them in
+the margin instead of making them clickable notes.
+
+Your own source is never touched. The annotated copies keep their original
+names and folder structure, so `\input` still resolves if you upload the folder.
+
+Reviewer text is escaped before it goes anywhere near the file, so a comment
+containing `50% of $x$` or a stray backslash cannot break the build.
 
 ## Keeping the comments in git
 

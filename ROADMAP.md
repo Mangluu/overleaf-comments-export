@@ -16,6 +16,7 @@ place to start if you would like to contribute.
 - Plain-English errors and automatic retries
 - Response letter scaffold (`--response-letter`)
 - Git friendly output that does not churn between runs (`--stable`)
+- Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
 
 ## Next
 

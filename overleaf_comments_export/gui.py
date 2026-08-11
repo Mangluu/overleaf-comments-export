@@ -429,6 +429,9 @@ class App:
             value=bool(self.config.get("response_letter", False))
         )
         self.stable_var = tk.BooleanVar(value=bool(self.config.get("stable", False)))
+        self.annotated_var = tk.BooleanVar(
+            value=bool(self.config.get("annotated_tex", False))
+        )
         self.include_raw_var = tk.BooleanVar(
             value=bool(self.config.get("include_raw", False))
         )
@@ -447,6 +450,11 @@ class App:
             text="Keep it in git (one comments.md, no timestamps, so a diff "
             "shows only new comments)",
             variable=self.stable_var,
+        ).pack(anchor="w")
+        ttk.Checkbutton(
+            extras_row,
+            text="Annotated LaTeX (compile it to get a PDF with the comments in it)",
+            variable=self.annotated_var,
         ).pack(anchor="w")
         ttk.Checkbutton(
             extras_row,
@@ -596,6 +604,7 @@ class App:
                 "per_reviewer_reports": bool(self.per_reviewer_var.get()),
                 "response_letter": bool(self.response_letter_var.get()),
                 "stable": bool(self.stable_var.get()),
+                "annotated_tex": bool(self.annotated_var.get()),
                 "include_raw": bool(self.include_raw_var.get()),
             }
         )
@@ -622,6 +631,7 @@ class App:
             per_reviewer_reports=bool(self.per_reviewer_var.get()),
             response_letter=bool(self.response_letter_var.get()),
             stable=bool(self.stable_var.get()),
+            annotated_tex=bool(self.annotated_var.get()),
             include_raw=bool(self.include_raw_var.get()),
         )
         self.worker = threading.Thread(
@@ -674,6 +684,8 @@ class App:
             self._append_log(f"Agents:   {result.agents_path}")
         if result.response_letter_path is not None:
             self._append_log(f"Letter:   {result.response_letter_path}")
+        if result.annotated_dir is not None:
+            self._append_log(f"Annotated LaTeX: {result.annotated_dir}")
         if result.by_reviewer_dir is not None:
             self._append_log(f"Per-reviewer: {result.by_reviewer_dir}")
 

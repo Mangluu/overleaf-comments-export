@@ -144,6 +144,20 @@ def main(argv: list[str] | None = None) -> int:
         "blanks for your response.",
     )
     parser.add_argument(
+        "--annotated-tex",
+        action="store_true",
+        help="Also write annotated/, a copy of your LaTeX source with each "
+        "comment embedded at the place it was made. Compile it to get a PDF "
+        "that carries the comments.",
+    )
+    parser.add_argument(
+        "--annotate-style",
+        choices=["pdfcomment", "todonotes"],
+        default="pdfcomment",
+        help="How comments appear in the annotated source. 'pdfcomment' makes "
+        "clickable PDF notes, 'todonotes' puts them in the margin.",
+    )
+    parser.add_argument(
         "--stable",
         action="store_true",
         help="Write output that only changes when the comments change: one "
@@ -220,6 +234,8 @@ def main(argv: list[str] | None = None) -> int:
             write_jsonl=args.write_jsonl,
             per_reviewer_reports=args.per_reviewer,
             response_letter=args.response_letter,
+            annotated_tex=args.annotated_tex,
+            annotate_style=args.annotate_style,
             stable=args.stable,
             progress=lambda msg: print(msg, file=sys.stderr),
         )

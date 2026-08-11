@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-11
+
+### Added
+- `--annotated-tex` writes a copy of your LaTeX source with each comment
+  embedded at the point it was made, so compiling it produces a PDF that
+  carries the comments. This is the original request in
+  [overleaf/overleaf#1126](https://github.com/overleaf/overleaf/issues/1126),
+  open since 2023. `--annotate-style todonotes` puts the comments in the margin
+  instead of using clickable PDF notes.
+
+  Reviewer text is escaped before it is written, so a comment containing
+  `50% of $x$`, a stray backslash, or pasted LaTeX cannot break the build.
+  Notes are never placed inside inline maths or after a `%`, and insertion runs
+  backwards through the document so earlier notes cannot move later ones.
+
 ## [0.5.0] — 2026-08-11
 
 ### Added
@@ -87,7 +102,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.3.0

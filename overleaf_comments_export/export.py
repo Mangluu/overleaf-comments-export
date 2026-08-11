@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from . import __version__
 from .anchors import build_line_starts, resolve_anchor
+from .annotate import annotate_document
 from .client import OverleafClient, UserFacingError, parse_project_id
 from .model import (
     AnchoredComment,
@@ -77,6 +78,7 @@ class ExportResult:
     by_reviewer_dir: Path | None = None
     agents_path: Path | None = None
     response_letter_path: Path | None = None
+    annotated_dir: Path | None = None
 
 
 def _build_user_map(threads_raw: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -342,6 +344,8 @@ def run_export(
     write_jsonl: bool = True,
     per_reviewer_reports: bool = False,
     response_letter: bool = False,
+    annotated_tex: bool = False,
+    annotate_style: str = "pdfcomment",
     stable: bool = False,
     progress: ProgressCallback | None = None,
 ) -> ExportResult:
@@ -413,6 +417,7 @@ def run_export(
     anchored: list[AnchoredComment] = []
     changes: list[TrackedChange] = []
     referenced_thread_ids: set[str] = set()
+    doc_texts: dict[str, DocText] = {}
 
     if ranges_payload:
         docs_with_anchors = list(_iter_doc_ranges(ranges_payload))
@@ -429,6 +434,7 @@ def run_export(
                 progress(f"  skipped {pathname}: {e}")
                 continue
             doc = _build_doc_text(doc_id, pathname, text)
+            doc_texts[doc_id] = doc
 
             for c in comments_list:
                 op = c.get("op") or {}
@@ -685,6 +691,35 @@ def run_export(
         )
         progress(f"Wrote {letter_path.name}")
 
+    annotated_dir: Path | None = None
+    if annotated_tex:
+        annotated_dir = out_dir / "annotated"
+        by_doc: dict[str, list[AnchoredComment]] = {}
+        for c in anchored:
+            by_doc.setdefault(c.doc_id, []).append(c)
+        written = 0
+        for doc_id, doc_comments in sorted(by_doc.items()):
+            doc = doc_texts.get(doc_id)
+            if doc is None:
+                continue
+            annotated, n = annotate_document(
+                doc.text, doc_comments, threads,
+                style="todonotes" if annotate_style == "todonotes" else "pdfcomment",
+            )
+            # Mirror the project layout so \input paths still resolve.
+            rel = doc.pathname
+            if rel.startswith("<unknown-"):
+                rel = f"unknown-{doc_id}.tex"
+            target = annotated_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(annotated, encoding="utf-8")
+            written += 1
+            progress(f"  annotated {rel} with {n} comment(s)")
+        progress(
+            f"Wrote {written} annotated source file(s) into annotated/ "
+            f"— compile one to get a PDF carrying the comments"
+        )
+
     agents_path = out_dir / "agents.md"
     agents_path.write_text(_build_agents_md(title, project_id, json_path.name, md_path.name), encoding="utf-8")
     progress(f"Wrote {agents_path.name}")
@@ -706,6 +741,7 @@ def run_export(
         by_reviewer_dir=(out_dir / "by-reviewer") if per_reviewer_reports else None,
         agents_path=agents_path,
         response_letter_path=letter_path,
+        annotated_dir=annotated_dir,
     )
 
 
