@@ -1,0 +1,35 @@
+name: Suggest a feature
+description: Something the tool should do, or should do differently.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: >
+        Describe the situation, not just the feature. Knowing the real task
+        usually leads to a better answer than the one either of us started with.
+      placeholder: >
+        I have four reviewers on one paper and I want to work through one
+        reviewer at a time without seeing the others.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like it to do?
+      description: Your idea for how it could work. Rough is fine.
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do today instead?
+      description: How you currently work around it, if you do.
+
+  - type: markdown
+    attributes:
+      value: |
+        There is a rough roadmap in
+        [ROADMAP.md](https://github.com/Mangluu/overleaf-comments-export/blob/main/ROADMAP.md)
+        — your request may already be on it, in which case say so and it moves up.

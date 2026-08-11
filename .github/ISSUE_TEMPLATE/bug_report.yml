@@ -1,0 +1,71 @@
+name: Something went wrong
+description: The export failed, produced the wrong thing, or the app would not start.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. You do not need to be a programmer to file
+        this — just fill in what you can and leave the rest blank.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you were trying to do, and what the tool did instead.
+      placeholder: I clicked Export Comments and it said "Could not look up www.overleaf.com".
+    validations:
+      required: true
+
+  - type: textarea
+    id: message
+    attributes:
+      label: The exact message you saw
+      description: >
+        Copy and paste it, or drag in a screenshot. If there is a `comments.log`
+        file in your output folder, its last few lines are gold.
+      render: text
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Run `overleaf-comments-export --version`, or look at the top of your exported Markdown file."
+      placeholder: "0.3.0"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+        - Other
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: How were you signing in?
+      options:
+        - Safari
+        - Firefox
+        - Chrome / Edge / Brave
+        - Pasted the cookie myself
+        - Auto-detect
+        - Not sure
+
+  - type: dropdown
+    id: how
+    attributes:
+      label: How were you running it?
+      options:
+        - The window (GUI)
+        - The command line
+        - As a Python library
+
+  - type: markdown
+    attributes:
+      value: |
+        **Please do not paste your session cookie here.** It is like a password
+        for your Overleaf account. Nobody needs it to fix a bug.

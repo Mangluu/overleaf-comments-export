@@ -4,6 +4,7 @@ import argparse
 import logging
 import os
 import sys
+import traceback
 from pathlib import Path
 
 from . import __version__
@@ -157,6 +158,19 @@ def main(argv: list[str] | None = None) -> int:
         # Expected, explainable failures: no traceback, just what to do next.
         print(f"\n{e}", file=sys.stderr)
         return 1
+    except Exception:
+        # Unexpected: show the traceback, but also tell people where to send it.
+        # The moment something breaks is the only moment we have their attention.
+        traceback.print_exc()
+        print(
+            f"\nThat looks like a bug in overleaf-comments-export {__version__}.\n"
+            "Please report it (copy the lines above) at\n"
+            "  https://github.com/Mangluu/overleaf-comments-export/issues/new/choose\n"
+            "It probably affects other people too, and it cannot be fixed if "
+            "nobody says anything.",
+            file=sys.stderr,
+        )
+        return 2
     print(f"\nDone. Open: {result.markdown_path}")
     return 0
 

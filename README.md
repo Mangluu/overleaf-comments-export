@@ -126,14 +126,46 @@ Treat it like a password; it stops working when you sign out.
 | "Could not read Overleaf cookies from chrome" | Use the paste-the-cookie method above. |
 | "Overleaf could not find that project" | Wrong link, or this account has no access. |
 
-## Status & maintenance
+## Feedback, questions, and contributing
 
-This is a personal research utility published in case it's useful to others.
-It is provided as-is, with no guaranteed maintenance, no SLA, and no roadmap.
-Pull requests are welcome; issues may or may not be acted upon.
+This tool is actively maintained, and feedback shapes what gets built next.
 
-If Overleaf changes their internal API, this tool may stop working until
-someone (you?) adapts it.
+- **Something broke, or the output was wrong?**
+  [Open an issue.](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose)
+  You do not need to be a programmer — paste what the tool said and that is
+  plenty. If Overleaf changes something, everything here stops working at once,
+  and you may be the first person to notice.
+- **Want it to do something it doesn't?**
+  [Suggest a feature.](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose)
+  Tell me what you are trying to do, not just the feature — the real task
+  usually leads somewhere better.
+- **Just a question, or want to show what you built with it?**
+  [Discussions.](https://github.com/Mangluu/overleaf-comments-export/discussions)
+- **Want to contribute code?** See [CONTRIBUTING.md](CONTRIBUTING.md). It takes
+  about two minutes to get the tests running, and there are items marked
+  *help wanted* in [ROADMAP.md](ROADMAP.md).
+
+Never include your session cookie in an issue — it is a password for your
+Overleaf account, and nobody needs it to fix a bug.
+
+Maintained by [Shivang Gupta](https://github.com/Mangluu), who wrote it to deal
+with the review comments on his own papers.
+
+## What's coming next
+
+See [ROADMAP.md](ROADMAP.md). Short version: a response-letter scaffold,
+writing out the full source so an AI can see more than a snippet, and a diff
+between two exports so you can work through review comments in waves.
+
+Changes are recorded in [CHANGELOG.md](CHANGELOG.md).
+
+## A caution
+
+This tool uses Overleaf's internal endpoints, which are undocumented and can
+change without notice. It identifies itself honestly in every request, backs
+off when asked to, and only ever reads — it cannot modify your project. Even
+so, it may stop working the day Overleaf changes something. If that happens,
+please say so in an issue.
 
 ## License
 

@@ -1,0 +1,13 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Ask a question / show what you built
+    url: https://github.com/Mangluu/overleaf-comments-export/discussions
+    about: >
+      For "how do I…" questions, workflow ideas, or sharing how you use the
+      export with an AI assistant. No need to file a bug for a question.
+  - name: Overleaf changed something and nothing works
+    url: https://github.com/Mangluu/overleaf-comments-export/issues/new?template=bug_report.yml
+    about: >
+      This tool uses Overleaf's internal endpoints, which can change without
+      notice. If everything suddenly breaks, please say so — that is the single
+      most useful report you can send.
