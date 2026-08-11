@@ -1,11 +1,12 @@
 name: Publish to PyPI
 
+# Tag push is the single trigger. Publishing on `release: published` as well
+# would fire a second, duplicate run for every release (a release always has a
+# tag), and PyPI rejects re-uploading a version that already exists.
 on:
   push:
     tags:
       - "v*.*.*"
-  release:
-    types: [published]
 
 # Uses PyPI's "Trusted Publishers" flow — no secret tokens needed once you
 # register this repo at https://pypi.org/manage/account/publishing/
@@ -35,3 +36,7 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # A re-run (manual retry, re-tag) becomes a no-op instead of a
+          # failure when the version is already on PyPI.
+          skip-existing: true
