@@ -11,6 +11,7 @@ choosing a safe place to insert.
 from __future__ import annotations
 
 import re
+import unicodedata
 from typing import Iterable, Literal
 
 from .model import AnchoredComment, Thread
@@ -41,6 +42,20 @@ _UNICODE_FOLD = {
     "–": "--", "—": "---", "…": "...", " ": " ",
     "→": "->", "↳": "->", "≥": ">=", "≤": "<=",
     "×": "x", "•": "-", "▸": "", "◂": "",
+    "≈": "~", "≠": "!=", "±": "+/-", "°": " deg", "·": ".",
+}
+
+# Reviewers discussing statistics type Greek letters, and pdflatex rejects them
+# outright. Their names read perfectly well inside a comment bubble.
+_GREEK = {
+    "\u03b1": "alpha", "\u03b2": "beta", "\u03b3": "gamma", "\u03b4": "delta",
+    "\u03b5": "epsilon", "\u03b6": "zeta", "\u03b7": "eta", "\u03b8": "theta",
+    "\u03ba": "kappa", "\u03bb": "lambda", "\u03bc": "mu", "\u00b5": "mu",
+    "\u03bd": "nu", "\u03be": "xi", "\u03c0": "pi", "\u03c1": "rho",
+    "\u03c3": "sigma", "\u03c2": "sigma", "\u03c4": "tau", "\u03c6": "phi",
+    "\u03c7": "chi", "\u03c8": "psi", "\u03c9": "omega",
+    "\u0393": "Gamma", "\u0394": "Delta", "\u0398": "Theta", "\u039b": "Lambda",
+    "\u03a3": "Sigma", "\u03a6": "Phi", "\u03a8": "Psi", "\u03a9": "Omega",
 }
 
 _PREAMBLE = {
@@ -52,10 +67,32 @@ _DOCUMENTCLASS_RE = re.compile(r"^[^%\n]*\\documentclass", re.MULTILINE)
 _BEGIN_DOC_RE = re.compile(r"^[^%\n]*\\begin\{document\}", re.MULTILINE)
 
 
-def latex_escape(text: str) -> str:
-    """Make arbitrary human text safe to drop into a .tex file."""
+def to_ascii(text: str) -> str:
+    """Reduce arbitrary text to plain ASCII.
+
+    Overleaf compiles with pdflatex by default, which rejects any character it
+    has no encoding for. A single Greek letter or a fullwidth question mark
+    typed on a Chinese keyboard is enough to stop the whole document building,
+    so nothing beyond ASCII may reach the file. Real reviewer comments contain
+    all of these.
+    """
     for bad, good in _UNICODE_FOLD.items():
         text = text.replace(bad, good)
+    for bad, good in _GREEK.items():
+        text = text.replace(bad, good)
+    # Compatibility forms and accents decompose: ？ becomes ?, é becomes e.
+    text = "".join(
+        c for c in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(c)
+    )
+    # Whatever is left has no ASCII meaning at all. Losing one character is
+    # better than losing the document.
+    return "".join(c if ord(c) < 128 else "?" for c in text)
+
+
+def latex_escape(text: str) -> str:
+    """Make arbitrary human text safe to drop into a .tex file."""
+    text = to_ascii(text)
     text = text.translate(_LATEX_SPECIALS)
     # A note is a single run of text. Blank lines inside it would start a new
     # paragraph, which TeX will not accept in this position.

@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-08-12
+
+### Fixed
+- **The annotated LaTeX did not compile on Overleaf.** Overleaf builds with
+  pdflatex, which stops on any character it has no encoding for, and reviewer
+  comments are full of them. The comments on the paper this was tested against
+  contained a Greek eta and fullwidth punctuation typed on a Chinese keyboard,
+  and either one is enough to fail the whole document.
+
+  Anything written into the file is now reduced to plain ASCII first. Greek
+  letters become their names, so eta squared reads as "eta squared". Fullwidth
+  punctuation and accents are normalised. Anything with no ASCII meaning at all
+  becomes a question mark, because losing one character is better than losing
+  the document. There is a test asserting the output is ASCII, and the
+  annotated output is now compiled during development rather than only reasoned
+  about.
+
 ## [0.8.0] — 2026-08-12
 
 ### Added
@@ -142,7 +159,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.8.1
 [0.8.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.6.0

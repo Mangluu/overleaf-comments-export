@@ -154,8 +154,11 @@ the margin instead of making them clickable notes.
 Your own source is never touched. The annotated copies keep their original
 names and folder structure, so `\input` still resolves if you upload the folder.
 
-Reviewer text is escaped before it goes anywhere near the file, so a comment
-containing `50% of $x$` or a stray backslash cannot break the build.
+Reviewer text is made safe before it goes anywhere near the file. A comment
+containing `50% of $x$`, a stray backslash, a Greek letter, or punctuation typed
+on a Chinese keyboard cannot break the build, because everything written out is
+reduced to plain ASCII first. Overleaf compiles with pdflatex, which stops the
+whole document on a single character it cannot encode.
 
 ## A reply letter to fill in
 

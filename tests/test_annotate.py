@@ -187,3 +187,49 @@ def test_package_never_lands_before_documentclass():
             out, ok = inject_preamble(text, style)
             assert ok, text
             assert out.index("\\documentclass") < out.index("\\usepackage"), out
+
+
+# ---- pdflatex rejects anything it has no encoding for ----
+
+def test_output_is_always_pure_ascii():
+    """Overleaf compiles with pdflatex, which stops the whole build on a single
+    character it cannot encode. Real reviewer comments contain plenty."""
+    from overleaf_comments_export.annotate import to_ascii
+    for s in [
+        "eta squared was .21",
+        "η squared",                 # Greek, seen in real comments
+        "really？ and，more",     # fullwidth, from a Chinese keyboard
+        "café naïve",           # accents
+        "emoji \U0001f60a here",
+        "中文评论",       # CJK
+        "p ≈ 0.05 ± 0.01",
+    ]:
+        assert to_ascii(s).isascii(), s
+        assert latex_escape(s).isascii(), s
+
+
+def test_greek_letters_become_their_names():
+    from overleaf_comments_export.annotate import to_ascii
+    assert to_ascii("η and α and Δ") == "eta and alpha and Delta"
+
+
+def test_fullwidth_punctuation_becomes_ascii():
+    from overleaf_comments_export.annotate import to_ascii
+    assert to_ascii("what？ yes， ok") == "what? yes, ok"
+
+
+def test_accents_are_stripped_rather_than_dropped():
+    from overleaf_comments_export.annotate import to_ascii
+    assert to_ascii("naïve café Zürich") == "naive cafe Zurich"
+
+
+def test_untranslatable_characters_become_a_question_mark_not_a_broken_build():
+    from overleaf_comments_export.annotate import to_ascii
+    out = to_ascii("中文")
+    assert out == "??" and out.isascii()
+
+
+def test_a_whole_annotated_document_is_ascii():
+    threads = _t(content="η² was .21？ café \U0001f60a")
+    out, _ = annotate_document("The result here", [_c("C001", 0, "The result")], threads)
+    assert out.isascii()
