@@ -21,6 +21,47 @@ from .client import UserFacingError, parse_project_id
 from .export import ExportResult, run_export
 
 
+PALETTES = {
+    "light": {
+        "bg": "#ffffff", "fg": "#1a1a1a", "hint": "#666666",
+        "field_bg": "#ffffff", "ok": "#1a7f4b", "bad": "#b3261e",
+        "tip_bg": "#ffffe0", "tip_fg": "#222222",
+    },
+    "dark": {
+        "bg": "#1c1c1c", "fg": "#e6e6e6", "hint": "#a0a0a0",
+        "field_bg": "#2b2b2b", "ok": "#5ddb9a", "bad": "#ff8a80",
+        "tip_bg": "#3a3a2a", "tip_fg": "#f0f0e0",
+    },
+}
+
+
+def detect_system_theme() -> str:
+    """"dark" or "light", following whatever this computer is set to."""
+    try:
+        if sys.platform == "darwin":
+            out = subprocess.run(
+                ["defaults", "read", "-g", "AppleInterfaceStyle"],
+                capture_output=True, text=True, timeout=3,
+            )
+            # The key only exists in dark mode; reading it fails in light mode.
+            return "dark" if "dark" in out.stdout.strip().lower() else "light"
+        if sys.platform.startswith("win"):
+            import winreg  # type: ignore
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            )
+            light, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            return "light" if light else "dark"
+        out = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+            capture_output=True, text=True, timeout=3,
+        )
+        return "dark" if "dark" in out.stdout.lower() else "light"
+    except Exception:
+        return "light"
+
+
 def _config_path() -> Path:
     """Per-user config location, cross-platform."""
     try:
@@ -150,9 +191,10 @@ class Tooltip:
     Also shows on keyboard focus, so it is not mouse-only.
     """
 
-    def __init__(self, widget: tk.Widget, text: str) -> None:
+    def __init__(self, widget: tk.Widget, text: str, app: "App | None" = None) -> None:
         self.widget = widget
         self.text = text
+        self.app = app
         self.tip: tk.Toplevel | None = None
         for event, handler in (
             ("<Enter>", self._show), ("<FocusIn>", self._show),
@@ -172,10 +214,11 @@ class Tooltip:
         self.tip = tk.Toplevel(self.widget)
         self.tip.wm_overrideredirect(True)
         self.tip.wm_geometry(f"+{x}+{y}")
+        palette = self.app.palette if self.app else PALETTES["light"]
         tk.Label(
             self.tip, text=self.text, justify="left", wraplength=330,
-            background="#ffffe0", foreground="#222", relief="solid",
-            borderwidth=1, padx=8, pady=5,
+            background=palette["tip_bg"], foreground=palette["tip_fg"],
+            relief="solid", borderwidth=1, padx=8, pady=5,
         ).pack()
 
     def _hide(self, _event=None) -> None:
@@ -198,6 +241,7 @@ class App:
         self.queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.worker: threading.Thread | None = None
         self.last_result: ExportResult | None = None
+        self.theme_choice = tk.StringVar(value=self.config.get("theme", "system"))
 
         self._apply_theme()
         self._build()
@@ -211,9 +255,16 @@ class App:
     # ---------------- appearance ----------------
 
     def _apply_theme(self) -> None:
+        """Set the look. 'system' follows whatever this computer is set to."""
+        choice = self.theme_choice.get() if hasattr(self, "theme_choice") else \
+            self.config.get("theme", "system")
+        mode = detect_system_theme() if choice == "system" else choice
+        self.theme_mode = mode
+        self.palette = PALETTES[mode]
+
         try:
             import sv_ttk  # type: ignore
-            sv_ttk.set_theme("light")
+            sv_ttk.set_theme(mode)
         except Exception:
             try:
                 style = ttk.Style()
@@ -223,19 +274,58 @@ class App:
                         break
             except Exception:
                 pass
-        base = tkfont.nametofont("TkDefaultFont")
-        size = base.cget("size") or 12
-        self.font_title = base.copy()
-        self.font_title.configure(size=size + 4, weight="bold")
-        self.font_step = base.copy()
-        self.font_step.configure(weight="bold")
-        self.font_small = base.copy()
-        self.font_small.configure(size=max(9, abs(size) - 1))
-        self.font_status = base.copy()
-        self.font_status.configure(size=size + 1)
+
+        if not hasattr(self, "font_title"):
+            base = tkfont.nametofont("TkDefaultFont")
+            size = base.cget("size") or 12
+            self.font_title = base.copy()
+            self.font_title.configure(size=size + 4, weight="bold")
+            self.font_small = base.copy()
+            self.font_small.configure(size=max(9, abs(size) - 1))
+            self.font_status = base.copy()
+            self.font_status.configure(size=size + 1)
+
+        # Hint text is one shared style, so a theme change repaints all of it
+        # at once instead of chasing every label.
+        style = ttk.Style()
+        style.configure("Hint.TLabel", foreground=self.palette["hint"])
+        style.configure("Ok.TLabel", foreground=self.palette["ok"])
+        style.configure("Bad.TLabel", foreground=self.palette["bad"])
+
+        # Classic tk widgets are not themed by ttk, so they need doing by hand.
+        for widget, opts in (
+            (getattr(self, "canvas", None),
+             {"background": self.palette["bg"]}),
+            (getattr(self, "log", None),
+             {"background": self.palette["field_bg"],
+              "foreground": self.palette["fg"],
+              "insertbackground": self.palette["fg"]}),
+        ):
+            if widget is not None:
+                try:
+                    widget.configure(**opts)
+                except tk.TclError:
+                    pass
+        if hasattr(self, "root"):
+            try:
+                self.root.configure(background=self.palette["bg"])
+            except tk.TclError:
+                pass
+
+    def _on_theme_pick(self, _event=None) -> None:
+        self.theme_choice.set(
+            {"Match my computer": "system", "Light": "light", "Dark": "dark"}
+            .get(self.theme_box.get(), "system"))
+        self._on_theme_change()
+
+    def _on_theme_change(self) -> None:
+        self._apply_theme()
+        # Repaint the bits that carry a colour of their own.
+        if hasattr(self, "url_status"):
+            self._validate_url()
 
     def _hint(self, parent, text, row, col=1, span=2):
-        lbl = ttk.Label(parent, text=text, foreground="#666", font=self.font_small,
+        lbl = ttk.Label(parent, text=text, style="Hint.TLabel", font=self.font_small,
                         wraplength=540, justify="left")
         lbl.grid(row=row, column=col, columnspan=span, sticky="w", pady=(0, 6))
         return lbl
@@ -246,7 +336,9 @@ class App:
         # A scrollable body, so the window still works on a small screen.
         container = ttk.Frame(self.root)
         container.pack(fill="both", expand=True)
-        canvas = tk.Canvas(container, highlightthickness=0)
+        canvas = tk.Canvas(container, highlightthickness=0,
+                           background=self.palette["bg"])
+        self.canvas = canvas
         scroll = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
         outer = ttk.Frame(canvas, padding=16)
         outer.bind("<Configure>",
@@ -262,14 +354,29 @@ class App:
         )
         outer.columnconfigure(0, weight=1)
 
-        ttk.Label(outer, text="Overleaf Comments Export",
+        header = ttk.Frame(outer)
+        header.grid(row=0, column=0, sticky="ew")
+        header.columnconfigure(0, weight=1)
+        ttk.Label(header, text="Overleaf Comments Export",
                   font=self.font_title).grid(row=0, column=0, sticky="w")
+
+        appearance = ttk.Frame(header)
+        appearance.grid(row=0, column=1, sticky="e")
+        ttk.Label(appearance, text="Appearance:", style="Hint.TLabel",
+                  font=self.font_small).pack(side="left", padx=(0, 6))
+        self.theme_box = ttk.Combobox(
+            appearance, state="readonly", width=13,
+            values=["Match my computer", "Light", "Dark"])
+        self.theme_box.set({"system": "Match my computer", "light": "Light",
+                            "dark": "Dark"}[self.theme_choice.get()])
+        self.theme_box.pack(side="left")
+        self.theme_box.bind("<<ComboboxSelected>>", self._on_theme_pick)
         ttk.Label(
             outer,
             text="Pulls the review comments out of your paper and writes them "
                  "somewhere you can read them. Everything stays on this "
                  "computer.",
-            foreground="#555", font=self.font_small, wraplength=680,
+            style="Hint.TLabel", font=self.font_small, wraplength=680,
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(2, 14))
 
@@ -301,7 +408,8 @@ class App:
         self.url_var.trace_add("write", lambda *_: self._validate_url())
         self.url_entry = ttk.Entry(box, textvariable=self.url_var)
         self.url_entry.grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
-        self.url_status = ttk.Label(box, text="", font=self.font_small)
+        self.url_status = ttk.Label(box, text="", font=self.font_small,
+                                    style="Hint.TLabel")
         self.url_status.grid(row=1, column=1, columnspan=2, sticky="w")
         self._hint(box, "Open the paper in Overleaf and copy the address from "
                         "the top of your browser.", row=2)
@@ -319,7 +427,7 @@ class App:
             variable=self.self_hosted_var, command=self._toggle_self_hosted)
         cb.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
         Tooltip(cb, "Tick this if you do not use overleaf.com, for example an "
-                    "Overleaf your department installed itself.")
+                    "Overleaf your department installed itself.", self)
 
         self.base_label = ttk.Label(box, text="Its address:")
         self.base_var = tk.StringVar(
@@ -328,7 +436,7 @@ class App:
         self.base_note = ttk.Label(
             box, text="For example  https://overleaf.my-university.edu  — comments "
                      "work, but tracked changes need Overleaf Server Pro.",
-            foreground="#666", font=self.font_small, wraplength=520, justify="left")
+            style="Hint.TLabel", font=self.font_small, wraplength=520, justify="left")
         self.base_label.grid(row=6, column=0, sticky="w", pady=4)
         self.base_entry.grid(row=6, column=1, columnspan=2, sticky="ew", pady=4)
         self.base_note.grid(row=7, column=1, columnspan=2, sticky="w")
@@ -352,9 +460,9 @@ class App:
             self.url_status.configure(
                 text="This does not look like a project link yet. It should "
                      "contain /project/ followed by a long code.",
-                foreground="#a33")
+                style="Bad.TLabel")
         else:
-            self.url_status.configure(text="Looks right.", foreground="#2a7")
+            self.url_status.configure(text="Looks right.", style="Ok.TLabel")
 
     # ---- 2. signing in ----
 
@@ -372,7 +480,7 @@ class App:
         ttk.Button(box, text="What is this?", command=self._show_privacy_info).grid(
             row=0, column=2, sticky="w", padx=8)
 
-        self.browser_note = ttk.Label(box, text="", foreground="#666",
+        self.browser_note = ttk.Label(box, text="", style="Hint.TLabel",
                                       font=self.font_small, wraplength=540,
                                       justify="left")
         self.browser_note.grid(row=1, column=1, columnspan=2, sticky="w", pady=(0, 6))
@@ -477,9 +585,11 @@ class App:
             (self.per_reviewer_var, "A separate file per person",
              "One file for each person who commented, so you can work through "
              "them one at a time."),
-            (self.annotated_var, "A copy of the paper with comments in it",
-             "Writes your LaTeX with each comment placed where it was made. "
-             "Compile it and the PDF carries the comments."),
+            (self.annotated_var, "Comments inside the PDF",
+             "Writes a copy of your LaTeX with every comment placed where it "
+             "was made, into a folder called annotated. Compile that (upload "
+             "it to Overleaf, or build it on your computer) and the PDF you "
+             "get carries the comments. Your own files are never touched."),
             (self.stable_var, "Keep it tidy for version control",
              "Writes one file that only changes when the comments change, so "
              "it can live in a git repository without noise."),
@@ -493,7 +603,7 @@ class App:
         for i, (var, label, tip) in enumerate(rows):
             cb = ttk.Checkbutton(box, text=label, variable=var)
             cb.grid(row=i // 2, column=i % 2, sticky="w", pady=2, padx=(0, 12))
-            Tooltip(cb, tip)
+            Tooltip(cb, tip, self)
 
         ttk.Label(box, text="Only these people (optional):").grid(
             row=len(rows) // 2 + 1, column=0, sticky="w", pady=(10, 2))
@@ -501,7 +611,7 @@ class App:
         ent = ttk.Entry(box, textvariable=self.reviewer_filter_var)
         ent.grid(row=len(rows) // 2 + 1, column=1, sticky="ew", pady=(10, 2))
         Tooltip(ent, "Type part of a name or email to keep only their comments. "
-                     "Separate several with commas. Leave empty for everybody.")
+                     "Separate several with commas. Leave empty for everybody.", self)
 
     # ---- run ----
 
@@ -539,13 +649,16 @@ class App:
         self.details = ttk.Frame(parent)
         self.details.columnconfigure(0, weight=1)
         self.log = tk.Text(self.details, height=12, wrap="word", state="disabled",
-                           font=self.font_small)
+                           font=self.font_small,
+                           background=self.palette["field_bg"],
+                           foreground=self.palette["fg"],
+                           insertbackground=self.palette["fg"])
         self.log.grid(row=0, column=0, sticky="nsew")
         sb = ttk.Scrollbar(self.details, command=self.log.yview)
         sb.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=sb.set)
         ttk.Label(self.details, text=f"Settings file: {CONFIG_PATH}",
-                  foreground="#888", font=self.font_small).grid(
+                  style="Hint.TLabel", font=self.font_small).grid(
             row=1, column=0, sticky="w", pady=(4, 0))
         self.details.pack(fill="both", expand=True, pady=(4, 0))
         self.details.pack_forget()
@@ -565,7 +678,10 @@ class App:
         win.transient(self.root)
         frame = ttk.Frame(win, padding=12)
         frame.pack(fill="both", expand=True)
-        txt = tk.Text(frame, wrap="word")
+        txt = tk.Text(frame, wrap="word",
+                      background=self.palette["field_bg"],
+                      foreground=self.palette["fg"],
+                      insertbackground=self.palette["fg"])
         txt.insert("1.0", body + extra)
         txt.configure(state="disabled")
         txt.pack(fill="both", expand=True, side="left")
@@ -597,8 +713,9 @@ class App:
         self.log.see("end")
         self.log.configure(state="disabled")
 
-    def _set_status(self, text: str, colour: str = "") -> None:
-        self.status.configure(text=text, foreground=colour or "")
+    def _set_status(self, text: str, kind: str = "") -> None:
+        style = {"ok": "Ok.TLabel", "bad": "Bad.TLabel"}.get(kind, "TLabel")
+        self.status.configure(text=text, style=style)
 
     def _on_return(self, _event=None):
         if str(self.run_btn["state"]) != "disabled":
@@ -638,6 +755,7 @@ class App:
 
         reviewer_text = self.reviewer_filter_var.get().strip()
         _save_config({
+            "theme": self.theme_choice.get(),
             "browser": self.browser_var.get(),
             "show_advanced_browsers": bool(self.show_advanced_var.get()),
             "cookie_value": cookie_value if self.remember_cookie_var.get() else "",
@@ -725,7 +843,7 @@ class App:
             bits.append(f"{result.open_count} still open")
         if result.tracked_change_count:
             bits.append(f"{result.tracked_change_count} tracked change(s)")
-        self._set_status("Done. Found " + ", ".join(bits) + ".", "#2a7")
+        self._set_status("Done. Found " + ", ".join(bits) + ".", "ok")
 
         self._append_log(f"Comments: {result.markdown_path}")
         for label, path in (
@@ -736,6 +854,11 @@ class App:
         ):
             if path is not None:
                 self._append_log(f"{label}: {path}")
+        if result.annotated_dir is not None:
+            self._append_log(
+                "To get a PDF with the comments in it: upload the annotated "
+                "folder to Overleaf and compile it there, or compile it on "
+                "this computer if you have LaTeX installed.")
         if result.stale_anchor_count:
             self._append_log(
                 f"{result.stale_anchor_count} comment(s) point at text that has "
@@ -745,11 +868,11 @@ class App:
         self.progress.stop()
         self.run_btn.configure(state="normal")
         if isinstance(err, UserFacingError):
-            self._set_status("That did not work. See the message.", "#a33")
+            self._set_status("That did not work. See the message.", "bad")
             self._append_log(str(err))
             messagebox.showwarning("It could not finish", str(err))
             return
-        self._set_status("Something unexpected went wrong.", "#a33")
+        self._set_status("Something unexpected went wrong.", "bad")
         self._append_log(f"ERROR: {err}")
         self._append_log(tb)
         self.details_var.set(True)

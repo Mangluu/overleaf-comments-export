@@ -18,7 +18,7 @@ place to start if you would like to contribute.
 - Git friendly output that does not churn between runs (`--stable`)
 - Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
 - Downloadable apps for macOS, Windows and Linux, so Python is not needed
-- A window written for people who do not use a terminal
+- A window written for people who do not use a terminal, with dark mode
 
 ## Next
 

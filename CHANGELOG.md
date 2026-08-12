@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-08-12
+
+### Added
+- **Dark mode.** The window follows whether the computer is set to light or
+  dark, on macOS, Windows and Linux. An Appearance picker in the top right
+  overrides it if you would rather fix it one way, and the choice is
+  remembered.
+
+### Fixed
+- **The option that puts comments in the PDF was impossible to find.** It was
+  labelled "A copy of the paper with comments in it", and the word PDF only
+  appeared in the hover text, so anyone scanning the list for "PDF" concluded
+  the feature did not exist. It is now called "Comments inside the PDF", and
+  after the export the window says what to do with the folder it wrote.
+
 ## [0.7.0] — 2026-08-11
 
 ### Added
@@ -127,7 +142,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.5.0

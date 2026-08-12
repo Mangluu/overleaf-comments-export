@@ -109,6 +109,11 @@ surrounding text, so a deletion reads as `before ~~removed~~ after`.
 
 Run `overleaf-comments-export --help` for the full list.
 
+## Appearance
+
+The window follows whether your computer is set to light or dark. There is an
+Appearance picker in the top right if you would rather fix it one way.
+
 ## Comments inside the PDF
 
 `--annotated-tex` writes a copy of your LaTeX into `annotated/`, with each
