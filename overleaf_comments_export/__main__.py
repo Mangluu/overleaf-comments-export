@@ -152,10 +152,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--annotate-style",
-        choices=["pdfcomment", "todonotes"],
-        default="pdfcomment",
-        help="How comments appear in the annotated source. 'pdfcomment' makes "
-        "clickable PDF notes, 'todonotes' puts them in the margin.",
+        choices=["highlight", "pdfcomment", "todonotes"],
+        default="highlight",
+        help="How comments appear in the annotated source. 'highlight' marks "
+        "the commented words themselves, coloured by who wrote the comment, "
+        "with the comment on hover. 'pdfcomment' puts a pin at the spot. "
+        "'todonotes' puts a note in the margin.",
     )
     parser.add_argument(
         "--stable",

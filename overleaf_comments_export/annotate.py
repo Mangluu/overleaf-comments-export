@@ -16,7 +16,7 @@ from typing import Iterable, Literal
 
 from .model import AnchoredComment, Thread
 
-AnnotateStyle = Literal["pdfcomment", "todonotes"]
+AnnotateStyle = Literal["highlight", "pdfcomment", "todonotes"]
 
 # Characters that mean something to TeX and have to be neutralised. This is one
 # translation table applied in a single pass on purpose: replacing them one
@@ -59,6 +59,7 @@ _GREEK = {
 }
 
 _PREAMBLE = {
+    "highlight": "\\usepackage{xcolor}\n\\usepackage{pdfcomment}",
     "pdfcomment": "\\usepackage{pdfcomment}",
     "todonotes": "\\usepackage[textsize=footnotesize,color=yellow!40]{todonotes}",
 }
@@ -175,14 +176,44 @@ def _commented_out(text: str, pos: int) -> bool:
     return False
 
 
+def _body_start(text: str) -> int:
+    """The first position that is inside the document rather than the preamble.
+
+    Anything written above \\begin{document} is not typeset, and worse, may land
+    in the middle of a package name.
+    """
+    m = _BEGIN_DOC_RE.search(text)
+    if not m:
+        return 0
+    line_end = text.find("\n", m.end())
+    return len(text) if line_end == -1 else line_end + 1
+
+
+def _escape_control_word(text: str, pos: int) -> int:
+    """Move out of the middle of a command such as \\usepackage.
+
+    Splitting a control word produces two undefined commands and stops the
+    build, which is exactly what happened before this existed.
+    """
+    i = pos
+    while i > 0 and text[i - 1].isalpha():
+        i -= 1
+    if i > 0 and text[i - 1] == "\\":
+        j = pos
+        while j < len(text) and text[j].isalpha():
+            j += 1
+        return j
+    return pos
+
+
 def safe_insertion_point(text: str, offset: int, anchored_text: str) -> int:
     """Where to put the note so the file still compiles.
 
     Prefers just after the phrase the comment was attached to. Steps out of
-    inline math, and off the end of a commented-out line, because a note in
-    either place breaks the build or vanishes.
+    inline math, out of the middle of a command, off the end of a commented-out
+    line, and never lands in the preamble.
     """
-    pos = max(0, min(offset, len(text)))
+    pos = max(_body_start(text), min(offset, len(text)))
     if anchored_text and text[pos : pos + len(anchored_text)] == anchored_text:
         pos += len(anchored_text)
     if _in_math(text, pos):
@@ -190,7 +221,8 @@ def safe_insertion_point(text: str, offset: int, anchored_text: str) -> int:
     if _commented_out(text, pos):
         _, end = _line_bounds(text, pos)
         pos = end
-    return pos
+    pos = _escape_control_word(text, pos)
+    return max(_body_start(text), pos)
 
 
 def inject_preamble(text: str, style: AnnotateStyle) -> tuple[str, bool]:
@@ -211,18 +243,58 @@ def inject_preamble(text: str, style: AnnotateStyle) -> tuple[str, bool]:
     return text[:at] + package + "\n" + text[at:], True
 
 
+def _insert_after_begin_document(text: str, block: str) -> str:
+    """Put a block just inside the document, after \\maketitle if there is one."""
+    m = re.search(r"\\maketitle\s*", text)
+    if m:
+        return text[: m.end()] + "\n" + block + text[m.end():]
+    m = _BEGIN_DOC_RE.search(text)
+    if not m:
+        return text
+    line_end = text.find("\n", m.end())
+    at = len(text) if line_end == -1 else line_end + 1
+    return text[:at] + block + text[at:]
+
+
+def _insert_before_end_document(text: str, block: str) -> str:
+    at = text.rfind("\\end{document}")
+    return text if at == -1 else text[:at] + block + text[at:]
+
+
 def annotate_document(
     text: str,
     comments: Iterable[AnchoredComment],
     threads: dict[str, Thread],
     *,
-    style: AnnotateStyle = "pdfcomment",
+    style: AnnotateStyle = "highlight",
 ) -> tuple[str, int]:
     """Return the source with a note at each comment, and how many were placed.
 
     Insertions run from the end of the document backwards so that each one
     cannot move the offsets of the ones still to come.
     """
+    comments = list(comments)
+
+    if style == "highlight":
+        from .highlight import (
+            apply_highlights, colour_definitions, assign_colours, legend,
+            summary, _author_of,
+        )
+        out, placements = apply_highlights(text, comments, threads)
+        colours = assign_colours(comments, threads)
+        names = {}
+        for c in comments:
+            key, who = _author_of(c, threads)
+            names[key] = who
+        out, injected = inject_preamble(out, style)
+        if injected:
+            # Colours belong with the package, before the document starts.
+            at = out.index("\\usepackage{pdfcomment}") + len("\\usepackage{pdfcomment}")
+            out = out[:at] + "\n" + colour_definitions(colours) + out[at:]
+            out = _insert_after_begin_document(out, legend(colours, names))
+            out = _insert_before_end_document(out, summary(placements, threads))
+        return out, sum(1 for p in placements if p.highlighted or True)
+
     placed: list[tuple[int, str]] = []
     for c in comments:
         thread = threads.get(c.thread_id)

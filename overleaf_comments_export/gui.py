@@ -586,10 +586,12 @@ class App:
              "One file for each person who commented, so you can work through "
              "them one at a time."),
             (self.annotated_var, "Comments inside the PDF",
-             "Writes a copy of your LaTeX with every comment placed where it "
-             "was made, into a folder called annotated. Compile that (upload "
-             "it to Overleaf, or build it on your computer) and the PDF you "
-             "get carries the comments. Your own files are never touched."),
+             "Writes a copy of your LaTeX into a folder called annotated, with "
+             "the commented words highlighted in the colour of whoever "
+             "commented on them. Compile it, upload it to Overleaf or build it "
+             "on your computer, and hovering a highlight shows the comment. "
+             "Every comment is also listed on a page at the end. Your own "
+             "files are never touched."),
             (self.stable_var, "Keep it tidy for version control",
              "Writes one file that only changes when the comments change, so "
              "it can live in a git repository without noise."),

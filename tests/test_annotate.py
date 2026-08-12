@@ -149,7 +149,7 @@ def test_resolved_threads_are_marked():
     out, _ = annotate_document(
         "alpha", [_c("C001", 0, "alpha")], _t(resolved=True)
     )
-    assert "resolved" in out
+    assert "resolved" in out.lower()
 
 
 def test_todonotes_style_uses_todo_macro():
@@ -159,7 +159,8 @@ def test_todonotes_style_uses_todo_macro():
 
 
 def test_pdfcomment_style_carries_the_author():
-    out, _ = annotate_document("alpha", [_c("C001", 0, "alpha")], _t(who="Emma"))
+    out, _ = annotate_document("alpha", [_c("C001", 0, "alpha")], _t(who="Emma"),
+                               style="pdfcomment")
     assert "\\pdfcomment[author={Emma}]" in out
 
 
@@ -167,7 +168,8 @@ def test_a_comment_whose_text_is_hostile_still_produces_valid_tex():
     """The realistic worst case: a reviewer pastes LaTeX into a comment."""
     text = "The result"
     threads = _t(content=r"use \frac{1}{2} & 50% of $x$ #now")
-    out, _ = annotate_document(text, [_c("C001", 0, "The result")], threads)
+    out, _ = annotate_document(text, [_c("C001", 0, "The result")], threads,
+                               style="pdfcomment")
     body = out[out.index("\\pdfcomment") :]
     # Braces must balance, or the document will not compile.
     assert body.count("{") == body.count("}")

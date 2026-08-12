@@ -134,22 +134,37 @@ Appearance picker in the top right if you would rather fix it one way.
 
 ## Comments inside the PDF
 
-`--annotated-tex` writes a copy of your LaTeX into `annotated/`, with each
-comment placed where it was made.
+`--annotated-tex` writes a copy of your LaTeX into `annotated/`, with the
+commented words themselves highlighted in the colour of whoever commented on
+them. Hover a highlight in the PDF and the comment appears.
 
 ```bash
 overleaf-comments-export --project-url <link> --out ./review --annotated-tex
 ```
 
 ```tex
-We propose a novel framework\pdfcomment[author={A. Reviewer}]{[C014] A. Reviewer:
-Needs a citation. | Reply (Co Author): Smith 2023 would work} for measuring
-quality.
+We propose \pdfmarkupcomment[markup=Highlight,color=ocehlA,author={A. Reviewer}]%
+{a novel framework}{[C014] A. Reviewer: Needs a citation. | Reply: Smith 2023 would work}
+for measuring quality.
 ```
 
 Compile that and the PDF carries the comments, which is what people have been
-asking Overleaf for since 2023. Use `--annotate-style todonotes` to put them in
-the margin instead of making them clickable notes.
+asking Overleaf for since 2023.
+
+A key at the top of the document says whose colour is whose. Where more than
+one comment covers the same words, that stretch gets its own colour and a
+single note listing all of them. Where the same person has commented twice on
+overlapping words, their own colour darkens rather than changing, so it does
+not read as somebody else. Resolved comments are struck through in grey.
+
+Some spans cannot be highlighted, because the package that draws the markup
+rebuilds the text and fails on maths, on LaTeX commands, and across paragraph
+breaks. Those become a pin at the nearest safe point instead. Every comment,
+highlighted or not, is listed on a page at the end, which is also what you get
+when the PDF is printed, since readers do not print annotations.
+
+`--annotate-style pdfcomment` goes back to a pin at each spot, and
+`--annotate-style todonotes` puts notes in the margin.
 
 Your own source is never touched. The annotated copies keep their original
 names and folder structure, so `\input` still resolves if you upload the folder.

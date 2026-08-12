@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overleaf-comments-export"
-version = "0.8.1"
+version = "0.9.0"
 description = "Export comment threads and tracked changes from an Overleaf project to Markdown + JSON, optimized for AI-agent consumption."
 readme = "README.md"
 license = { text = "MIT" }

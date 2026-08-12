@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-08-12
+
+### Changed
+- **The commented words are now highlighted, in the colour of whoever wrote the
+  comment, and the comment appears when you hover the highlight.** The previous
+  behaviour, a pin at a point or a note in the margin, never showed you which
+  words were being talked about. Both are still available with
+  `--annotate-style pdfcomment` and `--annotate-style todonotes`.
+
+  A key at the top says whose colour is whose. When more than one comment
+  covers the same words, the shared part gets its own colour and one popup
+  listing all of them. When the same person comments twice on overlapping
+  words, their own colour darkens rather than switching, so it does not read as
+  a second reviewer. Resolved comments are struck through in grey. Every
+  comment is also listed on a page at the end, which is what you get when the
+  PDF is printed, since readers do not print annotations.
+
+### Fixed
+- A comment whose text had changed was pinned at its recorded position, which
+  landed one inside `\usepackage[utf8]{inputenc}` and split the command in
+  half. Nothing is ever written into the preamble now, nothing is written into
+  the middle of a command, and a comment whose text has gone is listed rather
+  than guessed at.
+- Fallback pins were positioned against the original text but inserted after
+  the highlights had already shifted it, so they landed inside other comments'
+  popups and vanished. All changes to the file are now made in one pass from
+  the end backwards.
+
 ## [0.8.1] — 2026-08-12
 
 ### Fixed
@@ -159,7 +187,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.9.0
 [0.8.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.8.1
 [0.8.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.7.0
