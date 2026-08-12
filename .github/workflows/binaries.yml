@@ -6,6 +6,10 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the apps to, for example v0.8.0"
+        required: false
 
 # Uploading the built apps to the release needs write access; the default token
 # is read-only.
@@ -98,10 +102,11 @@ jobs:
           PY
 
       - name: Attach it to the release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.tag != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "${{ matrix.asset }}" --clobber
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" "${{ matrix.asset }}" --clobber
 
       - name: Keep it as an artifact too
         uses: actions/upload-artifact@v4
