@@ -43,7 +43,13 @@ its replies underneath and a stable id you can point at.
 
 **If you do not write code**, download the app for your computer from the
 [latest release](https://github.com/Mangluu/overleaf-comments-export/releases/latest),
-unzip it, and open it. There is nothing else to install.
+unzip it, and open it. There is nothing else to install, and no Python needed.
+
+| Your computer | Download |
+|---|---|
+| Mac | `OverleafCommentsExport-macOS.zip` |
+| Windows | `OverleafCommentsExport-Windows.zip` |
+| Linux | `OverleafCommentsExport-Linux.zip`, then `chmod +x "Overleaf Comments Export"` |
 
 The first time you open it, macOS or Windows will warn you about an app it has
 not checked. That is because signing an app costs money every year, not because
@@ -58,7 +64,11 @@ overleaf-comments-export --gui
 ```
 
 That opens the same window. Paste your project link, choose a folder, press the
-button. If you prefer the terminal:
+button.
+
+The window is not a reduced version of the tool. Everything below is in it,
+including the reply letter, the comments-in-the-PDF option, and the tidy output
+for version control. If you prefer the terminal:
 
 ```bash
 overleaf-comments-export \
@@ -98,13 +108,21 @@ surrounding text, so a deletion reads as `before ~~removed~~ after`.
 ## Useful options
 
 ```bash
---response-letter        # draft a point-by-point reply document
---per-reviewer           # one report per reviewer
---reviewer "Emma"        # only threads this person touched
---no-resolved            # only what is still open
---render-mode detailed   # more source context around each comment
---stable                 # output that only changes when the comments change
---annotated-tex          # a copy of your source with the comments embedded
+--response-letter          # draft a point-by-point reply document
+--annotated-tex            # a copy of your source with the comments embedded
+--annotate-style todonotes # put those comments in the margin instead
+--per-reviewer             # one report per reviewer
+--reviewer "Emma"          # only threads this person touched
+--no-resolved              # only what is still open
+--no-open                  # only what is already resolved
+--no-changes               # skip tracked changes
+--render-mode detailed     # more source context around each comment
+--stable                   # output that only changes when the comments change
+--cookie "PASTE"           # sign in with a pasted cookie
+--base-url https://...     # a self-hosted Overleaf
+--no-jsonl                 # skip comments.jsonl
+--include-raw              # keep the untouched Overleaf data in comments.json
+--version                  # which version this is
 ```
 
 Run `overleaf-comments-export --help` for the full list.
@@ -138,6 +156,30 @@ names and folder structure, so `\input` still resolves if you upload the folder.
 
 Reviewer text is escaped before it goes anywhere near the file, so a comment
 containing `50% of $x$` or a stray backslash cannot break the build.
+
+## A reply letter to fill in
+
+`--response-letter` writes the document you actually have to hand in. Every
+open comment, grouped by whoever raised it, with the passage it refers to,
+where it sits, the discussion so far, and blank lines for your answer.
+
+```markdown
+### C102 — § Method > Measures (line 192)
+
+**Referring to:** "drawing selected quotes to point at possible sources of mismatch"
+
+**Comment:**
+> more than just mismatch i would say
+
+**Response:**
+_TODO_
+
+**Change made:**
+_TODO — what changed, and where._
+```
+
+The ids match `comments.json`, so you can ask an assistant to draft any point by
+id and it already knows the quote and the location.
 
 ## Keeping the comments in git
 
