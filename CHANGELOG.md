@@ -4,6 +4,31 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-08-11
+
+### Added
+- **Downloadable apps.** Every release now carries a double-clickable
+  application for macOS, Windows, and Linux, built automatically. People who do
+  not write code no longer need Python at all.
+- **The window was rewritten for people who do not use a terminal.** Three
+  numbered steps rather than a form, plain language instead of jargon, hover
+  explanations on anything unavoidably technical, the project link checked as
+  you type, and the technical log folded away until it is wanted. Every option
+  the command line has is now in the window, including the reply letter, the
+  annotated LaTeX, and keeping the output tidy for version control.
+- **Self-hosted Overleaf can be used from the window**, not only from the
+  command line. Tick "My university runs its own Overleaf" and give its
+  address.
+
+### Fixed
+- Reading the cookie from a browser looked it up under `overleaf.com` no matter
+  which server you had asked for, so it never found anything on a self-hosted
+  Overleaf. It now uses the address you gave.
+- Self-hosted Overleaf names its session cookie `overleaf.sid`, and older
+  installs use `sharelatex.sid`. Both are now recognised.
+- Failing to find a browser cookie is an ordinary explainable problem, so it no
+  longer arrives as an unexpected error.
+
 ## [0.6.0] — 2026-08-11
 
 ### Added
@@ -102,7 +127,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.4.0

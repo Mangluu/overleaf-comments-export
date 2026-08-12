@@ -1,3 +1,10 @@
+"""The window.
+
+Written for people who do not use a terminal: numbered steps, plain language,
+every option visible rather than hidden behind a toggle, and the technical log
+folded away until it is needed.
+"""
+
 from __future__ import annotations
 
 import json
@@ -8,18 +15,14 @@ import threading
 import tkinter as tk
 import traceback
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from .client import UserFacingError
+from .client import UserFacingError, parse_project_id
 from .export import ExportResult, run_export
 
 
 def _config_path() -> Path:
-    """Per-user config location, cross-platform.
-
-    Uses platformdirs when available (preferred for cross-platform correctness);
-    falls back to ~/.overleaf_comments_export.json if the dependency is missing
-    (lets the library run without it as a soft dep)."""
+    """Per-user config location, cross-platform."""
     try:
         from platformdirs import user_config_dir  # type: ignore
         d = Path(user_config_dir("overleaf-comments-export", "overleaf-comments-export"))
@@ -32,14 +35,26 @@ def _config_path() -> Path:
 CONFIG_PATH = _config_path()
 
 BROWSER_LABELS = {
-    "safari": "Safari — reads its cookie file, no password prompt",
-    "firefox": "Firefox — reads its cookie file, no password prompt",
-    "manual": "Paste the cookie myself — works on every computer",
-    "auto": "Auto-detect (try all installed browsers)",
-    "chrome": "Google Chrome (will prompt for Keychain password)",
-    "chromium": "Chromium (will prompt for Keychain password)",
-    "edge": "Microsoft Edge (will prompt for Keychain password)",
-    "brave": "Brave (will prompt for Keychain password)",
+    "safari": "Safari",
+    "firefox": "Firefox",
+    "manual": "I will paste it myself",
+    "auto": "Work it out for me",
+    "chrome": "Google Chrome",
+    "chromium": "Chromium",
+    "edge": "Microsoft Edge",
+    "brave": "Brave",
+}
+
+BROWSER_NOTES = {
+    "safari": "Reads Safari's cookie file. No password needed.",
+    "firefox": "Reads Firefox's cookie file. No password needed.",
+    "manual": "Works on every computer and browser. Press How? for the steps.",
+    "auto": "Looks through the browsers installed on this computer.",
+    "chrome": "Asks for your computer's login password every time. On Windows "
+              "this cannot work at all, so paste the cookie instead.",
+    "chromium": "Asks for your computer's login password every time.",
+    "edge": "Asks for your computer's login password every time.",
+    "brave": "Asks for your computer's login password every time.",
 }
 
 PRIVACY_FRIENDLY = ("safari", "firefox", "manual")
@@ -48,75 +63,68 @@ ADVANCED_BROWSERS = ("auto", "chrome", "chromium", "edge", "brave")
 COOKIE_HELP_TEXT = """\
 How to copy your Overleaf session cookie
 ────────────────────────────────────────
-You only need to do this when reading the cookie straight from your browser
-does not work (common with Chrome on Windows, and with browsers installed
-from the Snap store on Linux).
+You only need this when the app cannot read the cookie from your browser by
+itself. That is common with Chrome on Windows, and with browsers installed from
+the Snap store on Linux.
 
-1. Open your paper in Overleaf, in any browser, and make sure you are
-   signed in.
+1. Open your paper in Overleaf, in any browser, and make sure you are signed in.
 
 2. Open the developer tools:
-   • Windows / Linux : press F12
-   • Mac             : press Command + Option + I
+   • Windows and Linux : press F12
+   • Mac               : press Command + Option + I
 
 3. Find the cookie list:
-   • Chrome / Edge / Brave : click the "Application" tab, then in the left
-     sidebar open "Cookies" and click "https://www.overleaf.com"
-   • Firefox               : click the "Storage" tab, then "Cookies"
-   • Safari                : click the "Storage" tab, then "Cookies"
-     (Safari needs Develop menu enabled: Settings → Advanced →
-      "Show features for web developers")
+   • Chrome, Edge, Brave : the "Application" tab, then "Cookies" in the left
+     sidebar, then your Overleaf address
+   • Firefox             : the "Storage" tab, then "Cookies"
+   • Safari              : the "Storage" tab, then "Cookies". Safari needs the
+     developer menu turned on first, under Settings, then Advanced.
 
-4. In the list, find the row named exactly:  overleaf_session2
+4. Find the row named  overleaf_session2
+   On a self-hosted Overleaf it is called  overleaf.sid  instead.
 
-5. Double-click its "Value" and copy the whole thing. It is a long piece of
-   text that usually starts with  s%3A
+5. Double-click its Value and copy the whole thing. It is long, and usually
+   starts with  s%3A
 
-6. Paste it into the box in this window and click Export Comments.
+6. Paste it into the box in this window.
 
-Notes
-─────
+Two things worth knowing
+────────────────────────
 • The cookie is like a temporary key to your account. Do not share it with
   anyone. It stops working when you sign out of Overleaf.
-• This app does not save the cookie anywhere. It is kept in memory only
-  while the export runs, unless you tick "Remember cookie".
+• This app keeps it in memory only, unless you tick "Remember it on this
+  computer".
 """
 
 PRIVACY_INFO_TEXT = """\
-What this app reads from your machine
-─────────────────────────────────────
-• Your Overleaf session cookie. This is the same cookie your browser uses to
-  stay signed in to overleaf.com. Without it, the Overleaf server won't return
-  your comments.
+What this app reads
+───────────────────
+Only your Overleaf session, which is the thing your browser already uses to
+keep you signed in. Without it, Overleaf will not hand over your comments.
 
-Where it reads the cookie from, by browser:
-• Paste it myself → nothing on this computer is read at all; you supply the
-             cookie directly. The most private option, and the one that works
-             on every operating system.
-• Safari   → its cookie file (macOS may ask permission the first time)
-• Firefox  → its cookies.sqlite file (no Keychain access required)
-• Chrome / Edge / Brave / Chromium → cookies are encrypted on disk and the key
-             lives in the system Keychain, so reading them prompts for your
-             login password every single time.
+Where it is read from depends on what you choose:
+• I will paste it myself → nothing on this computer is read at all. You supply
+  it directly. The most private option, and it works everywhere.
+• Safari or Firefox → their cookie files. No password needed.
+• Chrome, Edge, Brave → their cookies are encrypted and the key lives in your
+  system keychain, so your login password is requested every time.
 
-The cookie is used only to make HTTPS requests to www.overleaf.com.
-Nothing is sent anywhere else. There is no telemetry.
+The session is used only to talk to your Overleaf server. Nothing is sent
+anywhere else. There is no tracking of any kind in this app.
 
-What's saved to disk
-────────────────────
-• Your last-used inputs (browser choice, project link, output folder) go in a
-  small settings file so the form fills itself in next time. Delete it any
-  time — its exact location is shown at the bottom of this window.
-• The export itself (Markdown + JSON + log) goes only to the folder you pick.
-• Diagnostic logs go to your user log folder.
+What gets written to this computer
+──────────────────────────────────
+• Your answers on this form, so it fills itself in next time. The file is named
+  at the bottom of this window and you can delete it whenever you like.
+• The export itself, only in the folder you choose.
+• A log file, to help work out what went wrong if something does.
 
-About the session cookie
-────────────────────────
-• It is normally kept in memory only, and forgotten when the app closes.
-• It is written to the settings file ONLY if you tick "Remember cookie on
-  this computer". That file is not encrypted, so leave the box unticked on
-  a shared machine.
-• Your Overleaf password is never asked for and never stored.
+About the cookie
+────────────────
+• Normally kept in memory, and forgotten when this window closes.
+• Written to the settings file only if you tick "Remember it on this computer".
+  That file is not encrypted, so leave it unticked on a shared machine.
+• Your Overleaf password is never asked for, and never stored.
 """
 
 
@@ -136,12 +144,55 @@ def _save_config(data: dict) -> None:
         pass
 
 
+class Tooltip:
+    """A plain explanation on hover, for the words that are unavoidably jargon.
+
+    Also shows on keyboard focus, so it is not mouse-only.
+    """
+
+    def __init__(self, widget: tk.Widget, text: str) -> None:
+        self.widget = widget
+        self.text = text
+        self.tip: tk.Toplevel | None = None
+        for event, handler in (
+            ("<Enter>", self._show), ("<FocusIn>", self._show),
+            ("<Leave>", self._hide), ("<FocusOut>", self._hide),
+            ("<Destroy>", self._hide),
+        ):
+            widget.bind(event, handler, add="+")
+
+    def _show(self, _event=None) -> None:
+        if self.tip or not self.text:
+            return
+        try:
+            x = self.widget.winfo_rootx() + 18
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        except tk.TclError:
+            return
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(
+            self.tip, text=self.text, justify="left", wraplength=330,
+            background="#ffffe0", foreground="#222", relief="solid",
+            borderwidth=1, padx=8, pady=5,
+        ).pack()
+
+    def _hide(self, _event=None) -> None:
+        if self.tip is not None:
+            try:
+                self.tip.destroy()
+            except tk.TclError:
+                pass
+            self.tip = None
+
+
 class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         root.title("Overleaf Comments Export")
-        root.geometry("720x780")
-        root.minsize(560, 600)
+        root.geometry("780x900")
+        root.minsize(640, 600)
 
         self.config = _load_config()
         self.queue: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -149,408 +200,396 @@ class App:
         self.last_result: ExportResult | None = None
 
         self._apply_theme()
+        self._build()
 
-        outer = ttk.Frame(root, padding=14)
-        outer.pack(fill="both", expand=True)
-        outer.columnconfigure(1, weight=1)
+        root.bind("<Return>", self._on_return)
+        root.bind("<KP_Enter>", self._on_return)
+        self.url_entry.focus_set()
+        self._validate_url()
+        self.root.after(80, self._pump_queue)
 
-        row = 0
+    # ---------------- appearance ----------------
+
+    def _apply_theme(self) -> None:
+        try:
+            import sv_ttk  # type: ignore
+            sv_ttk.set_theme("light")
+        except Exception:
+            try:
+                style = ttk.Style()
+                for preferred in ("aqua", "vista", "clam"):
+                    if preferred in style.theme_names():
+                        style.theme_use(preferred)
+                        break
+            except Exception:
+                pass
+        base = tkfont.nametofont("TkDefaultFont")
+        size = base.cget("size") or 12
+        self.font_title = base.copy()
+        self.font_title.configure(size=size + 4, weight="bold")
+        self.font_step = base.copy()
+        self.font_step.configure(weight="bold")
+        self.font_small = base.copy()
+        self.font_small.configure(size=max(9, abs(size) - 1))
+        self.font_status = base.copy()
+        self.font_status.configure(size=size + 1)
+
+    def _hint(self, parent, text, row, col=1, span=2):
+        lbl = ttk.Label(parent, text=text, foreground="#666", font=self.font_small,
+                        wraplength=540, justify="left")
+        lbl.grid(row=row, column=col, columnspan=span, sticky="w", pady=(0, 6))
+        return lbl
+
+    # ---------------- layout ----------------
+
+    def _build(self) -> None:
+        # A scrollable body, so the window still works on a small screen.
+        container = ttk.Frame(self.root)
+        container.pack(fill="both", expand=True)
+        canvas = tk.Canvas(container, highlightthickness=0)
+        scroll = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        outer = ttk.Frame(canvas, padding=16)
+        outer.bind("<Configure>",
+                   lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        window = canvas.create_window((0, 0), window=outer, anchor="nw")
+        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        canvas.bind_all(
+            "<MouseWheel>",
+            lambda e: canvas.yview_scroll(int(-1 * (e.delta / 3)), "units"),
+        )
+        outer.columnconfigure(0, weight=1)
+
+        ttk.Label(outer, text="Overleaf Comments Export",
+                  font=self.font_title).grid(row=0, column=0, sticky="w")
         ttk.Label(
             outer,
-            text="Export comment threads and tracked changes from an Overleaf paper.",
-            wraplength=620,
-        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 12))
-        row += 1
+            text="Pulls the review comments out of your paper and writes them "
+                 "somewhere you can read them. Everything stays on this "
+                 "computer.",
+            foreground="#555", font=self.font_small, wraplength=680,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 14))
 
-        # Browser
-        ttk.Label(outer, text="Browser:").grid(row=row, column=0, sticky="w", pady=4)
+        body = ttk.Frame(outer)
+        body.grid(row=2, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+
+        self._build_step_paper(body)
+        self._build_step_signin(body)
+        self._build_step_save(body)
+        self._build_include(body)
+        self._build_actions(body)
+        self._build_status(body)
+        self._build_details(body)
+
+    def _step_box(self, parent, number, title):
+        box = ttk.LabelFrame(parent, text=f" {number}. {title} ", padding=12)
+        box.pack(fill="x", pady=(0, 12))
+        box.columnconfigure(1, weight=1)
+        return box
+
+    # ---- 1. the paper ----
+
+    def _build_step_paper(self, parent) -> None:
+        box = self._step_box(parent, 1, "Which paper")
+
+        ttk.Label(box, text="Link to your paper:").grid(row=0, column=0, sticky="w", pady=4)
+        self.url_var = tk.StringVar(value=self.config.get("project_url", ""))
+        self.url_var.trace_add("write", lambda *_: self._validate_url())
+        self.url_entry = ttk.Entry(box, textvariable=self.url_var)
+        self.url_entry.grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
+        self.url_status = ttk.Label(box, text="", font=self.font_small)
+        self.url_status.grid(row=1, column=1, columnspan=2, sticky="w")
+        self._hint(box, "Open the paper in Overleaf and copy the address from "
+                        "the top of your browser.", row=2)
+
+        ttk.Label(box, text="Title (optional):").grid(row=3, column=0, sticky="w", pady=4)
+        self.title_var = tk.StringVar(value=self.config.get("project_title", ""))
+        ttk.Entry(box, textvariable=self.title_var).grid(
+            row=3, column=1, columnspan=2, sticky="ew", pady=4)
+        self._hint(box, "Only used as the heading of the exported file.", row=4)
+
+        self.self_hosted_var = tk.BooleanVar(
+            value=bool(self.config.get("self_hosted", False)))
+        cb = ttk.Checkbutton(
+            box, text="My university runs its own Overleaf",
+            variable=self.self_hosted_var, command=self._toggle_self_hosted)
+        cb.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        Tooltip(cb, "Tick this if you do not use overleaf.com, for example an "
+                    "Overleaf your department installed itself.")
+
+        self.base_label = ttk.Label(box, text="Its address:")
+        self.base_var = tk.StringVar(
+            value=self.config.get("base_url", "https://www.overleaf.com"))
+        self.base_entry = ttk.Entry(box, textvariable=self.base_var)
+        self.base_note = ttk.Label(
+            box, text="For example  https://overleaf.my-university.edu  — comments "
+                     "work, but tracked changes need Overleaf Server Pro.",
+            foreground="#666", font=self.font_small, wraplength=520, justify="left")
+        self.base_label.grid(row=6, column=0, sticky="w", pady=4)
+        self.base_entry.grid(row=6, column=1, columnspan=2, sticky="ew", pady=4)
+        self.base_note.grid(row=7, column=1, columnspan=2, sticky="w")
+        self._toggle_self_hosted()
+
+    def _toggle_self_hosted(self) -> None:
+        show = self.self_hosted_var.get()
+        for w in (self.base_label, self.base_entry, self.base_note):
+            w.grid() if show else w.grid_remove()
+        if not show:
+            self.base_var.set("https://www.overleaf.com")
+
+    def _validate_url(self) -> None:
+        raw = self.url_var.get().strip()
+        if not raw:
+            self.url_status.configure(text="")
+            return
+        try:
+            parse_project_id(raw)
+        except ValueError:
+            self.url_status.configure(
+                text="This does not look like a project link yet. It should "
+                     "contain /project/ followed by a long code.",
+                foreground="#a33")
+        else:
+            self.url_status.configure(text="Looks right.", foreground="#2a7")
+
+    # ---- 2. signing in ----
+
+    def _build_step_signin(self, parent) -> None:
+        box = self._step_box(parent, 2, "Let it see your Overleaf")
+
+        ttk.Label(box, text="Sign in using:").grid(row=0, column=0, sticky="w", pady=4)
         default_browser = self.config.get("browser", "safari")
         if default_browser not in BROWSER_LABELS:
             default_browser = "safari"
         self.browser_var = tk.StringVar(value=default_browser)
-        self.browser_box = ttk.Combobox(
-            outer,
-            textvariable=self.browser_var,
-            state="readonly",
-            width=20,
-        )
-        self.browser_box.grid(row=row, column=1, sticky="w", pady=4)
-        self.browser_box.bind(
-            "<<ComboboxSelected>>", lambda _e: self._on_browser_change()
-        )
-        self.browser_help = ttk.Label(
-            outer, text="", foreground="#666", wraplength=320
-        )
-        self.browser_help.grid(row=row, column=2, sticky="w", padx=6, pady=4)
-        row += 1
+        self.browser_box = ttk.Combobox(box, state="readonly", width=26)
+        self.browser_box.grid(row=0, column=1, sticky="w", pady=4)
+        self.browser_box.bind("<<ComboboxSelected>>", lambda _e: self._on_browser_change())
+        ttk.Button(box, text="What is this?", command=self._show_privacy_info).grid(
+            row=0, column=2, sticky="w", padx=8)
 
-        # Show-advanced checkbox + privacy info button
-        adv_row = ttk.Frame(outer)
-        adv_row.grid(row=row, column=1, columnspan=2, sticky="w", pady=(0, 4))
+        self.browser_note = ttk.Label(box, text="", foreground="#666",
+                                      font=self.font_small, wraplength=540,
+                                      justify="left")
+        self.browser_note.grid(row=1, column=1, columnspan=2, sticky="w", pady=(0, 6))
+
         self.show_advanced_var = tk.BooleanVar(
             value=bool(self.config.get("show_advanced_browsers", False))
-            or default_browser in ADVANCED_BROWSERS
-        )
+            or default_browser in ADVANCED_BROWSERS)
         ttk.Checkbutton(
-            adv_row,
-            text="Show Chrome / Edge / Brave (uses Keychain)",
-            variable=self.show_advanced_var,
-            command=self._refresh_browser_choices,
-        ).pack(side="left")
-        ttk.Button(
-            adv_row, text="Privacy info…", command=self._show_privacy_info
-        ).pack(side="left", padx=(12, 0))
-        row += 1
+            box, text="Show the browsers that need a password",
+            variable=self.show_advanced_var, command=self._refresh_browser_choices,
+        ).grid(row=2, column=1, columnspan=2, sticky="w")
 
+        self.cookie_label = ttk.Label(box, text="Paste it here:")
+        self.cookie_frame = ttk.Frame(box)
+        self.cookie_frame.columnconfigure(0, weight=1)
+        self.cookie_var = tk.StringVar(value=self.config.get("cookie_value", ""))
+        self.cookie_entry = ttk.Entry(self.cookie_frame, textvariable=self.cookie_var,
+                                      show="•")
+        self.cookie_entry.grid(row=0, column=0, sticky="ew")
+        ttk.Button(self.cookie_frame, text="How?", width=7,
+                   command=self._show_cookie_help).grid(row=0, column=1, padx=(6, 0))
+        self.remember_cookie_var = tk.BooleanVar(
+            value=bool(self.config.get("remember_cookie", False)))
+        self.cookie_remember = ttk.Checkbutton(
+            box, text="Remember it on this computer (not encrypted)",
+            variable=self.remember_cookie_var)
+
+        self.cookie_label.grid(row=3, column=0, sticky="w", pady=4)
+        self.cookie_frame.grid(row=3, column=1, columnspan=2, sticky="ew", pady=4)
+        self.cookie_remember.grid(row=4, column=1, columnspan=2, sticky="w")
+
+        self.browser_box.configure(textvariable=self.browser_var)
         self._refresh_browser_choices()
 
-        # Cookie paste row (shown only when "Paste the cookie myself" is picked)
-        self.cookie_label = ttk.Label(outer, text="Session cookie:")
-        self.cookie_label.grid(row=row, column=0, sticky="w", pady=4)
-        cookie_row = ttk.Frame(outer)
-        cookie_row.grid(row=row, column=1, columnspan=2, sticky="ew", pady=4)
-        cookie_row.columnconfigure(0, weight=1)
-        self.cookie_var = tk.StringVar(value=self.config.get("cookie_value", ""))
-        self.cookie_entry = ttk.Entry(
-            cookie_row, textvariable=self.cookie_var, show="•"
-        )
-        self.cookie_entry.grid(row=0, column=0, sticky="ew")
-        ttk.Button(
-            cookie_row, text="How?", width=6, command=self._show_cookie_help
-        ).grid(row=0, column=1, padx=(6, 0))
-        self.remember_cookie_var = tk.BooleanVar(
-            value=bool(self.config.get("remember_cookie", False))
-        )
-        self.cookie_remember_cb = ttk.Checkbutton(
-            outer,
-            text="Remember cookie on this computer (stored unencrypted)",
-            variable=self.remember_cookie_var,
-        )
-        self.cookie_row_widgets = (self.cookie_label, cookie_row, self.cookie_remember_cb)
-        row += 1
-        self.cookie_remember_cb.grid(row=row, column=1, columnspan=2, sticky="w")
-        row += 1
-        self._toggle_cookie_row()
-
-        # Project URL
-        ttk.Label(outer, text="Overleaf project URL:").grid(
-            row=row, column=0, sticky="w", pady=4
-        )
-        self.url_var = tk.StringVar(value=self.config.get("project_url", ""))
-        ttk.Entry(outer, textvariable=self.url_var).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=4
-        )
-        row += 1
-        ttk.Label(
-            outer,
-            text="(Open your paper in Overleaf and copy the URL from the address bar.)",
-            foreground="#666",
-        ).grid(row=row, column=1, columnspan=2, sticky="w")
-        row += 1
-
-        # Title
-        ttk.Label(outer, text="Paper title (optional):").grid(
-            row=row, column=0, sticky="w", pady=4
-        )
-        self.title_var = tk.StringVar(value=self.config.get("project_title", ""))
-        ttk.Entry(outer, textvariable=self.title_var).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=4
-        )
-        row += 1
-
-        # Output folder
-        ttk.Label(outer, text="Save to folder:").grid(
-            row=row, column=0, sticky="w", pady=4
-        )
-        self.out_var = tk.StringVar(value=self.config.get("out_dir", ""))
-        out_entry = ttk.Entry(outer, textvariable=self.out_var)
-        out_entry.grid(row=row, column=1, sticky="ew", pady=4)
-        ttk.Button(outer, text="Browse…", command=self._pick_folder).grid(
-            row=row, column=2, sticky="w", padx=6, pady=4
-        )
-        row += 1
-
-        # ---- Options (expandable) ----
-        self.show_options_var = tk.BooleanVar(
-            value=bool(self.config.get("show_options", False))
-        )
-        ttk.Checkbutton(
-            outer,
-            text="Show options (filters, output format, extras)",
-            variable=self.show_options_var,
-            command=self._toggle_options_visibility,
-        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(8, 0))
-        row += 1
-
-        self.options_frame = ttk.LabelFrame(outer, text="Options", padding=8)
-        self.options_frame.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(4, 6))
-        self.options_frame.columnconfigure(1, weight=1)
-        self._build_options_panel(self.options_frame)
-        row += 1
-
-        # Action buttons
-        button_row = ttk.Frame(outer)
-        button_row.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(12, 6))
-        self.run_btn = ttk.Button(
-            button_row, text="Export Comments", command=self._on_run
-        )
-        self.run_btn.pack(side="left")
-        self.open_md_btn = ttk.Button(
-            button_row,
-            text="Open Markdown",
-            command=self._open_markdown,
-            state="disabled",
-        )
-        self.open_md_btn.pack(side="left", padx=8)
-        self.open_folder_btn = ttk.Button(
-            button_row,
-            text="Open Output Folder",
-            command=self._open_folder,
-            state="disabled",
-        )
-        self.open_folder_btn.pack(side="left")
-        row += 1
-
-        # Progress + log
-        self.progress = ttk.Progressbar(outer, mode="indeterminate")
-        self.progress.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 4))
-        row += 1
-
-        ttk.Label(outer, text="Log:").grid(row=row, column=0, sticky="w")
-        row += 1
-
-        log_frame = ttk.Frame(outer)
-        log_frame.grid(row=row, column=0, columnspan=3, sticky="nsew")
-        outer.rowconfigure(row, weight=1)
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
-        self.log = tk.Text(log_frame, height=12, wrap="word", state="disabled")
-        self.log.grid(row=0, column=0, sticky="nsew")
-        log_scroll = ttk.Scrollbar(log_frame, command=self.log.yview)
-        log_scroll.grid(row=0, column=1, sticky="ns")
-        self.log.configure(yscrollcommand=log_scroll.set)
-
-        self.root.after(80, self._pump_queue)
-
-    def _apply_theme(self) -> None:
-        """Use sv-ttk (modern theme) when available — looks consistent across
-        macOS/Windows/Linux. Falls back to native aqua/clam if not installed."""
-        try:
-            import sv_ttk  # type: ignore
-            sv_ttk.set_theme("light")
-            return
-        except Exception:
-            pass
-        try:
-            style = ttk.Style()
-            names = style.theme_names()
-            for preferred in ("aqua", "vista", "clam"):
-                if preferred in names:
-                    style.theme_use(preferred)
-                    return
-        except Exception:
-            pass
-
-    def _build_options_panel(self, parent: ttk.LabelFrame) -> None:
-        r = 0
-        # Filters
-        ttk.Label(parent, text="Include:", foreground="#333").grid(
-            row=r, column=0, sticky="w"
-        )
-        filters_row = ttk.Frame(parent)
-        filters_row.grid(row=r, column=1, columnspan=2, sticky="w")
-        self.include_open_var = tk.BooleanVar(
-            value=bool(self.config.get("include_open", True))
-        )
-        self.include_resolved_var = tk.BooleanVar(
-            value=bool(self.config.get("include_resolved", True))
-        )
-        self.include_changes_var = tk.BooleanVar(
-            value=bool(self.config.get("include_changes", True))
-        )
-        ttk.Checkbutton(
-            filters_row, text="Open comments", variable=self.include_open_var
-        ).pack(side="left", padx=(0, 12))
-        ttk.Checkbutton(
-            filters_row, text="Resolved comments", variable=self.include_resolved_var
-        ).pack(side="left", padx=(0, 12))
-        ttk.Checkbutton(
-            filters_row, text="Tracked changes", variable=self.include_changes_var
-        ).pack(side="left")
-        r += 1
-
-        ttk.Label(parent, text="Reviewers:", foreground="#333").grid(
-            row=r, column=0, sticky="w", pady=(6, 0)
-        )
-        self.reviewer_filter_var = tk.StringVar(
-            value=self.config.get("reviewer_filter", "")
-        )
-        ttk.Entry(parent, textvariable=self.reviewer_filter_var).grid(
-            row=r, column=1, columnspan=2, sticky="ew", pady=(6, 0)
-        )
-        r += 1
-        ttk.Label(
-            parent,
-            text="(comma-separated name/email substrings; leave empty for all)",
-            foreground="#666",
-        ).grid(row=r, column=1, columnspan=2, sticky="w")
-        r += 1
-
-        ttk.Label(parent, text="Format:", foreground="#333").grid(
-            row=r, column=0, sticky="w", pady=(8, 0)
-        )
-        self.render_mode_var = tk.StringVar(
-            value=self.config.get("render_mode", "compact")
-        )
-        fmt_row = ttk.Frame(parent)
-        fmt_row.grid(row=r, column=1, columnspan=2, sticky="w", pady=(8, 0))
-        ttk.Radiobutton(
-            fmt_row, text="Compact (one-line per comment)",
-            variable=self.render_mode_var, value="compact",
-        ).pack(side="left", padx=(0, 12))
-        ttk.Radiobutton(
-            fmt_row, text="Detailed (multi-line code fence)",
-            variable=self.render_mode_var, value="detailed",
-        ).pack(side="left")
-        r += 1
-
-        ttk.Label(parent, text="Extras:", foreground="#333").grid(
-            row=r, column=0, sticky="w", pady=(8, 0)
-        )
-        extras_row = ttk.Frame(parent)
-        extras_row.grid(row=r, column=1, columnspan=2, sticky="w", pady=(8, 0))
-        self.write_jsonl_var = tk.BooleanVar(
-            value=bool(self.config.get("write_jsonl", True))
-        )
-        self.per_reviewer_var = tk.BooleanVar(
-            value=bool(self.config.get("per_reviewer_reports", False))
-        )
-        self.response_letter_var = tk.BooleanVar(
-            value=bool(self.config.get("response_letter", False))
-        )
-        self.stable_var = tk.BooleanVar(value=bool(self.config.get("stable", False)))
-        self.annotated_var = tk.BooleanVar(
-            value=bool(self.config.get("annotated_tex", False))
-        )
-        self.include_raw_var = tk.BooleanVar(
-            value=bool(self.config.get("include_raw", False))
-        )
-        ttk.Checkbutton(
-            extras_row,
-            text="comments.jsonl (streaming companion)",
-            variable=self.write_jsonl_var,
-        ).pack(anchor="w")
-        ttk.Checkbutton(
-            extras_row,
-            text="Response letter draft (response-letter.md)",
-            variable=self.response_letter_var,
-        ).pack(anchor="w")
-        ttk.Checkbutton(
-            extras_row,
-            text="Keep it in git (one comments.md, no timestamps, so a diff "
-            "shows only new comments)",
-            variable=self.stable_var,
-        ).pack(anchor="w")
-        ttk.Checkbutton(
-            extras_row,
-            text="Annotated LaTeX (compile it to get a PDF with the comments in it)",
-            variable=self.annotated_var,
-        ).pack(anchor="w")
-        ttk.Checkbutton(
-            extras_row,
-            text="Per-reviewer reports (by-reviewer/<name>.md)",
-            variable=self.per_reviewer_var,
-        ).pack(anchor="w")
-        ttk.Checkbutton(
-            extras_row,
-            text="Embed raw Overleaf API data in comments.json (larger file)",
-            variable=self.include_raw_var,
-        ).pack(anchor="w")
-        r += 1
-
-        self._toggle_options_visibility()
-
-    def _toggle_options_visibility(self) -> None:
-        if self.show_options_var.get():
-            self.options_frame.grid()
-        else:
-            self.options_frame.grid_remove()
+    def _refresh_browser_choices(self) -> None:
+        keys = list(BROWSER_LABELS) if self.show_advanced_var.get() else list(PRIVACY_FRIENDLY)
+        self.browser_box.configure(values=[BROWSER_LABELS[k] for k in keys])
+        self._browser_keys = keys
+        current = self.browser_var.get()
+        key = current if current in BROWSER_LABELS else "safari"
+        if key not in keys:
+            key = keys[0]
+        self.browser_var.set(key)
+        self.browser_box.set(BROWSER_LABELS[key])
+        self._on_browser_change()
 
     def _on_browser_change(self) -> None:
+        shown = self.browser_box.get()
+        for k, label in BROWSER_LABELS.items():
+            if label == shown:
+                self.browser_var.set(k)
+                break
         key = self.browser_var.get()
-        self.browser_help.config(text=BROWSER_LABELS.get(key, key))
-        self._toggle_cookie_row()
+        self.browser_note.configure(text=BROWSER_NOTES.get(key, ""))
+        manual = key == "manual"
+        for w in (self.cookie_label, self.cookie_frame, self.cookie_remember):
+            w.grid() if manual else w.grid_remove()
 
-    def _toggle_cookie_row(self) -> None:
-        """Only show the cookie box when the user chose to paste it."""
-        widgets = getattr(self, "cookie_row_widgets", None)
-        if not widgets:
-            return
-        show = self.browser_var.get() == "manual"
-        for w in widgets:
-            if show:
-                w.grid()
-            else:
-                w.grid_remove()
+    # ---- 3. where to put it ----
 
-    def _show_cookie_help(self) -> None:
+    def _build_step_save(self, parent) -> None:
+        box = self._step_box(parent, 3, "Where to save it")
+        ttk.Label(box, text="Folder:").grid(row=0, column=0, sticky="w", pady=4)
+        self.out_var = tk.StringVar(value=self.config.get("out_dir", ""))
+        ttk.Entry(box, textvariable=self.out_var).grid(row=0, column=1, sticky="ew", pady=4)
+        ttk.Button(box, text="Choose…", command=self._pick_folder).grid(
+            row=0, column=2, sticky="w", padx=8)
+        self._hint(box, "A new folder of its own is easiest, for example a "
+                        "folder called Comments next to your paper.", row=1)
+
+    # ---- what to include ----
+
+    def _build_include(self, parent) -> None:
+        box = ttk.LabelFrame(parent, text="  What to include  ", padding=12)
+        box.pack(fill="x", pady=(0, 12))
+        for i in (0, 1):
+            box.columnconfigure(i, weight=1)
+
+        cfg = self.config
+        self.include_open_var = tk.BooleanVar(value=bool(cfg.get("include_open", True)))
+        self.include_resolved_var = tk.BooleanVar(value=bool(cfg.get("include_resolved", True)))
+        self.include_changes_var = tk.BooleanVar(value=bool(cfg.get("include_changes", True)))
+        self.response_letter_var = tk.BooleanVar(value=bool(cfg.get("response_letter", False)))
+        self.per_reviewer_var = tk.BooleanVar(value=bool(cfg.get("per_reviewer_reports", False)))
+        self.annotated_var = tk.BooleanVar(value=bool(cfg.get("annotated_tex", False)))
+        self.stable_var = tk.BooleanVar(value=bool(cfg.get("stable", False)))
+        self.detailed_var = tk.BooleanVar(value=cfg.get("render_mode", "compact") == "detailed")
+        self.write_jsonl_var = tk.BooleanVar(value=bool(cfg.get("write_jsonl", True)))
+        self.include_raw_var = tk.BooleanVar(value=bool(cfg.get("include_raw", False)))
+
+        rows = [
+            (self.include_open_var, "Comments still open",
+             "Comments nobody has marked as done yet."),
+            (self.include_resolved_var, "Comments marked done",
+             "Threads someone already ticked off in Overleaf."),
+            (self.include_changes_var, "Tracked changes",
+             "Text people inserted or deleted with Track Changes on. Needs "
+             "Overleaf Premium, or Server Pro if self-hosted."),
+            (self.response_letter_var, "A reply letter to fill in",
+             "Writes response-letter.md, a point-by-point document with a "
+             "blank space under each comment for your answer."),
+            (self.per_reviewer_var, "A separate file per person",
+             "One file for each person who commented, so you can work through "
+             "them one at a time."),
+            (self.annotated_var, "A copy of the paper with comments in it",
+             "Writes your LaTeX with each comment placed where it was made. "
+             "Compile it and the PDF carries the comments."),
+            (self.stable_var, "Keep it tidy for version control",
+             "Writes one file that only changes when the comments change, so "
+             "it can live in a git repository without noise."),
+            (self.detailed_var, "Show more of the surrounding text",
+             "More of the sentence around each comment, on several lines."),
+            (self.write_jsonl_var, "Also write the data file for other tools",
+             "comments.jsonl, one comment per line. Harmless to leave on."),
+            (self.include_raw_var, "Include the raw data from Overleaf",
+             "Only useful for reporting a problem. Makes the file much bigger."),
+        ]
+        for i, (var, label, tip) in enumerate(rows):
+            cb = ttk.Checkbutton(box, text=label, variable=var)
+            cb.grid(row=i // 2, column=i % 2, sticky="w", pady=2, padx=(0, 12))
+            Tooltip(cb, tip)
+
+        ttk.Label(box, text="Only these people (optional):").grid(
+            row=len(rows) // 2 + 1, column=0, sticky="w", pady=(10, 2))
+        self.reviewer_filter_var = tk.StringVar(value=self.config.get("reviewer_filter", ""))
+        ent = ttk.Entry(box, textvariable=self.reviewer_filter_var)
+        ent.grid(row=len(rows) // 2 + 1, column=1, sticky="ew", pady=(10, 2))
+        Tooltip(ent, "Type part of a name or email to keep only their comments. "
+                     "Separate several with commas. Leave empty for everybody.")
+
+    # ---- run ----
+
+    def _build_actions(self, parent) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=(4, 8))
+        self.run_btn = ttk.Button(row, text="Get my comments", command=self._on_run)
+        self.run_btn.pack(side="left")
+        try:
+            self.run_btn.configure(style="Accent.TButton")
+        except tk.TclError:
+            pass
+        self.open_md_btn = ttk.Button(row, text="Open the comments",
+                                      command=self._open_markdown, state="disabled")
+        self.open_md_btn.pack(side="left", padx=8)
+        self.open_folder_btn = ttk.Button(row, text="Open the folder",
+                                          command=self._open_folder, state="disabled")
+        self.open_folder_btn.pack(side="left")
+
+    def _build_status(self, parent) -> None:
+        box = ttk.Frame(parent)
+        box.pack(fill="x", pady=(0, 8))
+        self.progress = ttk.Progressbar(box, mode="indeterminate")
+        self.progress.pack(fill="x")
+        self.status = ttk.Label(box, text="Fill in the three steps above, then "
+                                          "press Get my comments.",
+                                font=self.font_status, wraplength=680, justify="left")
+        self.status.pack(anchor="w", pady=(6, 0))
+
+    def _build_details(self, parent) -> None:
+        self.details_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(parent, text="Show technical details",
+                        variable=self.details_var,
+                        command=self._toggle_details).pack(anchor="w")
+        self.details = ttk.Frame(parent)
+        self.details.columnconfigure(0, weight=1)
+        self.log = tk.Text(self.details, height=12, wrap="word", state="disabled",
+                           font=self.font_small)
+        self.log.grid(row=0, column=0, sticky="nsew")
+        sb = ttk.Scrollbar(self.details, command=self.log.yview)
+        sb.grid(row=0, column=1, sticky="ns")
+        self.log.configure(yscrollcommand=sb.set)
+        ttk.Label(self.details, text=f"Settings file: {CONFIG_PATH}",
+                  foreground="#888", font=self.font_small).grid(
+            row=1, column=0, sticky="w", pady=(4, 0))
+        self.details.pack(fill="both", expand=True, pady=(4, 0))
+        self.details.pack_forget()
+
+    def _toggle_details(self) -> None:
+        if self.details_var.get():
+            self.details.pack(fill="both", expand=True, pady=(4, 0))
+        else:
+            self.details.pack_forget()
+
+    # ---------------- dialogs ----------------
+
+    def _text_window(self, title: str, body: str, extra: str = "") -> None:
         win = tk.Toplevel(self.root)
-        win.title("How to copy your Overleaf cookie")
-        win.geometry("640x560")
+        win.title(title)
+        win.geometry("660x580")
         win.transient(self.root)
         frame = ttk.Frame(win, padding=12)
         frame.pack(fill="both", expand=True)
         txt = tk.Text(frame, wrap="word")
-        txt.insert("1.0", COOKIE_HELP_TEXT)
+        txt.insert("1.0", body + extra)
         txt.configure(state="disabled")
-        txt.pack(fill="both", expand=True)
-        ttk.Button(frame, text="Close", command=win.destroy).pack(
-            anchor="e", pady=(8, 0)
-        )
+        txt.pack(fill="both", expand=True, side="left")
+        sb = ttk.Scrollbar(frame, command=txt.yview)
+        sb.pack(side="right", fill="y")
+        txt.configure(yscrollcommand=sb.set)
+        ttk.Button(win, text="Close", command=win.destroy).pack(pady=8)
+        win.bind("<Escape>", lambda _e: win.destroy())
 
-    def _refresh_browser_choices(self) -> None:
-        """Update the combobox's items based on the advanced toggle."""
-        if self.show_advanced_var.get():
-            values = list(BROWSER_LABELS.keys())
-        else:
-            values = list(PRIVACY_FRIENDLY)
-        self.browser_box.configure(values=values)
-        if self.browser_var.get() not in values:
-            self.browser_var.set(values[0])
-        self._on_browser_change()
+    def _show_cookie_help(self) -> None:
+        self._text_window("How to copy your cookie", COOKIE_HELP_TEXT)
 
     def _show_privacy_info(self) -> None:
-        win = tk.Toplevel(self.root)
-        win.title("Privacy info")
-        win.geometry("620x500")
-        win.transient(self.root)
-        frame = ttk.Frame(win, padding=12)
-        frame.pack(fill="both", expand=True)
-        ttk.Label(
-            frame,
-            text="What this app touches on your machine",
-            font=("", 14, "bold"),
-        ).pack(anchor="w", pady=(0, 8))
-        txt = tk.Text(frame, wrap="word", height=22)
-        txt.insert("1.0", PRIVACY_INFO_TEXT)
-        txt.insert("end", f"\nSettings file on this computer:\n{CONFIG_PATH}\n")
-        txt.configure(state="disabled")
-        txt.pack(fill="both", expand=True)
-        scroll = ttk.Scrollbar(frame, command=txt.yview)
-        txt.configure(yscrollcommand=scroll.set)
-        ttk.Button(frame, text="Close", command=win.destroy).pack(
-            anchor="e", pady=(8, 0)
-        )
+        self._text_window("What this app touches", PRIVACY_INFO_TEXT,
+                          f"\nSettings file on this computer:\n{CONFIG_PATH}\n")
 
     def _pick_folder(self) -> None:
-        initial = self.out_var.get() or str(Path.home())
         chosen = filedialog.askdirectory(
-            initialdir=initial,
-            title="Choose a folder to save the comments export into",
-            mustexist=False,
-        )
+            initialdir=self.out_var.get() or str(Path.home()),
+            title="Choose a folder to save the comments into", mustexist=False)
         if chosen:
             self.out_var.set(chosen)
+
+    # ---------------- running ----------------
 
     def _append_log(self, msg: str) -> None:
         self.log.configure(state="normal")
@@ -558,94 +597,104 @@ class App:
         self.log.see("end")
         self.log.configure(state="disabled")
 
+    def _set_status(self, text: str, colour: str = "") -> None:
+        self.status.configure(text=text, foreground=colour or "")
+
+    def _on_return(self, _event=None):
+        if str(self.run_btn["state"]) != "disabled":
+            self._on_run()
+
     def _on_run(self) -> None:
         url = self.url_var.get().strip()
         out_dir = self.out_var.get().strip()
         if not url:
-            messagebox.showerror(
-                "Missing input", "Please paste your Overleaf project URL."
-            )
+            messagebox.showwarning("Nearly there",
+                                   "Paste the link to your Overleaf paper in step 1.")
+            self.url_entry.focus_set()
+            return
+        try:
+            parse_project_id(url)
+        except ValueError:
+            messagebox.showwarning(
+                "That link does not look right",
+                "The link should contain /project/ followed by a long code.\n\n"
+                "Open your paper in Overleaf and copy the whole address from "
+                "the top of the browser.")
+            self.url_entry.focus_set()
             return
         if not out_dir:
-            messagebox.showerror(
-                "Missing input", "Please choose an output folder."
-            )
+            messagebox.showwarning("Nearly there",
+                                   "Choose a folder to save into, in step 3.")
             return
-
-        reviewer_text = self.reviewer_filter_var.get().strip()
-        reviewer_filter = [r.strip() for r in reviewer_text.split(",") if r.strip()]
 
         cookie_value = self.cookie_var.get().strip() or None
         if self.browser_var.get() == "manual" and not cookie_value:
-            messagebox.showerror(
-                "Missing cookie",
-                "Paste your Overleaf session cookie, or pick a browser to read "
-                "it from automatically. Click \"How?\" for step-by-step help.",
-            )
+            messagebox.showwarning(
+                "The cookie is missing",
+                "Paste your Overleaf cookie in step 2, or choose a browser to "
+                "read it from.\n\nPress How? next to the box for the steps.")
+            self.cookie_entry.focus_set()
             return
 
-        _save_config(
-            {
-                "browser": self.browser_var.get(),
-                # Only persisted if the user explicitly opts in.
-                "cookie_value": cookie_value if self.remember_cookie_var.get() else "",
-                "remember_cookie": bool(self.remember_cookie_var.get()),
-                "show_advanced_browsers": bool(self.show_advanced_var.get()),
-                "show_options": bool(self.show_options_var.get()),
-                "project_url": url,
-                "project_title": self.title_var.get().strip(),
-                "out_dir": out_dir,
-                "include_open": bool(self.include_open_var.get()),
-                "include_resolved": bool(self.include_resolved_var.get()),
-                "include_changes": bool(self.include_changes_var.get()),
-                "reviewer_filter": reviewer_text,
-                "render_mode": self.render_mode_var.get(),
-                "write_jsonl": bool(self.write_jsonl_var.get()),
-                "per_reviewer_reports": bool(self.per_reviewer_var.get()),
-                "response_letter": bool(self.response_letter_var.get()),
-                "stable": bool(self.stable_var.get()),
-                "annotated_tex": bool(self.annotated_var.get()),
-                "include_raw": bool(self.include_raw_var.get()),
-            }
-        )
+        reviewer_text = self.reviewer_filter_var.get().strip()
+        _save_config({
+            "browser": self.browser_var.get(),
+            "show_advanced_browsers": bool(self.show_advanced_var.get()),
+            "cookie_value": cookie_value if self.remember_cookie_var.get() else "",
+            "remember_cookie": bool(self.remember_cookie_var.get()),
+            "project_url": url,
+            "project_title": self.title_var.get().strip(),
+            "out_dir": out_dir,
+            "self_hosted": bool(self.self_hosted_var.get()),
+            "base_url": self.base_var.get().strip(),
+            "include_open": bool(self.include_open_var.get()),
+            "include_resolved": bool(self.include_resolved_var.get()),
+            "include_changes": bool(self.include_changes_var.get()),
+            "reviewer_filter": reviewer_text,
+            "render_mode": "detailed" if self.detailed_var.get() else "compact",
+            "write_jsonl": bool(self.write_jsonl_var.get()),
+            "per_reviewer_reports": bool(self.per_reviewer_var.get()),
+            "response_letter": bool(self.response_letter_var.get()),
+            "annotated_tex": bool(self.annotated_var.get()),
+            "stable": bool(self.stable_var.get()),
+            "include_raw": bool(self.include_raw_var.get()),
+        })
 
         self.run_btn.configure(state="disabled")
         self.open_md_btn.configure(state="disabled")
         self.open_folder_btn.configure(state="disabled")
-        self.progress.start(10)
-        self._append_log("─" * 60)
-        self._append_log("Starting export…")
+        self.progress.start(12)
+        self._set_status("Working… this usually takes a few seconds.")
+        self._append_log("-" * 60)
 
+        base = self.base_var.get().strip() if self.self_hosted_var.get() else "https://www.overleaf.com"
         params = dict(
             project_url=url,
             out_dir=Path(out_dir).expanduser(),
             project_title=self.title_var.get().strip() or None,
+            base_url=base or "https://www.overleaf.com",
             browser=self.browser_var.get(),
             cookie_value=cookie_value,
             include_open=bool(self.include_open_var.get()),
             include_resolved=bool(self.include_resolved_var.get()),
             include_changes=bool(self.include_changes_var.get()),
-            reviewer_filter=reviewer_filter,
-            render_mode=self.render_mode_var.get(),
+            reviewer_filter=[r.strip() for r in reviewer_text.split(",") if r.strip()],
+            render_mode="detailed" if self.detailed_var.get() else "compact",
             write_jsonl=bool(self.write_jsonl_var.get()),
             per_reviewer_reports=bool(self.per_reviewer_var.get()),
             response_letter=bool(self.response_letter_var.get()),
-            stable=bool(self.stable_var.get()),
             annotated_tex=bool(self.annotated_var.get()),
+            stable=bool(self.stable_var.get()),
             include_raw=bool(self.include_raw_var.get()),
         )
-        self.worker = threading.Thread(
-            target=self._worker, args=(params,), daemon=True
-        )
+        self.worker = threading.Thread(target=self._worker, args=(params,), daemon=True)
         self.worker.start()
 
     def _worker(self, params: dict) -> None:
         def progress(msg: str) -> None:
             self.queue.put(("log", msg))
-
         try:
-            result = run_export(progress=progress, **params)
-            self.queue.put(("done", result))
+            self.queue.put(("done", run_export(progress=progress, **params)))
         except Exception as e:
             self.queue.put(("error", (e, traceback.format_exc())))
 
@@ -670,53 +719,56 @@ class App:
         self.run_btn.configure(state="normal")
         self.open_md_btn.configure(state="normal")
         self.open_folder_btn.configure(state="normal")
-        summary = (
-            f"\nDone. {result.thread_count} thread(s) — "
-            f"{result.open_count} open, {result.resolved_count} resolved. "
-            f"{result.tracked_change_count} tracked change(s). "
-            f"{result.stale_anchor_count} stale anchor(s)."
-        )
-        self._append_log(summary)
-        self._append_log(f"Markdown: {result.markdown_path}")
-        if result.jsonl_path is not None:
-            self._append_log(f"JSONL:    {result.jsonl_path}")
-        if result.agents_path is not None:
-            self._append_log(f"Agents:   {result.agents_path}")
-        if result.response_letter_path is not None:
-            self._append_log(f"Letter:   {result.response_letter_path}")
-        if result.annotated_dir is not None:
-            self._append_log(f"Annotated LaTeX: {result.annotated_dir}")
-        if result.by_reviewer_dir is not None:
-            self._append_log(f"Per-reviewer: {result.by_reviewer_dir}")
+
+        bits = [f"{result.thread_count} comment thread(s)"]
+        if result.open_count:
+            bits.append(f"{result.open_count} still open")
+        if result.tracked_change_count:
+            bits.append(f"{result.tracked_change_count} tracked change(s)")
+        self._set_status("Done. Found " + ", ".join(bits) + ".", "#2a7")
+
+        self._append_log(f"Comments: {result.markdown_path}")
+        for label, path in (
+            ("Data", result.json_path), ("Lines", result.jsonl_path),
+            ("Letter", result.response_letter_path),
+            ("Annotated", result.annotated_dir),
+            ("Per person", result.by_reviewer_dir), ("Notes for AI", result.agents_path),
+        ):
+            if path is not None:
+                self._append_log(f"{label}: {path}")
+        if result.stale_anchor_count:
+            self._append_log(
+                f"{result.stale_anchor_count} comment(s) point at text that has "
+                "changed since they were written.")
 
     def _on_error(self, err: BaseException, tb: str) -> None:
         self.progress.stop()
         self.run_btn.configure(state="normal")
         if isinstance(err, UserFacingError):
-            # Expected, explainable failure — show the plain-English message
-            # only. The traceback would just frighten a non-technical user.
+            self._set_status("That did not work. See the message.", "#a33")
             self._append_log(str(err))
-            messagebox.showwarning("Export could not finish", str(err))
+            messagebox.showwarning("It could not finish", str(err))
             return
+        self._set_status("Something unexpected went wrong.", "#a33")
         self._append_log(f"ERROR: {err}")
         self._append_log(tb)
+        self.details_var.set(True)
+        self._toggle_details()
         messagebox.showerror(
-            "Export failed",
+            "Something went wrong",
             f"{type(err).__name__}: {err}\n\n"
-            "This looks like a bug. The full details are in the log box, and in "
-            "the log file next to your export. You can report it at\n"
-            "https://github.com/Mangluu/overleaf-comments-export/issues",
-        )
+            "This looks like a bug rather than something you did. The details "
+            "are in the technical details box, and in the log file next to your "
+            "export.\n\nYou can report it at\n"
+            "github.com/Mangluu/overleaf-comments-export/issues")
 
     def _open_markdown(self) -> None:
-        if not self.last_result:
-            return
-        _open_path(self.last_result.markdown_path)
+        if self.last_result:
+            _open_path(self.last_result.markdown_path)
 
     def _open_folder(self) -> None:
-        if not self.last_result:
-            return
-        _open_path(self.last_result.markdown_path.parent)
+        if self.last_result:
+            _open_path(self.last_result.markdown_path.parent)
 
 
 def _open_path(p: Path) -> None:

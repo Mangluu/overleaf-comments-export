@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overleaf-comments-export"
-version = "0.6.0"
+version = "0.7.0"
 description = "Export comment threads and tracked changes from an Overleaf project to Markdown + JSON, optimized for AI-agent consumption."
 readme = "README.md"
 license = { text = "MIT" }
@@ -68,6 +68,9 @@ Source = "https://github.com/Mangluu/overleaf-comments-export"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["overleaf_comments_export*"]
+
+[tool.setuptools]
+include-package-data = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

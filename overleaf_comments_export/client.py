@@ -18,6 +18,21 @@ PROJECT_URL_RE = re.compile(r"/project/(?P<id>[0-9a-fA-F]{24})")
 
 RETRY_STATUSES = (429, 500, 502, 503, 504)
 
+# overleaf.com uses the first. Self-hosted Community Edition and Server Pro use
+# `overleaf.sid`, and older self-hosted installs still use the ShareLaTeX name.
+SESSION_COOKIE_NAMES = ("overleaf_session2", "overleaf.sid", "sharelatex.sid")
+
+
+def _cookie_domain_for(host: str) -> str:
+    """The domain to look cookies up under.
+
+    For overleaf.com we want the registrable domain so www. and api. both
+    match. For a self-hosted host we want that host exactly.
+    """
+    if host.endswith("overleaf.com"):
+        return "overleaf.com"
+    return host
+
 
 class UserFacingError(RuntimeError):
     """An error with a message written for a non-technical user.
@@ -141,16 +156,19 @@ class OverleafClient:
                 "Application → Cookies → https://www.overleaf.com, and copy the "
                 "Value of the row named 'overleaf_session2'."
             )
-        if not any(k in ("overleaf_session2", "overleaf.sid") for k in pairs):
+        if not any(k in SESSION_COOKIE_NAMES for k in pairs):
             raise UserFacingError(
-                "The pasted cookie does not contain 'overleaf_session2'.\n\n"
-                "Copy the Value of the cookie named exactly 'overleaf_session2' "
-                "(Application → Cookies → https://www.overleaf.com)."
+                "The pasted cookie does not contain an Overleaf session.\n\n"
+                "Copy the Value of the cookie named 'overleaf_session2' on "
+                "overleaf.com, or 'overleaf.sid' on a self-hosted Overleaf. "
+                "Look under Application, then Cookies, in your browser's "
+                "developer tools."
             )
 
         session = requests.Session()
         domain = urlparse(self.base_url).hostname or "www.overleaf.com"
-        # Set on the registrable domain so it is sent to www. and api. hosts.
+        # Registrable domain for overleaf.com so www. and api. both match; the
+        # exact host for anything self-hosted.
         cookie_domain = ".overleaf.com" if domain.endswith("overleaf.com") else domain
         for name, value in pairs.items():
             session.cookies.set(name, value, domain=cookie_domain, path="/")
@@ -196,10 +214,14 @@ class OverleafClient:
                 + ", ".join(n for n in dir(browser_cookie3) if not n.startswith("_"))
             )
 
+        # Derive the domain from base_url. Hardcoding overleaf.com means a
+        # self-hosted instance returns no cookies at all.
+        host = urlparse(self.base_url).hostname or "overleaf.com"
+        domain_name = _cookie_domain_for(host)
         try:
-            jar = loader(domain_name="overleaf.com")
+            jar = loader(domain_name=domain_name)
         except Exception as e:
-            raise RuntimeError(
+            raise UserFacingError(
                 f"Could not read Overleaf cookies from {browser}. Make sure {browser} "
                 "is installed and you are signed in to overleaf.com in it. On macOS, "
                 "browsers like Chrome may require granting Terminal/the launcher app "
@@ -208,13 +230,14 @@ class OverleafClient:
             ) from e
 
         session_cookie = next(
-            (c for c in jar if c.name in ("overleaf_session2", "overleaf.sid")),
+            (c for c in jar if c.name in SESSION_COOKIE_NAMES),
             None,
         )
         if session_cookie is None:
-            raise RuntimeError(
-                f"No Overleaf session cookie found in {browser}. Sign in to "
-                "https://www.overleaf.com in that browser and retry."
+            raise UserFacingError(
+                f"No Overleaf session was found in {browser} for {host}.\n\n"
+                f"Open {self.base_url} in {browser}, sign in, and try again. "
+                "If you use a self-hosted Overleaf, check the address is right."
             )
 
         session = requests.Session()
@@ -573,6 +596,11 @@ def _parse_cookie_string(pasted: str) -> dict[str, str]:
         if name and value:
             out[name] = value
     return out or {"overleaf_session2": s}
+
+
+def looks_self_hosted(base_url: str) -> bool:
+    host = urlparse(base_url).hostname or ""
+    return not host.endswith("overleaf.com")
 
 
 def _decode_meta_content(raw: str) -> Any:

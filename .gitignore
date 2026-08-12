@@ -31,3 +31,8 @@ config.json
 /comments.jsonl
 /agents.md
 /by-reviewer/
+
+# PyInstaller
+*.spec
+build/
+dist/

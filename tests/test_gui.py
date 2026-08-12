@@ -1,0 +1,109 @@
+"""Tests for the window.
+
+These build a real Tk window, so they skip anywhere without a display (CI on
+Linux, an SSH session). What they check is the wiring a non-technical user
+depends on: that every feature is reachable, that the fields that should hide
+do hide, and that bad input is caught before anything runs.
+"""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+tk = pytest.importorskip("tkinter")
+
+# Opening real windows hangs on some machines, and a test suite that can hang
+# is worse than one that skips. Run these deliberately:
+#     OCE_GUI_TESTS=1 pytest tests/test_gui.py
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("OCE_GUI_TESTS"),
+    reason="set OCE_GUI_TESTS=1 to run the window tests",
+)
+
+
+@pytest.fixture()
+def app():
+    from overleaf_comments_export.gui import App
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("no display")
+    root.withdraw()
+    a = App(root)
+    yield a
+    root.destroy()
+
+
+def test_every_feature_is_reachable_from_the_window(app):
+    """The CLI and the window must not drift apart. Someone who never opens a
+    terminal should be able to get at all of it."""
+    for name in [
+        "include_open_var", "include_resolved_var", "include_changes_var",
+        "response_letter_var", "per_reviewer_var", "annotated_var",
+        "stable_var", "detailed_var", "write_jsonl_var", "include_raw_var",
+        "reviewer_filter_var", "browser_var", "cookie_var", "base_var",
+        "url_var", "out_var", "title_var",
+    ]:
+        assert hasattr(app, name), f"{name} is not exposed in the window"
+
+
+def test_bad_link_is_flagged_while_typing(app):
+    app.url_var.set("https://example.com/not-a-project")
+    app.root.update()
+    assert "does not look like" in app.url_status.cget("text")
+
+
+def test_good_link_is_confirmed(app):
+    app.url_var.set("https://www.overleaf.com/project/507f1f77bcf86cd799439011")
+    app.root.update()
+    assert "Looks right" in app.url_status.cget("text")
+
+
+def test_self_hosted_address_is_hidden_until_asked_for(app):
+    assert not app.base_entry.winfo_ismapped()
+    app.self_hosted_var.set(True)
+    app._toggle_self_hosted()
+    app.root.update()
+    assert app.base_entry.winfo_ismapped()
+
+
+def test_unticking_self_hosted_restores_the_normal_address(app):
+    app.self_hosted_var.set(True)
+    app._toggle_self_hosted()
+    app.base_var.set("https://overleaf.my-uni.edu")
+    app.self_hosted_var.set(False)
+    app._toggle_self_hosted()
+    assert app.base_var.get() == "https://www.overleaf.com"
+
+
+def test_cookie_box_appears_only_when_pasting(app):
+    app.browser_box.set("Safari")
+    app._on_browser_change()
+    app.root.update()
+    assert not app.cookie_entry.winfo_ismapped()
+
+    app.browser_box.set("I will paste it myself")
+    app._on_browser_change()
+    app.root.update()
+    assert app.cookie_entry.winfo_ismapped()
+    assert app.browser_var.get() == "manual"
+
+
+def test_password_prompting_browsers_are_hidden_by_default(app):
+    shown = list(app.browser_box.cget("values"))
+    assert "Google Chrome" not in shown
+    app.show_advanced_var.set(True)
+    app._refresh_browser_choices()
+    assert "Google Chrome" in list(app.browser_box.cget("values"))
+
+
+def test_cookie_is_masked_on_screen(app):
+    """It is a key to the account, so it should not be readable over a shoulder."""
+    assert app.cookie_entry.cget("show") == "•"
+
+
+def test_technical_log_starts_hidden(app):
+    assert not app.details_var.get()
+    assert not app.details.winfo_ismapped()

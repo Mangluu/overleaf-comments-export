@@ -17,6 +17,8 @@ place to start if you would like to contribute.
 - Response letter scaffold (`--response-letter`)
 - Git friendly output that does not churn between runs (`--stable`)
 - Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
+- Downloadable apps for macOS, Windows and Linux, so Python is not needed
+- A window written for people who do not use a terminal
 
 ## Next
 
@@ -37,7 +39,6 @@ Things I think are worth doing, roughly in order.
 
 ## Later
 
-- Packaged double-click applications for macOS, Windows, and Linux
 - Offline re-render from a saved `comments.json`, for when the API breaks
 - Resolving `\input` and `\include` so multi-file projects get correct sections
 - Deep links back to the right place in Overleaf

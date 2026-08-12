@@ -39,14 +39,25 @@ paper with ninety comments from three co-authors that stops being workable.
 Every comment sits in its section, next to the words it was attached to, with
 its replies underneath and a stable id you can point at.
 
-## Install and run
+## Get it
+
+**If you do not write code**, download the app for your computer from the
+[latest release](https://github.com/Mangluu/overleaf-comments-export/releases/latest),
+unzip it, and open it. There is nothing else to install.
+
+The first time you open it, macOS or Windows will warn you about an app it has
+not checked. That is because signing an app costs money every year, not because
+anything is wrong. On macOS, right-click the app and choose Open. On Windows,
+click More info, then Run anyway.
+
+**If you use Python**, it is one command:
 
 ```bash
 pip install overleaf-comments-export
 overleaf-comments-export --gui
 ```
 
-That opens a small window. Paste your project link, choose a folder, press the
+That opens the same window. Paste your project link, choose a folder, press the
 button. If you prefer the terminal:
 
 ```bash
@@ -146,6 +157,20 @@ Next time you pull the comments, `git diff` shows the new ones and nothing else.
 +**C042** _open_ — "the axis labels"
 +- **A. Reviewer** · 2026-08-14 09:12 UTC: units are missing here
 ```
+
+## Self-hosted Overleaf
+
+If your university runs its own Overleaf rather than using overleaf.com, tick
+"My university runs its own Overleaf" in the window and put in its address, or
+pass `--base-url https://overleaf.my-university.edu` on the command line.
+
+Comments work. Tracked changes do not, because Overleaf makes them part of
+Server Pro rather than the free Community Edition, so there are none to export.
+Self-hosted Overleaf names its session cookie `overleaf.sid` rather than
+`overleaf_session2`, which the tool handles either way.
+
+This path is less tested than overleaf.com, so if something does not work,
+please [say so](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose).
 
 ## Signing in
 

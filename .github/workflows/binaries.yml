@@ -1,0 +1,98 @@
+name: Build downloadable apps
+
+# Builds a double-clickable application for each operating system and attaches
+# it to the release, so people who do not use Python can still run this.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+            asset: OverleafCommentsExport-macOS.zip
+          - os: windows-latest
+            label: Windows
+            asset: OverleafCommentsExport-Windows.zip
+          - os: ubuntu-latest
+            label: Linux
+            asset: OverleafCommentsExport-Linux.zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the app and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller
+          python -m pip install sv-ttk
+
+      - name: Build
+        shell: bash
+        run: |
+          pyinstaller \
+            --name "Overleaf Comments Export" \
+            --windowed --noconfirm --clean \
+            --paths . \
+            --collect-submodules overleaf_comments_export \
+            --collect-all sv_ttk \
+            --collect-submodules browser_cookie3 \
+            --osx-bundle-identifier com.mangluu.overleaf-comments-export \
+            packaging/app_entry.py
+
+      - name: Add a readme people will actually see
+        shell: bash
+        run: |
+          cat > dist/"How to open this.txt" <<'TXT'
+          Overleaf Comments Export
+
+          macOS
+            The first time only: right-click the app, choose Open, then Open
+            again. macOS warns about apps it has not checked; this one is not
+            signed, because a signing certificate costs money every year.
+
+          Windows
+            The first time only: Windows may say "Windows protected your PC".
+            Click "More info", then "Run anyway".
+
+          Linux
+            Make it executable if it is not already:
+              chmod +x "Overleaf Comments Export"
+
+          Nothing is uploaded anywhere. Everything happens on your computer.
+          Source and help: https://github.com/Mangluu/overleaf-comments-export
+          TXT
+
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          rm -rf "Overleaf Comments Export" 2>/dev/null || true
+          if [ -d "Overleaf Comments Export.app" ]; then
+            zip -r -q "../${{ matrix.asset }}" "Overleaf Comments Export.app" "How to open this.txt"
+          else
+            zip -r -q "../${{ matrix.asset }}" . -x '*.DS_Store'
+          fi
+
+      - name: Attach it to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ matrix.asset }}" --clobber
+
+      - name: Keep it as an artifact too
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
