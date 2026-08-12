@@ -7,6 +7,11 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Uploading the built apps to the release needs write access; the default token
+# is read-only.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: ${{ matrix.label }}
@@ -77,13 +82,20 @@ jobs:
       - name: Package
         shell: bash
         run: |
-          cd dist
-          rm -rf "Overleaf Comments Export" 2>/dev/null || true
-          if [ -d "Overleaf Comments Export.app" ]; then
-            zip -r -q "../${{ matrix.asset }}" "Overleaf Comments Export.app" "How to open this.txt"
-          else
-            zip -r -q "../${{ matrix.asset }}" . -x '*.DS_Store'
-          fi
+          # shutil works the same on all three runners; Windows has no `zip`.
+          python - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          dist = Path("dist")
+          app = dist / "Overleaf Comments Export.app"
+          if app.exists():
+              # Keep only the .app and the readme, so the zip is the app itself.
+              for child in dist.iterdir():
+                  if child not in (app, dist / "How to open this.txt"):
+                      shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink()
+          shutil.make_archive("${{ matrix.asset }}".removesuffix(".zip"), "zip", dist)
+          print("built", "${{ matrix.asset }}", os.path.getsize("${{ matrix.asset }}") // 1024, "KB")
+          PY
 
       - name: Attach it to the release
         if: github.event_name == 'release'
