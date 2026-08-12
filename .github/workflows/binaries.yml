@@ -44,8 +44,10 @@ jobs:
       - name: Install the app and PyInstaller
         run: |
           python -m pip install --upgrade pip
-          python -m pip install . pyinstaller
-          python -m pip install sv-ttk
+          # The pdf extra matters here more than anywhere: these apps exist
+          # for people who do not have Python, and putting the comments into
+          # the PDF is the reason most of them will open it.
+          python -m pip install ".[gui,pdf]" pyinstaller
 
       - name: Build
         shell: bash
@@ -57,6 +59,7 @@ jobs:
             --collect-submodules overleaf_comments_export \
             --collect-all sv_ttk \
             --collect-submodules browser_cookie3 \
+            --collect-all pymupdf \
             --osx-bundle-identifier com.mangluu.overleaf-comments-export \
             packaging/app_entry.py
 
