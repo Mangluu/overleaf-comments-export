@@ -4,6 +4,15 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+- A first-party Manifest V3 extension for Chrome, Edge, and other Chromium
+  browsers. It exports the project already open in the current tab without
+  reading or storing its session cookie. Markdown, JSON, JSONL, and a response
+  letter are available in English or Chinese; comments and tracked changes keep
+  their original timestamps, and each run downloads into its own UTC-stamped
+  folder. The extension is read-only, has no backend or telemetry, and requests
+  only `activeTab`, `scripting`, and `downloads`.
+
 ## [0.10.0] — 2026-08-12
 
 ### Added

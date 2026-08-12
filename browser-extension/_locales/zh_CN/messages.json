@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Overleaf 评论导出"
+  },
+  "extensionDescription": {
+    "message": "将当前 Overleaf 项目的评论和修订记录导出到本地文件。"
+  },
+  "actionTitle": {
+    "message": "导出 Overleaf 评论"
+  }
+}

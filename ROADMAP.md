@@ -19,6 +19,8 @@ place to start if you would like to contribute.
 - Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
 - Downloadable apps for macOS, Windows and Linux, so Python is not needed
 - A window written for people who do not use a terminal, with dark mode
+- A read-only Chrome/Edge extension that exports the project in the current tab
+  without reading or storing browser cookies
 
 ## Next
 

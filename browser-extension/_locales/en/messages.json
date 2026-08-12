@@ -1,0 +1,11 @@
+{
+  "extensionName": {
+    "message": "Overleaf Comments Export"
+  },
+  "extensionDescription": {
+    "message": "Export comments and tracked changes from the currently open Overleaf project to local files."
+  },
+  "actionTitle": {
+    "message": "Export Overleaf comments"
+  }
+}

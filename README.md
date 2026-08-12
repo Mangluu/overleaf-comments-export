@@ -60,6 +60,17 @@ not checked. That is because signing an app costs money every year, not because
 anything is wrong. On macOS, right-click the app and choose Open. On Windows,
 click More info, then Run anyway.
 
+**If you prefer a browser extension**, Chrome, Edge, and other Chromium
+browsers can run the exporter directly inside the Overleaf project you already
+have open. It uses that tab's signed-in session without reading or storing the
+session cookie, and downloads everything locally. The extension exports
+Markdown, JSON, JSONL, and a response-letter template, with English and Chinese
+interfaces and reports.
+
+Load [`browser-extension/`](browser-extension/) as an unpacked extension; the
+[extension guide](browser-extension/README.md) has the two-minute installation
+steps and explains its deliberately limited permissions.
+
 **If you use Python**, it is one command:
 
 ```bash
