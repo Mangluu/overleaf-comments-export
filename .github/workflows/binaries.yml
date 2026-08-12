@@ -103,6 +103,9 @@ jobs:
 
       - name: Attach it to the release
         if: github.event_name == 'release' || inputs.tag != ''
+        # bash on every runner: the Windows default is PowerShell, where $TAG
+        # is not an environment variable and silently expands to nothing.
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name || inputs.tag }}
