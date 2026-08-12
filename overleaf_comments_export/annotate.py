@@ -12,11 +12,14 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Iterable, Literal
+from typing import Iterable, Literal, get_args
 
 from .model import AnchoredComment, Thread
 
 AnnotateStyle = Literal["highlight", "pdfcomment", "todonotes"]
+# One source of truth: the command line's choices and the runtime check both
+# come from here, so a new style cannot be reachable from one and not the other.
+ANNOTATE_STYLES = get_args(AnnotateStyle)
 
 # Characters that mean something to TeX and have to be neutralised. This is one
 # translation table applied in a single pass on purpose: replacing them one
@@ -293,7 +296,7 @@ def annotate_document(
             out = out[:at] + "\n" + colour_definitions(colours) + out[at:]
             out = _insert_after_begin_document(out, legend(colours, names))
             out = _insert_before_end_document(out, summary(placements, threads))
-        return out, sum(1 for p in placements if p.highlighted or True)
+        return out, len(placements)
 
     placed: list[tuple[int, str]] = []
     for c in comments:

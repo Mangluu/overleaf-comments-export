@@ -8,6 +8,7 @@ import traceback
 from pathlib import Path
 
 from . import __version__
+from .annotate import ANNOTATE_STYLES
 from .client import OverleafClient, UserFacingError
 from .export import ExportResult, run_export
 
@@ -151,8 +152,16 @@ def main(argv: list[str] | None = None) -> int:
         "that carries the comments.",
     )
     parser.add_argument(
+        "--pdf",
+        dest="annotated_pdf",
+        action="store_true",
+        help="Also write commented.pdf: the PDF Overleaf built, with every "
+        "comment highlighted on the text it was written about. Needs no LaTeX "
+        "installation. Install with the [pdf] extra to enable this.",
+    )
+    parser.add_argument(
         "--annotate-style",
-        choices=["highlight", "pdfcomment", "todonotes"],
+        choices=list(ANNOTATE_STYLES),
         default="highlight",
         help="How comments appear in the annotated source. 'highlight' marks "
         "the commented words themselves, coloured by who wrote the comment, "
@@ -237,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
             per_reviewer_reports=args.per_reviewer,
             response_letter=args.response_letter,
             annotated_tex=args.annotated_tex,
+            annotated_pdf=args.annotated_pdf,
             annotate_style=args.annotate_style,
             stable=args.stable,
             progress=lambda msg: print(msg, file=sys.stderr),

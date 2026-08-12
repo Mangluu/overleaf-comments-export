@@ -566,6 +566,7 @@ class App:
         self.response_letter_var = tk.BooleanVar(value=bool(cfg.get("response_letter", False)))
         self.per_reviewer_var = tk.BooleanVar(value=bool(cfg.get("per_reviewer_reports", False)))
         self.annotated_var = tk.BooleanVar(value=bool(cfg.get("annotated_tex", False)))
+        self.annotated_pdf_var = tk.BooleanVar(value=bool(cfg.get("annotated_pdf", True)))
         self.stable_var = tk.BooleanVar(value=bool(cfg.get("stable", False)))
         self.detailed_var = tk.BooleanVar(value=cfg.get("render_mode", "compact") == "detailed")
         self.write_jsonl_var = tk.BooleanVar(value=bool(cfg.get("write_jsonl", True)))
@@ -585,7 +586,14 @@ class App:
             (self.per_reviewer_var, "A separate file per person",
              "One file for each person who commented, so you can work through "
              "them one at a time."),
-            (self.annotated_var, "Comments inside the PDF",
+            (self.annotated_pdf_var, "A PDF of the paper with the comments in it",
+             "Writes commented.pdf: your paper exactly as Overleaf builds it, "
+             "with each comment highlighted on the words it was written about, "
+             "coloured by who wrote it. Hover a highlight to read the comment. "
+             "Nothing to install and nothing to compile. Open the result in a "
+             "web browser: Preview on a Mac shows the highlights but not the "
+             "comments."),
+            (self.annotated_var, "The LaTeX source with the comments in it",
              "Writes a copy of your LaTeX into a folder called annotated, with "
              "the commented words highlighted in the colour of whoever "
              "commented on them. Compile it, upload it to Overleaf or build it "
@@ -776,6 +784,7 @@ class App:
             "per_reviewer_reports": bool(self.per_reviewer_var.get()),
             "response_letter": bool(self.response_letter_var.get()),
             "annotated_tex": bool(self.annotated_var.get()),
+            "annotated_pdf": bool(self.annotated_pdf_var.get()),
             "stable": bool(self.stable_var.get()),
             "include_raw": bool(self.include_raw_var.get()),
         })
@@ -804,6 +813,7 @@ class App:
             per_reviewer_reports=bool(self.per_reviewer_var.get()),
             response_letter=bool(self.response_letter_var.get()),
             annotated_tex=bool(self.annotated_var.get()),
+            annotated_pdf=bool(self.annotated_pdf_var.get()),
             stable=bool(self.stable_var.get()),
             include_raw=bool(self.include_raw_var.get()),
         )
@@ -851,16 +861,23 @@ class App:
         for label, path in (
             ("Data", result.json_path), ("Lines", result.jsonl_path),
             ("Letter", result.response_letter_path),
-            ("Annotated", result.annotated_dir),
+            ("Commented PDF", result.annotated_pdf_path),
+            ("Annotated LaTeX", result.annotated_dir),
             ("Per person", result.by_reviewer_dir), ("Notes for AI", result.agents_path),
         ):
             if path is not None:
                 self._append_log(f"{label}: {path}")
+        if result.annotated_pdf_path is not None:
+            self._append_log(
+                "Open commented.pdf in a web browser. Chrome, Edge, Firefox "
+                "and Safari all show the comment when you hover a highlight. "
+                "Preview on a Mac shows the highlights but not the comments, "
+                "so drag the file onto a browser window instead. Every comment "
+                "is also listed on the last pages.")
         if result.annotated_dir is not None:
             self._append_log(
-                "To get a PDF with the comments in it: upload the annotated "
-                "folder to Overleaf and compile it there, or compile it on "
-                "this computer if you have LaTeX installed.")
+                "The annotated folder holds your LaTeX with the same "
+                "highlighting, to compile on Overleaf or on this computer.")
         if result.stale_anchor_count:
             self._append_log(
                 f"{result.stale_anchor_count} comment(s) point at text that has "

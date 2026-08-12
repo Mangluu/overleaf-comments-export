@@ -4,6 +4,79 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-08-12
+
+### Added
+- **A PDF with the comments in it, straight out of the tool.** `--pdf`, or the
+  tick box in the window, writes `commented.pdf`: your paper exactly as
+  Overleaf builds it, with each comment highlighted on the words it was written
+  about and coloured by who wrote it. Hover a highlight to read the comment.
+
+  There is no LaTeX to install and nothing to compile. The PDF Overleaf already
+  built is fetched and the highlights are written into it, so the result has
+  your real document class, your real figures, and your real bibliography, and
+  it cannot fail to build. Overleaf needs to have compiled the project at least
+  once; if it has not, the tool says so rather than guessing.
+
+  The commented words are found by matching the source against the text on the
+  page, which copes with the hyphens typesetting inserts at line breaks and
+  with a phrase that occurs more than once. A comment that cannot be placed is
+  listed rather than put somewhere plausible. Every comment is listed at the
+  end with the page it is on, because annotations do not print.
+
+  A paper split across several `.tex` files is handled: every file carrying a
+  comment is matched against the same pages.
+
+  Install with `pip install 'overleaf-comments-export[pdf]'` to enable it. The
+  annotated LaTeX is still there for anyone who wants to compile it themselves.
+
+  Open the result in a web browser. Preview on a Mac draws the highlights but
+  never shows the note attached to one, which is a limitation of Preview rather
+  than of the file. Every comment is listed on the last pages regardless, with
+  the page it is on, since annotations do not print.
+
+### Fixed
+- Exported files were named `unknown-<id>.tex` rather than `main.tex` on any
+  Mac where Python was installed without running "Install Certificates.command".
+  Python has no root certificates in that state, so fetching the file tree
+  could not verify the connection and the names were lost. When the certificate
+  store is empty, the one `requests` already carries is used.
+- A missing `resolved-thread-ids` endpoint was logged as "Overleaf could not
+  find that project", which reads like the project has gone. It is optional,
+  and resolved state is read from the thread list regardless.
+
+## [0.9.1] — 2026-08-12
+
+### Fixed
+- **The highlighting added in 0.9.0 never ran.** The export ignored the style
+  it was given and always produced the old pins, so nobody had actually seen
+  the feature, from the window or from the command line. Every style is now
+  covered by a test that goes through the same entry point the window uses,
+  which is where this slipped through: each piece worked on its own and the
+  wiring between them did not.
+- **A comment on text containing maths or a command is now highlighted
+  anyway**, on the longest run of ordinary words inside it, instead of falling
+  back to a pin. Reviewers write on sentences with `$x$` and `\emph{}` in them
+  constantly. On the paper this was tested against it took the comments shown
+  in place from 60 to 72 out of 83, and the popup says when the highlight
+  covers a little less than the comment did.
+- A comment on a whole paragraph marks its opening sentence rather than
+  colouring half a page.
+- Nothing is written inside a section heading or a caption. LaTeX writes those
+  out to a file and reads them back for the contents page, and markup does not
+  survive the trip. Comments on a heading get a pin beside it.
+- **Pins now carry the colour of whoever wrote the comment**, like highlights
+  do, and no longer print on top of the word after them.
+- **Files were exported as `unknown-<id>.tex` instead of `main.tex` on Macs.**
+  Python installed from python.org has no root certificates until you run
+  "Install Certificates.command", so fetching the file tree failed to verify
+  and the names were lost. When there are no certificates at all, the ones
+  `requests` already carries are used.
+- A missing `resolved-thread-ids` endpoint logged "Overleaf could not find that
+  project", which reads like the project has gone. It is an optional endpoint
+  that some Overleaf versions do not have, and resolved state is read from the
+  thread list regardless.
+
 ## [0.9.0] — 2026-08-12
 
 ### Changed
@@ -187,7 +260,9 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.10.0
+[0.9.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.9.0
 [0.8.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.8.1
 [0.8.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.8.0

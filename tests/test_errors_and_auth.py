@@ -101,7 +101,7 @@ def test_request_retries_then_raises_user_facing(monkeypatch):
         calls["n"] += 1
         raise requests.exceptions.ConnectionError("Failed to resolve 'www.overleaf.com'")
 
-    monkeypatch.setattr(client.session, "get", boom)
+    monkeypatch.setattr(client.session, "request", boom)
     monkeypatch.setattr("overleaf_comments_export.client.time.sleep", lambda s: None)
 
     try:
@@ -130,7 +130,7 @@ def test_request_retries_transient_500_then_succeeds(monkeypatch):
         calls["n"] += 1
         return Resp(code)
 
-    monkeypatch.setattr(client.session, "get", flaky)
+    monkeypatch.setattr(client.session, "request", flaky)
     monkeypatch.setattr("overleaf_comments_export.client.time.sleep", lambda s: None)
 
     r = client._request("https://www.overleaf.com/x")
@@ -152,6 +152,140 @@ def test_request_does_not_retry_404(monkeypatch):
         calls["n"] += 1
         return Resp()
 
-    monkeypatch.setattr(client.session, "get", once)
+    monkeypatch.setattr(client.session, "request", once)
     assert client._request("https://www.overleaf.com/x").status_code == 404
     assert calls["n"] == 1
+
+
+# --- fetching the PDF Overleaf built ---
+
+class _Resp:
+    def __init__(self, status=200, content=b"", payload=None):
+        self.status_code = status
+        self.content = content
+        self._payload = payload
+        self.headers = {}
+
+    @property
+    def ok(self):
+        return self.status_code < 400
+
+    @property
+    def text(self):
+        return self.content.decode("utf-8", "replace")
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise requests.exceptions.HTTPError(f"{self.status_code}")
+
+
+def _client(monkeypatch, handler):
+    from overleaf_comments_export.client import OverleafClient
+    c = OverleafClient()
+    c.connect(browser="manual", cookie_value="overleaf_session2=s%3Aabc")
+    monkeypatch.setattr(c.session, "request", handler)
+    return c
+
+
+def test_the_last_build_is_used_when_there_is_one(monkeypatch):
+    """Reusing the existing build costs nothing and is what the user is
+    already looking at. Asking for a compile uses their quota."""
+    seen = []
+
+    def handler(method, url, **kw):
+        seen.append((method, url))
+        if url.endswith("/output/output.pdf"):
+            return _Resp(content=b"%PDF-1.7 body")
+        raise AssertionError(f"should not have been called: {url}")
+
+    c = _client(monkeypatch, handler)
+    assert c.download_compiled_pdf("abc") == b"%PDF-1.7 body"
+    assert not any("compile" in u for _, u in seen), "asked for a needless compile"
+
+
+def test_a_compile_is_requested_when_there_is_no_build(monkeypatch):
+    def handler(method, url, **kw):
+        if "build/1" in url:                 # checked first: the built file's
+            return _Resp(content=b"%PDF-1.7 fresh")   # URL also ends in output.pdf
+        if url.endswith("/output/output.pdf"):
+            return _Resp(status=404)
+        if url.endswith("/project/abc"):
+            return _Resp(content=b'<meta name="ol-csrfToken" content="tok123">')
+        if url.endswith("/compile"):
+            assert method == "POST"
+            assert kw["headers"]["x-csrf-token"] == "tok123"
+            return _Resp(payload={"status": "success", "outputFiles": [
+                {"path": "output.pdf", "url": "/project/abc/build/1/output/output.pdf"}]})
+        raise AssertionError(url)
+
+    assert _client(monkeypatch, handler).download_compiled_pdf("abc") == b"%PDF-1.7 fresh"
+
+
+def test_a_failed_compile_returns_nothing_rather_than_rubbish(monkeypatch):
+    def handler(method, url, **kw):
+        if url.endswith("/output/output.pdf"):
+            return _Resp(status=404)
+        if url.endswith("/project/abc"):
+            return _Resp(content=b'<meta name="ol-csrfToken" content="tok">')
+        return _Resp(payload={"status": "failure", "outputFiles": []})
+
+    assert _client(monkeypatch, handler).download_compiled_pdf("abc") is None
+
+
+def test_an_html_error_page_is_not_mistaken_for_a_pdf(monkeypatch):
+    def handler(method, url, **kw):
+        if url.endswith("/output/output.pdf"):
+            return _Resp(content=b"<!DOCTYPE html><title>Not found</title>")
+        if url.endswith("/project/abc"):
+            return _Resp(content=b"<html>no token here</html>")
+        raise AssertionError(url)
+
+    assert _client(monkeypatch, handler).download_compiled_pdf("abc") is None
+
+
+def test_the_build_is_fetched_from_the_machine_that_made_it(monkeypatch):
+    """A build lives on the compile server, not the main site. Asking the main
+    site returns 404, which looks like "no PDF" and is not."""
+    asked = []
+
+    def handler(method, url, **kw):
+        asked.append(url)
+        if "clsiserverid=clsi-7" in url:
+            return _Resp(content=b"%PDF-1.7 built")
+        if url.endswith("/output/output.pdf"):
+            return _Resp(status=404, content=b"<!DOCTYPE html>")
+        if url.endswith("/project/abc"):
+            return _Resp(content=b'<meta name="ol-csrfToken" content="tok">')
+        if url.endswith("/compile"):
+            return _Resp(payload={
+                "status": "success", "clsiServerId": "clsi-7",
+                "pdfDownloadDomain": "https://a.overleaf.com",
+                "outputFiles": [{"path": "output.pdf",
+                                 "url": "/project/abc/user/u1/build/b1/output/output.pdf"}]})
+        raise AssertionError(url)
+
+    c = _client(monkeypatch, handler)
+    assert c.download_compiled_pdf("abc") == b"%PDF-1.7 built"
+    assert asked[-1] == (
+        "https://a.overleaf.com/project/abc/user/u1/build/b1/output/output.pdf"
+        "?clsiserverid=clsi-7"
+    )
+
+
+def test_the_build_url_works_without_the_extra_fields(monkeypatch):
+    """Self-hosted Overleaf serves its own builds and sends neither field."""
+    def handler(method, url, **kw):
+        if "build/b1" in url:
+            assert "clsiserverid" not in url
+            return _Resp(content=b"%PDF-1.7 built")
+        if url.endswith("/output/output.pdf"):
+            return _Resp(status=404)
+        if url.endswith("/project/abc"):
+            return _Resp(content=b'<meta name="ol-csrfToken" content="tok">')
+        return _Resp(payload={"status": "success", "outputFiles": [
+            {"path": "output.pdf", "url": "/project/abc/build/b1/output/output.pdf"}]})
+
+    assert _client(monkeypatch, handler).download_compiled_pdf("abc") == b"%PDF-1.7 built"

@@ -13,6 +13,10 @@ Overleaf leaves comments out of both the source download and the Git sync, so
 the only way to work through them is inside the editor, one at a time. On a
 paper with ninety comments from three co-authors that stops being workable.
 
+It also writes **a PDF of your paper with the comments highlighted on the words
+they were written about**, coloured by who wrote them. No LaTeX to install and
+nothing to compile. See [Comments inside the PDF](#comments-inside-the-pdf).
+
 ## What the output looks like
 
 ```markdown
@@ -87,7 +91,8 @@ Python 3.10 or newer, tested up to 3.14, on macOS, Windows, and Linux.
 | `comments.jsonl` | One self-contained record per comment, for pipelines. |
 | `agents.md` | A short brief telling an AI assistant how to read the other two. |
 | `response-letter.md` | Optional. A point-by-point reply document with a blank slot under every open comment. |
-| `annotated/` | Optional. Your LaTeX with the comments embedded, ready to compile. |
+| `commented.pdf` | Optional. Your paper as Overleaf builds it, with the comments highlighted on the text. |
+| `annotated/` | Optional. Your LaTeX with the comments embedded, if you would rather compile it yourself. |
 | `by-reviewer/<name>.md` | Optional. One file per reviewer, so you can work through them one person at a time. |
 
 ## Working through comments with an AI
@@ -108,6 +113,7 @@ surrounding text, so a deletion reads as `before ~~removed~~ after`.
 ## Useful options
 
 ```bash
+--pdf                      # a PDF of your paper with the comments in it
 --response-letter          # draft a point-by-point reply document
 --annotated-tex            # a copy of your source with the comments embedded
 --annotate-style todonotes # put those comments in the margin instead
@@ -134,9 +140,60 @@ Appearance picker in the top right if you would rather fix it one way.
 
 ## Comments inside the PDF
 
-`--annotated-tex` writes a copy of your LaTeX into `annotated/`, with the
-commented words themselves highlighted in the colour of whoever commented on
-them. Hover a highlight in the PDF and the comment appears.
+```bash
+pip install 'overleaf-comments-export[pdf]'
+overleaf-comments-export --project-url <link> --out ./review --pdf
+```
+
+This writes `commented.pdf`: your paper exactly as Overleaf builds it, with
+each comment highlighted on the words it was written about, in the colour of
+whoever wrote it. Hover a highlight and the comment appears. This is what
+people have been asking Overleaf for since 2023.
+
+There is nothing to install beyond that one line, and nothing to compile. The
+PDF Overleaf already built is fetched and the highlights are written into it,
+so it has your real document class, your real figures, and your real
+bibliography, and it cannot fail to build. Your project is never modified.
+
+If Overleaf has no build to hand, the tool asks it to compile, so this works
+whether or not you have opened the project recently.
+
+### Which PDF reader to open it in
+
+Use a **browser**. Chrome, Edge, Firefox and Safari all show the highlights and
+the comment on hover, and none of them need anything installed. Adobe Acrobat
+Reader works too, and shows the comments in a side panel.
+
+**Preview on a Mac shows the highlights but not the comments.** Preview does
+not display the note attached to a highlight, so hovering does nothing. This is
+Preview, not the file, and it affects any commented PDF, not just these. Drag
+the file onto a browser window instead.
+
+Whatever you open it in, the last pages list every comment in full with the
+page it is on, so nothing depends on your reader supporting annotations.
+
+### How the comments find their place
+
+A PDF does not know where the LaTeX went, so the commented words are found by
+matching the source against the text on the page. Citations and cross
+references are dropped, because they print as numbers. Maths is treated as
+unknowable and the words either side of it are used instead. Line-break hyphens
+are ignored, so a comment on `force-feedback` still matches when it was set as
+`force-` and `feedback` on two lines. A phrase that appears more than once is
+resolved by reading in step with the source order.
+
+On the paper this was built against, 82 of 83 comments landed on the right
+words. The one that did not was written on a `\abstract` command, which prints
+nothing. A comment that cannot be placed is listed rather than put somewhere
+plausible.
+
+Papers split across several `.tex` files are handled; every file that carries a
+comment is matched against the same pages.
+
+### If you would rather compile it yourself
+
+`--annotated-tex` writes a copy of your LaTeX into `annotated/` with the same
+highlighting, to compile on Overleaf or on your own machine.
 
 ```bash
 overleaf-comments-export --project-url <link> --out ./review --annotated-tex
@@ -147,9 +204,6 @@ We propose \pdfmarkupcomment[markup=Highlight,color=ocehlA,author={A. Reviewer}]
 {a novel framework}{[C014] A. Reviewer: Needs a citation. | Reply: Smith 2023 would work}
 for measuring quality.
 ```
-
-Compile that and the PDF carries the comments, which is what people have been
-asking Overleaf for since 2023.
 
 A key at the top of the document says whose colour is whose. Where more than
 one comment covers the same words, that stretch gets its own colour and a

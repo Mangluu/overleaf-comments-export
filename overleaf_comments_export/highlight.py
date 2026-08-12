@@ -19,6 +19,7 @@ the end of the document so nothing is silently lost.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Iterable, Sequence
 
@@ -52,6 +53,7 @@ class Placement:
     comment: AnchoredComment
     highlighted: bool
     reason: str = ""
+    page: int | None = None   # 1-based, when it went into a PDF
 
 
 @dataclass
@@ -122,9 +124,91 @@ def span_is_safe(text: str, start: int, end: int) -> tuple[bool, str]:
     return True, ""
 
 
-def _popup_text(comments: Sequence[AnchoredComment], threads: dict[str, Thread]) -> str:
+# Below this a partial highlight is more distracting than helpful, and the
+# comment is better served by a pin.
+MIN_TRIM = 12
+
+# Arguments that LaTeX writes out to a file and reads back, for a contents
+# page, a running head, or a list of figures. Markup put inside one of these
+# travels with it and breaks on the way back, so a comment on a heading gets a
+# pin beside it instead.
+_FRAGILE = ("section", "subsection", "subsubsection", "paragraph",
+            "subparagraph", "caption", "title", "thanks", "footnote", "chapter")
+
+
+def in_fragile_argument(text: str, pos: int, limit: int = 400) -> bool:
+    """Whether this position sits inside the braces of a heading or a caption."""
+    depth = 0
+    i = pos - 1
+    stop = max(0, pos - limit)
+    while i >= stop:
+        ch = text[i]
+        if ch in "{}" and (i == 0 or text[i - 1] != "\\"):
+            if ch == "}":
+                depth += 1
+            elif depth:
+                depth -= 1
+            else:
+                head = text[max(0, i - 20):i]
+                name = re.search(r"\\([a-zA-Z]+)\*?$", head)
+                return bool(name and name.group(1) in _FRAGILE)
+        i -= 1
+    return False
+
+
+def trim_to_safe(text: str, start: int, end: int) -> tuple[int, int] | None:
+    """The longest stretch inside this span that can be highlighted.
+
+    Reviewers comment on maths and on commands constantly, and refusing the
+    whole span for one `$x$` in the middle of a sentence loses the one thing a
+    highlight is for, showing which words are meant. So take the longest run of
+    ordinary text within the span instead of nothing at all.
+    """
+    body = text[start:end]
+    best: tuple[int, int] | None = None
+    run = 0
+    for i, ch in enumerate(body + "\0"):
+        if ch not in _UNSAFE and ch != "\0" and not body.startswith("\n\n", i):
+            run += 1
+            continue
+        if run:
+            s, e = start + i - run, start + i
+            # Whole words only, or the highlight starts mid-word and reads as
+            # a mistake.
+            while s < e and not text[s].isspace() and s > start and not text[s - 1].isspace():
+                s += 1
+            while e > s and not text[e - 1].isspace() and e < end and not text[e].isspace():
+                e -= 1
+            if e - s >= MIN_TRIM and text[s:e].strip() and (best is None or e - s > best[1] - best[0]):
+                best = (s, e)
+        run = 0
+    if best is None:
+        return None
+    s, e = best
+    s += len(text[s:e]) - len(text[s:e].lstrip())
+    e -= len(text[s:e]) - len(text[s:e].rstrip())
+    if e - s > MAX_SPAN:
+        # A comment on a whole paragraph. Mark its opening sentence rather than
+        # colouring half a page, which is what the reader needs to find it.
+        window = text[s:s + MAX_SPAN]
+        cut = max(window.rfind(". "), window.rfind("? "), window.rfind("! "))
+        e = s + (cut + 1 if cut >= MIN_TRIM else window.rfind(" "))
+    if in_fragile_argument(text, s):
+        return None
+    ok, _ = span_is_safe(text, s, e)
+    return (s, e) if ok else None
+
+
+def _popup_text(comments: Sequence[AnchoredComment], threads: dict[str, Thread],
+                escape=latex_escape) -> str:
     """What the reader sees on hover. Self-identifying, because most PDF
-    readers paint every popup the same colour whatever the annotation says."""
+    readers paint every popup the same colour whatever the annotation says.
+
+    `escape` is how the text is made safe for wherever it is going. Writing
+    into LaTeX means escaping and folding to ASCII. Writing into a PDF means
+    neither, and doing it anyway would turn Muller into Muller and Soren into
+    a question mark.
+    """
     parts: list[str] = []
     if len(comments) > 1:
         parts.append(f"{len(comments)} comments on this text.")
@@ -140,7 +224,7 @@ def _popup_text(comments: Sequence[AnchoredComment], threads: dict[str, Thread])
                 rname = reply.user_name or reply.user_email or "reply"
                 body += f" | Reply ({rname}): {reply.content or ''}"
         parts.append(f"[{c.short_id}] {state}{who}: {body}")
-    return latex_escape(" ".join(parts))
+    return escape(" ".join(parts))
 
 
 def _segment_colour(
@@ -244,8 +328,18 @@ def markup_macro(colour: str, kind: str, author: str, body: str, quoted: str) ->
     )
 
 
-def pin_macro(author: str, body: str) -> str:
-    return f"\\pdfcomment[author={{{latex_escape(author)}}},icon=Comment]{{{body}}}"
+def pin_macro(author: str, body: str, colour: str = "") -> str:
+    """A note at a point, for a comment whose text cannot be highlighted.
+
+    Carries the writer's colour like a highlight does, so a comment on a
+    section heading still reads as theirs.
+    """
+    opts = f"author={{{latex_escape(author)}}},icon=Comment"
+    if colour:
+        opts += f",color={colour}"
+    # The icon is drawn with no width of its own, so without the space after it
+    # the next word is printed on top of it.
+    return f"\\pdfcomment[{opts}]{{{body}}}\\hspace{{1.1em}}"
 
 
 def apply_highlights(
@@ -288,35 +382,48 @@ def apply_highlights(
 
     for seg in segments:
         ok, reason = span_is_safe(text, seg.start, seg.end)
+        mark_start, mark_end, partial = seg.start, seg.end, False
         if not ok:
-            for c in seg.comments:
-                if c.short_id not in placements or placements[c.short_id].highlighted:
-                    placements[c.short_id] = Placement(c, False, reason)
-                    if c not in unplaced:
-                        unplaced.append(c)
-            continue
+            trimmed = trim_to_safe(text, seg.start, seg.end)
+            if trimmed is None:
+                for c in seg.comments:
+                    if c.short_id not in placements or placements[c.short_id].highlighted:
+                        placements[c.short_id] = Placement(c, False, reason)
+                        if c not in unplaced:
+                            unplaced.append(c)
+                continue
+            mark_start, mark_end = trimmed
+            partial = True
         colour, kind = _segment_colour(seg, threads, colours)
         _, who = _author_of(seg.comments[0], threads)
         if len({_author_of(c, threads)[0] for c in seg.comments}) > 1:
             who = "several reviewers"
         body = _popup_text(seg.comments, threads)
-        quoted = to_ascii(text[seg.start:seg.end])
-        edits.append((seg.start, seg.end,
+        if partial:
+            # Say so, rather than let the reader think the comment was only
+            # about the part we could colour.
+            body = latex_escape("(The comment covers a little more than is "
+                                "highlighted here.) ") + body
+        quoted = to_ascii(text[mark_start:mark_end])
+        edits.append((mark_start, mark_end,
                       markup_macro(colour, kind, who, body, quoted)))
-        covered.append((seg.start, seg.end))
+        covered.append((mark_start, mark_end))
         for c in seg.comments:
             placements.setdefault(c.short_id, Placement(c, True))
 
     # A span we could not highlight still gets a pin next to it, so it is
     # visible in the PDF and not only in the list at the end.
     for c in unplaced:
-        _, who = _author_of(c, threads)
+        key, who = _author_of(c, threads)
         pos = safe_insertion_point(text, min(c.offset, len(text)), "")
         # Never land inside a stretch that is about to be replaced.
         for start, end in covered:
             if start < pos < end:
                 pos = end
-        edits.append((pos, pos, pin_macro(who, _popup_text([c], threads))))
+        t = threads.get(c.thread_id)
+        pin_colour = DONE_COLOUR[0] if (t and t.resolved) else colours.get(key, "")
+        edits.append((pos, pos,
+                      pin_macro(who, _popup_text([c], threads), pin_colour)))
 
     for start, end, replacement in sorted(edits, key=lambda e: (-e[0], -e[1])):
         text = text[:start] + replacement + text[end:]

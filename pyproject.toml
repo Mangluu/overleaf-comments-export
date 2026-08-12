@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overleaf-comments-export"
-version = "0.9.0"
+version = "0.10.0"
 description = "Export comment threads and tracked changes from an Overleaf project to Markdown + JSON, optimized for AI-agent consumption."
 readme = "README.md"
 license = { text = "MIT" }
@@ -46,6 +46,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+all = [
+    "sv-ttk>=2.6",
+    "pymupdf>=1.24",
+]
 gui = [
     # NOTE: tkinter itself cannot be installed from PyPI. It ships with the
     # python.org installers, but most Linux distributions package it
@@ -53,8 +57,14 @@ gui = [
     # and `--gui` explains how to install it if it is missing.
     "sv-ttk>=2.6",
 ]
+pdf = [
+    # Writes the comments into the PDF Overleaf built, so no LaTeX
+    # installation is needed to get a commented PDF.
+    "pymupdf>=1.24",
+]
 test = [
     "pytest>=8.0",
+    "pymupdf>=1.24",
 ]
 
 [project.scripts]

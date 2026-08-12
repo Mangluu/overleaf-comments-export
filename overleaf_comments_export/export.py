@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from . import __version__
 from .anchors import build_line_starts, resolve_anchor
-from .annotate import annotate_document
+from .annotate import ANNOTATE_STYLES, annotate_document
 from .client import OverleafClient, UserFacingError, parse_project_id
 from .model import (
     AnchoredComment,
@@ -79,6 +79,7 @@ class ExportResult:
     agents_path: Path | None = None
     response_letter_path: Path | None = None
     annotated_dir: Path | None = None
+    annotated_pdf_path: Path | None = None
 
 
 def _build_user_map(threads_raw: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -345,7 +346,8 @@ def run_export(
     per_reviewer_reports: bool = False,
     response_letter: bool = False,
     annotated_tex: bool = False,
-    annotate_style: str = "pdfcomment",
+    annotated_pdf: bool = False,
+    annotate_style: str = "highlight",
     stable: bool = False,
     progress: ProgressCallback | None = None,
 ) -> ExportResult:
@@ -704,7 +706,7 @@ def run_export(
                 continue
             annotated, n = annotate_document(
                 doc.text, doc_comments, threads,
-                style="todonotes" if annotate_style == "todonotes" else "pdfcomment",
+                style=annotate_style if annotate_style in ANNOTATE_STYLES else "highlight",
             )
             # Mirror the project layout so \input paths still resolve.
             rel = doc.pathname
@@ -719,6 +721,48 @@ def run_export(
             f"Wrote {written} annotated source file(s) into annotated/ "
             f"— compile one to get a PDF carrying the comments"
         )
+
+    annotated_pdf_path: Path | None = None
+    if annotated_pdf:
+        progress("Fetching the PDF Overleaf built…")
+        try:
+            pdf = client.download_compiled_pdf(project_id, metadata.get("rootDocId"))
+        except UserFacingError:
+            raise
+        except Exception as e:
+            logger.warning("Could not get the compiled PDF: %s", e)
+            pdf = None
+        if pdf is None:
+            progress(
+                "Overleaf had no PDF to give. Open the project and press "
+                "Recompile once, then run this again."
+            )
+        else:
+            # The comments belong to whichever document holds most of them;
+            # the PDF is one file however many sources it was built from.
+            from .pdfannotate import PdfAnnotationUnavailable, annotate_pdf
+
+            sources = {doc_id: d.text for doc_id, d in doc_texts.items()}
+            if not sources:
+                progress("No commented source to match against, skipping the PDF.")
+            else:
+                try:
+                    out_bytes, placed = annotate_pdf(pdf, sources, anchored, threads)
+                except PdfAnnotationUnavailable as e:
+                    raise UserFacingError(str(e)) from e
+                annotated_pdf_path = out_dir / "commented.pdf"
+                annotated_pdf_path.write_bytes(out_bytes)
+                marked = sum(1 for p in placed if p.highlighted)
+                progress(
+                    f"Wrote {annotated_pdf_path.name} — {marked} of {len(placed)} "
+                    f"comment(s) marked on the page, all {len(placed)} listed at the end"
+                )
+                if marked < len(placed):
+                    logger.info(
+                        "Not marked: %s",
+                        ", ".join(f"{p.comment.short_id} ({p.reason})"
+                                  for p in placed if not p.highlighted),
+                    )
 
     agents_path = out_dir / "agents.md"
     agents_path.write_text(_build_agents_md(title, project_id, json_path.name, md_path.name), encoding="utf-8")
@@ -742,6 +786,7 @@ def run_export(
         agents_path=agents_path,
         response_letter_path=letter_path,
         annotated_dir=annotated_dir,
+        annotated_pdf_path=annotated_pdf_path,
     )
 
 

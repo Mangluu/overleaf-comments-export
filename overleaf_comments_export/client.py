@@ -3,7 +3,9 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import re
+import ssl
 import time
 from typing import Any, Optional
 from urllib.parse import unquote, urlparse
@@ -11,6 +13,31 @@ from urllib.parse import unquote, urlparse
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_ca_bundle() -> None:
+    """Give Python a set of root certificates when it has none.
+
+    `requests` carries its own, so our HTTP calls always work. Anything using
+    Python's default settings does not, and on a Mac where Python was installed
+    without running "Install Certificates.command" the default store is empty,
+    so every one of those connections fails to verify. That is what makes the
+    file tree fetch fail, which is why exported files end up named after a
+    document id instead of `main.tex`.
+
+    Only done when the store is genuinely empty. A machine behind a corporate
+    proxy has its own roots loaded, and replacing them would break it.
+    """
+    if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
+        return
+    try:
+        if ssl.create_default_context().cert_store_stats()["x509_ca"] > 0:
+            return
+        import certifi
+    except Exception:
+        return
+    os.environ["SSL_CERT_FILE"] = certifi.where()
+    logger.info("No root certificates were installed; using certifi's.")
 
 OVERLEAF_BASE = "https://www.overleaf.com"
 
@@ -113,6 +140,7 @@ class OverleafClient:
         Windows, snap-packaged browsers on Linux, locked-down macOS).
         Otherwise cookies are read from the named browser, or auto-detected.
         """
+        _ensure_ca_bundle()
         browser = (browser or "auto").lower()
         if browser not in self.SUPPORTED_BROWSERS:
             raise ValueError(
@@ -282,8 +310,11 @@ class OverleafClient:
             raise RuntimeError("call connect() before using the client")
         return self._session
 
-    def _request(self, url: str, *, attempts: int = 3, **kwargs: Any) -> requests.Response:
-        """GET with retry on transient failures, and plain-English errors.
+    def _request(
+        self, url: str, *, attempts: int = 3, method: str = "GET", timeout: int = 30,
+        **kwargs: Any,
+    ) -> requests.Response:
+        """One request with retry on transient failures, and plain-English errors.
 
         Retries connection errors, timeouts, and 429/5xx (honouring Retry-After).
         Never retries 4xx other than 429 — those won't fix themselves.
@@ -291,7 +322,7 @@ class OverleafClient:
         last_exc: Exception | None = None
         for attempt in range(attempts):
             try:
-                r = self.session.get(url, timeout=30, **kwargs)
+                r = self.session.request(method, url, timeout=timeout, **kwargs)
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
                 last_exc = e
                 if attempt == attempts - 1:
@@ -351,10 +382,20 @@ class OverleafClient:
         return data
 
     def get_resolved_thread_ids(self, project_id: str) -> list[str]:
+        """Ids of resolved threads, if this server offers that endpoint.
+
+        A second opinion, not the source of truth: the thread list already says
+        which threads are resolved. Some Overleaf versions do not have this
+        route at all, so a 404 here means nothing is wrong.
+        """
         try:
             data = self._get(f"/project/{project_id}/resolved-thread-ids")
         except Exception as e:
-            logger.warning("resolved-thread-ids fetch failed: %s", e)
+            logger.info(
+                "This Overleaf has no resolved-thread-ids endpoint (%s). "
+                "Resolved state is being read from the thread list instead.",
+                type(e).__name__,
+            )
             return []
         if isinstance(data, dict) and "resolvedThreadIds" in data:
             return list(data["resolvedThreadIds"])
@@ -387,6 +428,97 @@ class OverleafClient:
         return self._get(
             f"/Project/{project_id}/doc/{doc_id}/download", expect_json=False
         )
+
+    def download_compiled_pdf(
+        self, project_id: str, root_doc_id: str | None = None
+    ) -> bytes | None:
+        """The PDF Overleaf itself built, or None if it cannot be had.
+
+        Tries the last build first, because that costs nothing and is what the
+        user is looking at in their browser. Only if there is no build on the
+        server does it ask for a compile, which is slow and uses their quota.
+        """
+        url = f"{self.base_url}/project/{project_id}/output/output.pdf"
+        try:
+            r = self._request(url)
+            if r.ok and r.content[:4] == b"%PDF":
+                logger.info("Using the PDF from the last build (%d KB).", len(r.content) // 1024)
+                return r.content
+            logger.info(
+                "No PDF from the last build: %s returned %s, %s bytes starting %r.",
+                url, r.status_code, len(r.content), r.content[:16],
+            )
+        except UserFacingError:
+            raise
+        except Exception as e:
+            logger.info("No ready-made PDF (%s); asking for a compile.", type(e).__name__)
+
+        token = self._csrf_token(project_id)
+        if not token:
+            logger.warning("No CSRF token on the project page, cannot ask for a compile.")
+            return None
+        payload: dict[str, Any] = {"check": "silent", "draft": False,
+                                   "incrementalCompilesEnabled": True}
+        if root_doc_id:
+            payload["rootDoc_id"] = root_doc_id
+        try:
+            # A cold compile of a real paper takes a while, so this waits far
+            # longer than an ordinary request.
+            r = self._request(
+                f"{self.base_url}/project/{project_id}/compile",
+                method="POST", timeout=240, attempts=1, json=payload,
+                headers={"x-csrf-token": token, "Accept": "application/json"},
+            )
+            logger.info("Compile request returned %s.", r.status_code)
+            data = r.json() if r.ok else {}
+        except Exception as e:
+            logger.warning("Compile request failed: %s", e)
+            return None
+
+        if data.get("status") != "success":
+            logger.warning("Overleaf did not compile the project: %s", data.get("status"))
+            return None
+        files = data.get("outputFiles") or []
+        for f in files:
+            if f.get("path") == "output.pdf":
+                r = self._request(self._output_url(f.get("url") or "", data))
+                if r.ok and r.content[:4] == b"%PDF":
+                    logger.info("Compiled the project (%d KB).", len(r.content) // 1024)
+                    return r.content
+                logger.warning(
+                    "The built PDF could not be downloaded: %s returned %s. "
+                    "The compile reported: %s",
+                    f.get("url"), r.status_code, ", ".join(sorted(data)),
+                )
+                return None
+        logger.warning("The compile produced no output.pdf. It made: %s",
+                       ", ".join(str(f.get("path")) for f in files) or "nothing")
+        return None
+
+    def _output_url(self, path: str, compile_response: dict[str, Any]) -> str:
+        """Where a freshly built file actually lives.
+
+        The build does not sit on the main site. It stays on the machine that
+        did the compiling, and the compile reply says which one that was, so
+        the address has to be assembled from both. Asking the main site for it
+        gets a 404, which reads exactly like "there is no PDF" and is not.
+        """
+        if path.startswith("http"):
+            url = path
+        else:
+            domain = str(compile_response.get("pdfDownloadDomain") or self.base_url)
+            url = f"{domain.rstrip('/')}{path}"
+        server = compile_response.get("clsiServerId")
+        if server:
+            url += ("&" if "?" in url else "?") + f"clsiserverid={server}"
+        return url
+
+    def _csrf_token(self, project_id: str) -> str | None:
+        meta = self.scrape_project_html(project_id)
+        for key in ("ol-csrfToken", "ol-csrf-token"):
+            if meta.get(key):
+                return str(meta[key])
+        return None
 
     def get_project_metadata(self, project_id: str) -> dict[str, Any]:
         """Best-effort fetch of project name + file tree.

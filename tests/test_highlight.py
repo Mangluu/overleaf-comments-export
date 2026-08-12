@@ -160,3 +160,59 @@ def test_the_legend_and_the_list_are_both_added():
     assert "Review comments" in out          # the list at the end
     assert "\\colorbox" in out               # the legend
     assert out.index("\\colorbox") < out.index("\\section*{Review comments}")
+
+
+# --- trimming an unhighlightable span down to the part that can be marked ---
+
+def test_trim_keeps_the_longest_plain_run():
+    """Reviewers comment across maths constantly. Refusing the whole sentence
+    for one $x$ loses the only thing a highlight is for."""
+    from overleaf_comments_export.highlight import trim_to_safe
+    text = "In a $3 \\times 3$ mixed design with 105 participants we crossed three."
+    start, end = trim_to_safe(text, 0, len(text))
+    assert text[start:end] == "mixed design with 105 participants we crossed three."
+
+
+def test_trim_does_not_start_or_end_mid_word():
+    from overleaf_comments_export.highlight import trim_to_safe
+    text = "the participants\\footnote{n} completed every block in one sitting"
+    start, end = trim_to_safe(text, 0, len(text))
+    body = text[start:end]
+    assert body == "completed every block in one sitting"
+    assert not body[0].isspace() and not body[-1].isspace()
+
+
+def test_trim_gives_up_when_there_is_nothing_plain_to_mark():
+    from overleaf_comments_export.highlight import trim_to_safe
+    assert trim_to_safe("\\subsection{Procedure}\n", 0, 22) is None
+
+
+def test_trim_of_a_whole_paragraph_stops_at_a_sentence():
+    from overleaf_comments_export.highlight import trim_to_safe, MAX_SPAN
+    text = ("First sentence that opens the paragraph. " + "filler words here " * 60)
+    start, end = trim_to_safe(text, 0, len(text))
+    assert end - start <= MAX_SPAN
+    assert text[start:end].startswith("First sentence that opens the paragraph.")
+
+
+def test_a_pin_carries_its_writer_colour():
+    from overleaf_comments_export.highlight import pin_macro
+    assert "color=ocehlB" in pin_macro("ans.ahmad", "body", "ocehlB")
+    assert pin_macro("x", "b").endswith("\\hspace{1.1em}")
+    assert "color=" not in pin_macro("ans.ahmad", "body")
+
+
+def test_no_highlight_inside_a_heading():
+    """Markup in a sectioning argument travels to the contents page and breaks
+    on the way back, so a comment on a heading gets a pin instead."""
+    from overleaf_comments_export.highlight import in_fragile_argument, trim_to_safe
+    text = "\\subsection{Wearable haptic feedback for hand interaction}\n"
+    assert in_fragile_argument(text, 20)
+    assert trim_to_safe(text, 0, len(text)) is None
+
+
+def test_ordinary_braces_are_not_treated_as_fragile():
+    from overleaf_comments_export.highlight import in_fragile_argument
+    text = "we measured \\emph{perceived} workload across conditions"
+    assert not in_fragile_argument(text, 20)
+    assert not in_fragile_argument("plain text with no braces at all", 10)
