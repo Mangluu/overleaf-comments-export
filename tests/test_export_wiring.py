@@ -76,6 +76,9 @@ class FakeClient:
     def download_doc_text(self, project_id, doc_id):
         return DOC_TEXT
 
+    def download_project_zip(self, project_id):
+        return None
+
 
 @pytest.fixture()
 def fake_overleaf(monkeypatch):
@@ -148,3 +151,65 @@ def test_gui_defaults_match(tmp_path, fake_overleaf):
 
     sig = inspect.signature(export_mod.run_export)
     assert sig.parameters["annotate_style"].default == "highlight"
+
+
+# --- naming documents when the file tree is unavailable (issue #4) ---
+
+def _zip_of(files):
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def test_the_filename_comes_from_the_zip_when_the_tree_is_empty(tmp_path, monkeypatch):
+    """The whole point of issue #4: a pasted cookie gets no file tree, and every
+    comment used to file under <unknown-...>."""
+    class WithZip(FakeClient):
+        def download_project_zip(self, project_id):
+            return _zip_of({"paper/main.tex": DOC_TEXT})
+
+    monkeypatch.setattr(export_mod, "OverleafClient", WithZip)
+    result = _run(tmp_path)
+    import json
+
+    data = json.loads(result.json_path.read_text())
+    assert data["comments"][0]["pathname"] == "paper/main.tex"
+    assert "<unknown-" not in result.markdown_path.read_text()
+
+
+def test_the_placeholder_is_still_used_when_the_zip_cannot_help(tmp_path, fake_overleaf):
+    """FakeClient returns no zip. An honest placeholder beats a wrong name."""
+    result = _run(tmp_path)
+    import json
+
+    data = json.loads(result.json_path.read_text())
+    assert data["comments"][0]["pathname"].startswith("<unknown-")
+
+
+def test_the_zip_is_not_fetched_when_the_tree_already_named_everything(tmp_path, monkeypatch):
+    """It is a whole project download. It must not happen for nothing."""
+    asked = []
+
+    class Named(FakeClient):
+        def get_project_metadata(self, project_id):
+            return {"files": {"any": "shape"}, "name": "Test paper",
+                    "rootDocId": DOC_ID, "raw_meta": {}}
+
+        def flatten_files(self, files_root, debug_logger=None):
+            return [{"doc_id": DOC_ID, "pathname": "main.tex"}]
+
+        def download_project_zip(self, project_id):
+            asked.append(project_id)
+            return _zip_of({"main.tex": DOC_TEXT})
+
+    monkeypatch.setattr(export_mod, "OverleafClient", Named)
+    result = _run(tmp_path)
+    assert not asked, "downloaded the whole project for nothing"
+    import json
+
+    assert json.loads(result.json_path.read_text())["comments"][0]["pathname"] == "main.tex"

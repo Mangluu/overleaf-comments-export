@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-08-13
+
+### Added
+- **A browser extension**, contributed by [@Agent-QG](https://github.com/Agent-QG).
+  It exports the project open in the current tab and never reads or stores the
+  session cookie, which makes it the easiest option on Windows, where Chrome
+  encrypts its cookie store in a way nothing else here can read. It writes the
+  same Markdown, JSON and `agents.md` as the Python export, under the same
+  `schema_version`, and a test fails if the two ever stop agreeing. The PDF with
+  the comments highlighted, the annotated LaTeX and the per-reviewer reports
+  remain Python only; the README has a table.
+  ([#7](https://github.com/Mangluu/overleaf-comments-export/pull/7))
+
 ### Fixed
 - **A self-hosted Overleaf whose session cookie was not called `overleaf.sid`
   could not be used at all.** These servers name the cookie after themselves,
@@ -16,6 +29,22 @@ All notable changes to this project are documented here.
 - When no session is found, the message now lists the cookies that were
   actually there for that address, and says which names were looked for. The
   old message said only that nothing was found, which left nowhere to go.
+- **Comments filed under `<unknown-6a21dec…>` instead of a filename.** Real
+  names come from the file tree, and there was no way to get one after signing
+  in with a pasted cookie, because that route needs a browser. Overleaf will
+  hand over the whole project as a zip on request, over the same ordinary
+  authenticated HTTP everything else here uses, and a file is identified well
+  enough by what is in it. The document text is already downloaded, so it is
+  matched against the zip and takes that file's name.
+
+  The zip is fetched only when the file tree came up short, and only once.
+  Where two files in a project have identical contents, both are left with the
+  placeholder, because a wrong filename is worse than an honest one. Cosmetic
+  on a single-file paper; on a multi-file one it restores the grouping.
+  ([#4](https://github.com/Mangluu/overleaf-comments-export/issues/4))
+- The settings file was read without naming an encoding, so on Windows a saved
+  project title or output path containing any non-Latin character stopped the
+  window opening at all.
 
 ### Added
 - A first-party Manifest V3 extension for Chrome, Edge, and other Chromium
@@ -288,7 +317,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.10.0
 [0.9.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.9.0

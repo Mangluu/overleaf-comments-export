@@ -469,6 +469,31 @@ class OverleafClient:
             logger.warning("ranges fetch failed: %s", e)
             return None
 
+    def download_project_zip(self, project_id: str) -> bytes | None:
+        """The whole project as a zip, or None if it cannot be had.
+
+        This is the "Download as zip" the editor offers, over ordinary cookie
+        authenticated HTTP. It is the only route to real filenames that works
+        whichever way the user signed in, which is why it is here: the socket
+        call needs pyoverleaf, which needs a browser, and the project page no
+        longer reliably carries the file tree.
+        """
+        try:
+            r = self._request(f"{self.base_url}/project/{project_id}/download/zip",
+                              timeout=120)
+        except UserFacingError:
+            raise
+        except Exception as e:
+            logger.warning("Could not download the project zip: %s", e)
+            return None
+        if not r.ok or r.content[:2] != b"PK":
+            logger.warning(
+                "The project zip came back as %s, %d bytes starting %r.",
+                r.status_code, len(r.content), r.content[:16],
+            )
+            return None
+        return r.content
+
     def download_doc_text(self, project_id: str, doc_id: str) -> str:
         """GET /Project/:id/doc/:doc_id/download -> plain text body."""
         return self._get(

@@ -12,6 +12,7 @@ from . import __version__
 from .anchors import build_line_starts, resolve_anchor
 from .annotate import ANNOTATE_STYLES, annotate_document
 from .client import OverleafClient, UserFacingError, parse_project_id
+from .filenames import index_zip, name_for
 from .model import (
     AnchoredComment,
     DocText,
@@ -426,16 +427,36 @@ def run_export(
         docs_with_anchors = list(_iter_doc_ranges(ranges_payload))
         anchor_doc_count = sum(1 for _, c, ch in docs_with_anchors if c or ch)
         progress(f"Downloading text for {anchor_doc_count} doc(s) with anchors…")
+        # Fetched only if the file tree came up short, and only once. See
+        # filenames.py for why the zip is the route that works for everyone.
+        zip_index: dict[str, list[str]] | None = None
+
         for doc_id, comments_list, changes_list in docs_with_anchors:
             if not comments_list and not changes_list:
                 continue
-            pathname = doc_id_to_path.get(doc_id, f"<unknown-{doc_id}>")
+            pathname = doc_id_to_path.get(doc_id)
             try:
                 text = client.download_doc_text(project_id, doc_id)
             except Exception as e:
-                logger.warning("Could not download doc %s (%s): %s", doc_id, pathname, e)
-                progress(f"  skipped {pathname}: {e}")
+                logger.warning("Could not download doc %s (%s): %s",
+                               doc_id, pathname or doc_id, e)
+                progress(f"  skipped {pathname or doc_id}: {e}")
                 continue
+
+            if pathname is None:
+                if zip_index is None:
+                    progress("Filenames were not in the file tree, asking for the "
+                             "project zip instead…")
+                    data = client.download_project_zip(project_id)
+                    zip_index = index_zip(data) if data else {}
+                    logger.info("Read %d text file(s) from the project zip.",
+                                len(zip_index))
+                pathname = name_for(zip_index, text)
+                if pathname:
+                    doc_id_to_path[doc_id] = pathname
+                    logger.info("Named %s from the project zip: %s", doc_id, pathname)
+            if pathname is None:
+                pathname = f"<unknown-{doc_id}>"
             doc = _build_doc_text(doc_id, pathname, text)
             doc_texts[doc_id] = doc
 

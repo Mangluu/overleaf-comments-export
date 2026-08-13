@@ -331,6 +331,10 @@ overleaf-comments-export --project-url <link> --out ./out \
 
 There is a box for it in the window too, under the self-hosted options.
 
+Filenames work on every sign-in route now. Where the file tree is unavailable,
+the project is fetched as a zip and each document is named by matching its
+contents, so comments still group per file.
+
 This path is less tested than overleaf.com, so if something does not work,
 please [say so](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose).
 
