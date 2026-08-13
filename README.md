@@ -60,6 +60,33 @@ not checked. That is because signing an app costs money every year, not because
 anything is wrong. On macOS, right-click the app and choose Open. On Windows,
 click More info, then Run anyway.
 
+**If you prefer a browser extension**, Chrome, Edge, and other Chromium
+browsers can run the exporter inside the Overleaf project you already have
+open. It uses that tab's signed-in session without reading or storing the
+session cookie, which makes it the easiest option on Windows, where Chrome
+encrypts its cookie store in a way the other options cannot read.
+
+Load [`browser-extension/`](browser-extension/) as an unpacked extension. The
+[extension guide](browser-extension/README.md) has the installation steps and
+explains its deliberately limited permissions.
+
+### Which one to use
+
+|  | Extension | Python tool and app |
+|---|---|---|
+| To install | Load a folder in your browser | pip, or download an app |
+| Session cookie | Never touched | Read from your browser, or pasted |
+| Markdown, JSON, JSONL, reply letter | Yes | Yes |
+| `commented.pdf`, the paper with the comments highlighted | No | Yes |
+| Comments written into your LaTeX | No | Yes |
+| One report per reviewer, reviewer filters, git-stable output | No | Yes |
+| Interface language | English and Chinese | English |
+
+Use the extension when you want the comments out with nothing to install. Use
+the Python tool when you want the PDF, or any of the rest of it. Both write the
+same Markdown and JSON, under the same `schema_version`, and a test in the suite
+fails if that ever stops being true.
+
 **If you use Python**, it is one command:
 
 ```bash

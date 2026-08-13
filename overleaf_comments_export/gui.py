@@ -172,7 +172,10 @@ About the cookie
 def _load_config() -> dict:
     if CONFIG_PATH.exists():
         try:
-            return json.loads(CONFIG_PATH.read_text())
+            # Named encoding: on Windows the default is cp1252, and a project
+            # title or path with any non-Latin character in it would make
+            # the window fail to open at all.
+            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
         except Exception:
             return {}
     return {}
@@ -180,7 +183,7 @@ def _load_config() -> dict:
 
 def _save_config(data: dict) -> None:
     try:
-        CONFIG_PATH.write_text(json.dumps(data, indent=2))
+        CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
     except Exception:
         pass
 

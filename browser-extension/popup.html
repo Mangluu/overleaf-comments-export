@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Overleaf Comments Export</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <div class="mark" aria-hidden="true">O</div>
+        <div>
+          <p class="eyebrow">OVERLEAF TOOL</p>
+          <h1 data-i18n="title">导出项目评论</h1>
+        </div>
+      </header>
+
+      <div class="language-picker" role="group" aria-label="Language / 语言">
+        <span class="language-label"><span aria-hidden="true">🌐</span> <span data-i18n="languageLabel">语言</span></span>
+        <div class="language-options">
+          <label class="language-option">
+            <input type="radio" name="language" value="zh">
+            <img src="assets/flag-cn.svg" alt="">
+            <span>中文</span>
+          </label>
+          <label class="language-option">
+            <input type="radio" name="language" value="en">
+            <img src="assets/flag-gb.svg" alt="">
+            <span>English</span>
+          </label>
+        </div>
+      </div>
+
+      <section id="page-card" class="page-card" aria-live="polite">
+        <span id="page-indicator" class="indicator"></span>
+        <div>
+          <p id="page-state" class="page-state" data-i18n="checkingPage">正在检查当前标签页…</p>
+          <p id="page-detail" class="page-detail"></p>
+        </div>
+      </section>
+
+      <fieldset id="options" disabled>
+        <legend data-i18n="includeLegend">包含内容</legend>
+        <label class="toggle-row">
+          <span>
+            <strong data-i18n="resolvedTitle">已解决评论</strong>
+            <small data-i18n="resolvedHelp">同时导出已标记 resolved 的讨论</small>
+          </span>
+          <input id="include-resolved" type="checkbox" checked>
+        </label>
+        <label class="toggle-row">
+          <span>
+            <strong data-i18n="changesTitle">修订记录</strong>
+            <small data-i18n="changesHelp">包含插入与删除记录</small>
+          </span>
+          <input id="include-changes" type="checkbox" checked>
+        </label>
+      </fieldset>
+
+      <fieldset id="formats" disabled>
+        <legend data-i18n="outputLegend">输出文件</legend>
+        <div class="format-grid">
+          <label><input id="format-md" type="checkbox" checked> Markdown</label>
+          <label><input id="format-json" type="checkbox" checked> JSON</label>
+          <label><input id="format-jsonl" type="checkbox"> JSONL</label>
+          <label><input id="format-letter" type="checkbox"> <span data-i18n="responseLetter">回复信模板</span></label>
+        </div>
+      </fieldset>
+
+      <button id="export" type="button" disabled>
+        <span id="button-label" data-i18n="exportButton">导出当前项目</span>
+        <span id="spinner" class="spinner" hidden aria-hidden="true"></span>
+      </button>
+
+      <section id="result" class="result" hidden aria-live="polite"></section>
+
+      <p class="privacy-note" data-i18n="privacyNote">
+        数据仅在当前标签页中读取并下载到本机；扩展不会读取、保存或上传登录 Cookie。
+      </p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
