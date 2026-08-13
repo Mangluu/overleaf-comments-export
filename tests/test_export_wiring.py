@@ -102,7 +102,7 @@ def _annotated_after(tmp_path: Path, style: str) -> str:
 def _annotated(tmp_path: Path) -> str:
     files = list((tmp_path / "annotated").rglob("*.tex"))
     assert len(files) == 1, files
-    return files[0].read_text()
+    return files[0].read_text(encoding="utf-8")
 
 
 def test_default_style_highlights_the_commented_words(tmp_path, fake_overleaf):
@@ -177,9 +177,9 @@ def test_the_filename_comes_from_the_zip_when_the_tree_is_empty(tmp_path, monkey
     result = _run(tmp_path)
     import json
 
-    data = json.loads(result.json_path.read_text())
+    data = json.loads(result.json_path.read_text(encoding="utf-8"))
     assert data["comments"][0]["pathname"] == "paper/main.tex"
-    assert "<unknown-" not in result.markdown_path.read_text()
+    assert "<unknown-" not in result.markdown_path.read_text(encoding="utf-8")
 
 
 def test_the_placeholder_is_still_used_when_the_zip_cannot_help(tmp_path, fake_overleaf):
@@ -187,7 +187,7 @@ def test_the_placeholder_is_still_used_when_the_zip_cannot_help(tmp_path, fake_o
     result = _run(tmp_path)
     import json
 
-    data = json.loads(result.json_path.read_text())
+    data = json.loads(result.json_path.read_text(encoding="utf-8"))
     assert data["comments"][0]["pathname"].startswith("<unknown-")
 
 
@@ -212,4 +212,4 @@ def test_the_zip_is_not_fetched_when_the_tree_already_named_everything(tmp_path,
     assert not asked, "downloaded the whole project for nothing"
     import json
 
-    assert json.loads(result.json_path.read_text())["comments"][0]["pathname"] == "main.tex"
+    assert json.loads(result.json_path.read_text(encoding="utf-8"))["comments"][0]["pathname"] == "main.tex"

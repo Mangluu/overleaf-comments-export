@@ -81,6 +81,6 @@ def test_a_corrupt_zip_gives_nothing_rather_than_raising():
 def test_the_bib_and_class_files_are_indexed_too():
     """A comment cannot live in them, but naming them costs nothing and a
     project that keeps its text in an .Rnw should still work."""
-    index = index_zip(_zip({"refs.bib": "@article{a,title={T}}", "paper.Rnw": INTRO})) 
+    index = index_zip(_zip({"refs.bib": "@article{a,title={T}}", "paper.Rnw": INTRO}))
     assert name_for(index, "@article{a,title={T}}") == "refs.bib"
     assert name_for(index, INTRO) == "paper.Rnw"

@@ -109,3 +109,29 @@ def test_the_extension_injects_into_the_isolated_world():
     we do. Injecting there let a hostile page decide what got written to disk."""
     popup = (EXTENSION / "popup.js").read_text(encoding="utf-8")
     assert '"MAIN"' not in popup, "injection must stay in the isolated world"
+
+
+def test_nothing_reads_or_writes_text_without_naming_an_encoding():
+    """Windows defaults to cp1252, and this export is full of characters it has
+    no idea about. Three separate rounds of Windows-only CI failures came from
+    exactly this, so it is cheaper to assert it than to keep rediscovering it.
+
+    Parsed rather than grepped, so a call split over several lines counts as
+    encoded and the pattern in this test does not flag itself."""
+    import ast
+
+    root = Path(__file__).resolve().parent.parent
+    offenders = []
+    for path in sorted((root / "overleaf_comments_export").glob("*.py")) + \
+            sorted((root / "tests").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ("read_text", "write_text")
+                    and not any(k.arg == "encoding" for k in node.keywords)):
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert not offenders, (
+        "these read or write text without naming an encoding, which breaks on "
+        f"Windows: {', '.join(offenders)}"
+    )
