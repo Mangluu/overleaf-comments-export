@@ -17,6 +17,11 @@ It also writes **a PDF of your paper with the comments highlighted on the words
 they were written about**, coloured by who wrote them. No LaTeX to install and
 nothing to compile. See [Comments inside the PDF](#comments-inside-the-pdf).
 
+There are two ways to run it. A **browser extension** that works on the project
+tab you already have open and never touches your session cookie, and a **Python
+tool with a window** that does everything, including the PDF. There is a
+[table below](#which-one-to-use) saying which does what.
+
 ## What the output looks like
 
 ```markdown
@@ -327,7 +332,8 @@ nothing else, and it only ever reads.
 |---|---|
 | Safari or Firefox | Reads the cookie file directly. No password prompt. |
 | Paste it yourself | Works on every computer and browser. The window shows you how, step by step. |
-| Chrome, Edge, Brave | Works on macOS but asks for your Keychain password every run. Chrome 127 and newer on Windows cannot be read at all, so use the paste option there. |
+| Chrome, Edge, Brave | Works on macOS but asks for your Keychain password every run. Chrome 127 and newer on Windows cannot be read at all. Use the browser extension there, or paste the cookie. |
+| The browser extension | Nothing to sign in to. It uses the tab you already have open and never reads the cookie at all. |
 
 To paste it, open Overleaf, press F12, go to Application or Storage, then
 Cookies, then `https://www.overleaf.com`, and copy the value of
@@ -344,7 +350,7 @@ overleaf-comments-export --project-url <link> --out ./out --cookie "PASTE_HERE"
 |---|---|
 | Could not look up www.overleaf.com | This computer is offline, or a VPN is in the way. Nothing to do with your project. |
 | Overleaf refused the request | The session expired. Sign in again in your browser and re-run. |
-| Could not read Overleaf cookies | Use the paste method above. |
+| Could not read Overleaf cookies | Use the browser extension, or the paste method above. This is the usual outcome on Windows with Chrome. |
 | The window cannot open | Python's Tk toolkit is missing. The message tells you what to install for your system. |
 
 Anything else, please [open an issue](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose).
