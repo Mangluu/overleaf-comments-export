@@ -351,3 +351,50 @@ def test_the_error_names_the_cookies_it_actually_found(monkeypatch):
     message = str(excinfo.value)
     assert "ifftex_login" in message, "the message must list what it did find"
     assert "--cookie-name" in message
+
+
+def test_an_enormous_project_zip_is_refused_rather_than_read(monkeypatch):
+    """It is fetched only when something has already gone wrong, so it must not
+    be the thing that takes the machine down."""
+    from overleaf_comments_export import client as client_mod
+    from overleaf_comments_export.client import OverleafClient
+
+    monkeypatch.setattr(client_mod, "MAX_PROJECT_ZIP_BYTES", 1024)
+
+    class Streamed(_Resp):
+        def iter_content(self, size):
+            for _ in range(10):
+                yield b"PK" + b"\x00" * 500
+
+        def close(self):
+            pass
+
+    c = _client(monkeypatch, lambda method, url, **kw: Streamed())
+    assert c.download_project_zip("abc") is None
+
+
+def test_a_normal_project_zip_comes_back_whole(monkeypatch):
+    from overleaf_comments_export.client import OverleafClient
+
+    class Streamed(_Resp):
+        def iter_content(self, size):
+            yield b"PK\x03\x04"
+            yield b"rest of the archive"
+
+        def close(self):
+            pass
+
+    c = _client(monkeypatch, lambda method, url, **kw: Streamed())
+    assert c.download_project_zip("abc") == b"PK\x03\x04rest of the archive"
+
+
+def test_something_that_is_not_a_zip_is_not_returned(monkeypatch):
+    class Streamed(_Resp):
+        def iter_content(self, size):
+            yield b"<!DOCTYPE html><title>Sign in</title>"
+
+        def close(self):
+            pass
+
+    c = _client(monkeypatch, lambda method, url, **kw: Streamed())
+    assert c.download_project_zip("abc") is None

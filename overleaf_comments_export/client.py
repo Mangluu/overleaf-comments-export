@@ -55,6 +55,11 @@ SESSION_COOKIE_NAMES = ("overleaf_session2", "overleaf.sid", "sharelatex.sid")
 # cookie does not fit can name it with --cookie-name.
 SESSION_COOKIE_SUFFIX = ".sid"
 
+# The project zip is only fetched when filenames could not be had any other
+# way, and it is read into memory to be opened. Papers carry figures, so this
+# is bounded rather than trusted.
+MAX_PROJECT_ZIP_BYTES = 250 * 1024 * 1024
+
 
 def is_session_cookie(name: str, override: str | None = None) -> bool:
     """Whether a cookie of this name could be an Overleaf session."""
@@ -480,19 +485,45 @@ class OverleafClient:
         """
         try:
             r = self._request(f"{self.base_url}/project/{project_id}/download/zip",
-                              timeout=120)
+                              timeout=120, stream=True)
         except UserFacingError:
             raise
         except Exception as e:
             logger.warning("Could not download the project zip: %s", e)
             return None
-        if not r.ok or r.content[:2] != b"PK":
-            logger.warning(
-                "The project zip came back as %s, %d bytes starting %r.",
-                r.status_code, len(r.content), r.content[:16],
-            )
+        if not r.ok:
+            logger.warning("The project zip came back as %s.", r.status_code)
+            r.close()
             return None
-        return r.content
+        # Streamed and capped. A paper carrying large figures can run to
+        # hundreds of megabytes, and this is a fallback that only runs when
+        # something has already gone wrong, so it must not be the thing that
+        # takes the machine down.
+        chunks: list[bytes] = []
+        total = 0
+        try:
+            for chunk in r.iter_content(64 * 1024):
+                total += len(chunk)
+                if total > MAX_PROJECT_ZIP_BYTES:
+                    logger.warning(
+                        "The project zip is larger than %d MB, so filenames are "
+                        "left as document ids rather than reading all of it.",
+                        MAX_PROJECT_ZIP_BYTES // (1024 * 1024),
+                    )
+                    return None
+                chunks.append(chunk)
+        except Exception as e:
+            logger.warning("The project zip download was interrupted: %s", e)
+            return None
+        finally:
+            r.close()
+        data = b"".join(chunks)
+        if data[:2] != b"PK":
+            logger.warning("The project zip is not a zip: %d bytes starting %r.",
+                           len(data), data[:16])
+            return None
+        logger.info("Downloaded the project zip (%d KB).", len(data) // 1024)
+        return data
 
     def download_doc_text(self, project_id: str, doc_id: str) -> str:
         """GET /Project/:id/doc/:doc_id/download -> plain text body."""

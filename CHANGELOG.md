@@ -4,6 +4,18 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Running a second export in the window left the first one's log file
+  attached.** Every later run wrote into it as well, and a file handle was kept
+  open for each. Only the current run's log receives anything now.
+- **Choosing a folder that cannot be written to reported an unexpected bug.**
+  It is an ordinary mistake, and it now says so in plain words before anything
+  is fetched, rather than surfacing a raw permission error part way through.
+- The project zip fetched to recover filenames was read into memory whole. It
+  is streamed and capped at 250 MB now, because it is a fallback that runs when
+  something has already gone wrong and it must not be the thing that takes the
+  machine down.
+
 ## [0.11.0] — 2026-08-13
 
 ### Added

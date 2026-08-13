@@ -356,19 +356,36 @@ def run_export(
     """Programmatic entry point used by both the CLI and the GUI."""
     progress = progress or _noop_progress
     out_dir = Path(out_dir).expanduser()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    # Checked before anything is fetched. Choosing a folder you cannot write to
+    # is an ordinary mistake, and it used to surface as a raw PermissionError
+    # with an Errno in it, which the window reports as an unexpected bug.
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        probe = out_dir / ".oce-write-test"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+    except OSError as e:
+        raise UserFacingError(
+            f"Nothing can be written to that folder.\n\n{out_dir}\n\n"
+            "Pick somewhere else, for example a new folder on your Desktop. "
+            f"The system said: {e.strerror or e}"
+        ) from e
     log_path = out_dir / "comments.log"
 
+    # Drop the handler from any previous export in this process before adding
+    # this one. The window can run several exports, and without this each run
+    # left its handler attached: the file from the first run went on receiving
+    # lines from every later run, and the open handles accumulated.
+    for old in [h for h in logger.handlers if getattr(h, "_oce_export_log", False)]:
+        logger.removeHandler(old)
+        old.close()
     handler_file = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+    handler_file._oce_export_log = True  # type: ignore[attr-defined]
     handler_file.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
     )
     handler_file.setLevel(logging.DEBUG if verbose else logging.INFO)
-    if not any(
-        isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None) == str(log_path)
-        for h in logger.handlers
-    ):
-        logger.addHandler(handler_file)
+    logger.addHandler(handler_file)
     logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
     project_id = parse_project_id(project_url)

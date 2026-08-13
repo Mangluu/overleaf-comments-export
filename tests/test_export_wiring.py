@@ -213,3 +213,24 @@ def test_the_zip_is_not_fetched_when_the_tree_already_named_everything(tmp_path,
     import json
 
     assert json.loads(result.json_path.read_text(encoding="utf-8"))["comments"][0]["pathname"] == "main.tex"
+
+
+def test_a_folder_that_cannot_be_written_says_so_plainly(tmp_path, fake_overleaf):
+    """Picking an unwritable folder is an ordinary mistake, not a crash. It used
+    to surface as a raw PermissionError with an Errno in it."""
+    import os
+    import stat
+
+    from overleaf_comments_export.client import UserFacingError
+
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    os.chmod(locked, stat.S_IREAD | stat.S_IEXEC)
+    try:
+        with pytest.raises(UserFacingError) as excinfo:
+            _run(locked)
+        message = str(excinfo.value)
+        assert "Nothing can be written" in message
+        assert "Errno" not in message
+    finally:
+        os.chmod(locked, stat.S_IRWXU)
