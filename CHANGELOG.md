@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **A self-hosted Overleaf whose session cookie was not called `overleaf.sid`
+  could not be used at all.** These servers name the cookie after themselves,
+  so an instance called ifftex uses `ifftex.sid`, and there is no list of those
+  worth keeping. Anything ending in `.sid` is now recognised, which needs no
+  setting up, and `--cookie-name` names one that is something else entirely.
+  There is a box for it in the window as well.
+  ([#6](https://github.com/Mangluu/overleaf-comments-export/issues/6), reported
+  by @dixr)
+- When no session is found, the message now lists the cookies that were
+  actually there for that address, and says which names were looked for. The
+  old message said only that nothing was found, which left nowhere to go.
+
 ### Added
 - A first-party Manifest V3 extension for Chrome, Edge, and other Chromium
   browsers. It exports the project already open in the current tab without

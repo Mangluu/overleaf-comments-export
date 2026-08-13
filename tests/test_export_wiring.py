@@ -28,8 +28,9 @@ ANCHOR = "three sensory environments"
 class FakeClient:
     """Only the surface run_export actually touches."""
 
-    def __init__(self, base_url: str = "") -> None:
+    def __init__(self, base_url: str = "", **kwargs) -> None:
         self.base_url = base_url
+        self.cookie_name = kwargs.get("cookie_name")
 
     def connect(self, browser=None, cookie_value=None):
         return None

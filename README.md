@@ -317,8 +317,19 @@ pass `--base-url https://overleaf.my-university.edu` on the command line.
 
 Comments work. Tracked changes do not, because Overleaf makes them part of
 Server Pro rather than the free Community Edition, so there are none to export.
-Self-hosted Overleaf names its session cookie `overleaf.sid` rather than
-`overleaf_session2`, which the tool handles either way.
+
+A self-hosted Overleaf keeps your session in a cookie named after itself, so an
+instance called ifftex uses `ifftex.sid` rather than `overleaf_session2`.
+Anything ending in `.sid` is found without being told, so this normally needs no
+setting up. If your server names it something else entirely, the export lists
+the cookies it did find and you can name the right one.
+
+```bash
+overleaf-comments-export --project-url <link> --out ./out \
+  --base-url https://overleaf.my-university.edu --cookie-name my_session
+```
+
+There is a box for it in the window too, under the self-hosted options.
 
 This path is less tested than overleaf.com, so if something does not work,
 please [say so](https://github.com/Mangluu/overleaf-comments-export/issues/new/choose).

@@ -443,11 +443,33 @@ class App:
         self.base_label.grid(row=6, column=0, sticky="w", pady=4)
         self.base_entry.grid(row=6, column=1, columnspan=2, sticky="ew", pady=4)
         self.base_note.grid(row=7, column=1, columnspan=2, sticky="w")
+
+        # Almost nobody needs this. A self-hosted Overleaf names its session
+        # cookie after itself, and anything ending in .sid is found without
+        # being told, so the box is here only for the servers that do neither.
+        self.cookie_name_label = ttk.Label(box, text="Session cookie name:")
+        self.cookie_name_var = tk.StringVar(value=self.config.get("cookie_name", ""))
+        self.cookie_name_entry = ttk.Entry(box, textvariable=self.cookie_name_var)
+        self.cookie_name_note = ttk.Label(
+            box, text="Leave empty unless the export says it could not find a "
+                     "session. It then lists the cookies it did find, and one of "
+                     "those goes here.",
+            style="Hint.TLabel", font=self.font_small, wraplength=520, justify="left")
+        self.cookie_name_label.grid(row=8, column=0, sticky="w", pady=4)
+        self.cookie_name_entry.grid(row=8, column=1, columnspan=2, sticky="ew", pady=4)
+        self.cookie_name_note.grid(row=9, column=1, columnspan=2, sticky="w")
+        Tooltip(self.cookie_name_entry,
+                "The name of the cookie your Overleaf keeps your session in. "
+                "overleaf.com calls it overleaf_session2. A self-hosted server "
+                "usually names it after itself, like ifftex.sid, and those are "
+                "found automatically.", self)
         self._toggle_self_hosted()
 
     def _toggle_self_hosted(self) -> None:
         show = self.self_hosted_var.get()
-        for w in (self.base_label, self.base_entry, self.base_note):
+        for w in (self.base_label, self.base_entry, self.base_note,
+                  self.cookie_name_label, self.cookie_name_entry,
+                  self.cookie_name_note):
             w.grid() if show else w.grid_remove()
         if not show:
             self.base_var.set("https://www.overleaf.com")
@@ -777,6 +799,7 @@ class App:
             "project_title": self.title_var.get().strip(),
             "out_dir": out_dir,
             "self_hosted": bool(self.self_hosted_var.get()),
+            "cookie_name": self.cookie_name_var.get().strip(),
             "base_url": self.base_var.get().strip(),
             "include_open": bool(self.include_open_var.get()),
             "include_resolved": bool(self.include_resolved_var.get()),
@@ -800,6 +823,8 @@ class App:
         self._append_log("-" * 60)
 
         base = self.base_var.get().strip() if self.self_hosted_var.get() else "https://www.overleaf.com"
+        cookie_name = (self.cookie_name_var.get().strip()
+                       if self.self_hosted_var.get() else "")
         params = dict(
             project_url=url,
             out_dir=Path(out_dir).expanduser(),
@@ -807,6 +832,7 @@ class App:
             base_url=base or "https://www.overleaf.com",
             browser=self.browser_var.get(),
             cookie_value=cookie_value,
+            cookie_name=cookie_name or None,
             include_open=bool(self.include_open_var.get()),
             include_resolved=bool(self.include_resolved_var.get()),
             include_changes=bool(self.include_changes_var.get()),

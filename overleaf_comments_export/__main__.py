@@ -82,6 +82,16 @@ def main(argv: list[str] | None = None) -> int:
         "environment variable.",
     )
     parser.add_argument(
+        "--cookie-name",
+        default=None,
+        metavar="NAME",
+        help="The name of the session cookie, if your Overleaf uses one this "
+        "does not recognise. overleaf.com uses overleaf_session2, and a "
+        "self-hosted server usually names it after itself, ending in .sid, "
+        "which is detected automatically. Use this only when it is something "
+        "else entirely.",
+    )
+    parser.add_argument(
         "--base-url",
         default="https://www.overleaf.com",
         help="Override the Overleaf base URL (for self-hosted instances).",
@@ -235,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
             base_url=args.base_url,
             browser=args.browser,
             cookie_value=cookie_value,
+            cookie_name=args.cookie_name,
             verbose=args.verbose,
             include_raw=args.include_raw,
             include_open=args.include_open,

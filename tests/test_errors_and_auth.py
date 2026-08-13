@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 import requests
 
 from overleaf_comments_export.client import (
@@ -289,3 +290,64 @@ def test_the_build_url_works_without_the_extra_fields(monkeypatch):
             {"path": "output.pdf", "url": "/project/abc/build/b1/output/output.pdf"}]})
 
     assert _client(monkeypatch, handler).download_compiled_pdf("abc") == b"%PDF-1.7 built"
+
+
+# --- session cookies that are not called overleaf_session2 (issue #6) ---
+
+def test_a_self_hosted_cookie_named_after_the_instance_is_recognised():
+    """ifftex.fz-juelich.de calls it ifftex.sid. There is no list of these to
+    keep, so the shape is what gets matched."""
+    from overleaf_comments_export.client import is_session_cookie
+
+    for name in ("ifftex.sid", "overleaf.sid", "sharelatex.sid",
+                 "overleaf_session2", "tex.sid"):
+        assert is_session_cookie(name), name
+    for name in ("_ga", "csrf", "sid", "session", "overleaf_session2_backup"):
+        assert not is_session_cookie(name), name
+
+
+def test_a_known_name_is_preferred_over_a_guess():
+    from overleaf_comments_export.client import _pick_session_cookie
+
+    assert _pick_session_cookie(["analytics.sid", "overleaf_session2"]) == "overleaf_session2"
+    assert _pick_session_cookie(["_ga", "ifftex.sid"]) == "ifftex.sid"
+    assert _pick_session_cookie(["_ga", "csrf"]) is None
+
+
+def test_an_explicit_name_overrides_the_guessing():
+    from overleaf_comments_export.client import _pick_session_cookie, is_session_cookie
+
+    assert _pick_session_cookie(["ifftex.sid", "weird_session"], "weird_session") == "weird_session"
+    assert _pick_session_cookie(["ifftex.sid"], "weird_session") is None
+    assert is_session_cookie("weird_session", "weird_session")
+    assert not is_session_cookie("ifftex.sid", "weird_session")
+
+
+def test_a_pasted_self_hosted_cookie_is_accepted(monkeypatch):
+    from overleaf_comments_export.client import OverleafClient
+
+    client = OverleafClient(base_url="https://ifftex.fz-juelich.de")
+    client.connect(browser="manual", cookie_value="ifftex.sid=s%3Aabc123")
+    assert client.session.cookies.get("ifftex.sid") == "s%3Aabc123"
+
+
+def test_the_error_names_the_cookies_it_actually_found(monkeypatch):
+    """dixr could have solved this alone if the message had said what was there."""
+    import types
+
+    from overleaf_comments_export.client import OverleafClient, UserFacingError
+
+    class Cookie:
+        def __init__(self, name):
+            self.name = name
+
+    fake = types.SimpleNamespace(
+        firefox=lambda domain_name=None: [Cookie("_ga"), Cookie("ifftex_login")]
+    )
+    monkeypatch.setitem(__import__("sys").modules, "browser_cookie3", fake)
+    client = OverleafClient(base_url="https://tex.example.edu")
+    with pytest.raises(UserFacingError) as excinfo:
+        client.connect(browser="firefox")
+    message = str(excinfo.value)
+    assert "ifftex_login" in message, "the message must list what it did find"
+    assert "--cookie-name" in message

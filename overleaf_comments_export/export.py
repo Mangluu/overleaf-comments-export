@@ -335,6 +335,7 @@ def run_export(
     base_url: str = "https://www.overleaf.com",
     browser: str = "auto",
     cookie_value: str | None = None,
+    cookie_name: str | None = None,
     verbose: bool = False,
     include_raw: bool = False,
     include_open: bool = True,
@@ -373,7 +374,7 @@ def run_export(
     progress(f"Project id: {project_id}")
     logger.info("Project id: %s", project_id)
 
-    client = OverleafClient(base_url=base_url)
+    client = OverleafClient(base_url=base_url, cookie_name=cookie_name)
     if cookie_value:
         progress("Authenticating with the pasted session cookie…")
     else:

@@ -49,6 +49,34 @@ RETRY_STATUSES = (429, 500, 502, 503, 504)
 # `overleaf.sid`, and older self-hosted installs still use the ShareLaTeX name.
 SESSION_COOKIE_NAMES = ("overleaf_session2", "overleaf.sid", "sharelatex.sid")
 
+# A self-hosted Overleaf names its session cookie after the instance, so a
+# university running it as "ifftex" has `ifftex.sid`. There is no list of those
+# to keep, and there never will be, so match the shape instead. Anyone whose
+# cookie does not fit can name it with --cookie-name.
+SESSION_COOKIE_SUFFIX = ".sid"
+
+
+def is_session_cookie(name: str, override: str | None = None) -> bool:
+    """Whether a cookie of this name could be an Overleaf session."""
+    if override:
+        return name == override
+    return name in SESSION_COOKIE_NAMES or name.endswith(SESSION_COOKIE_SUFFIX)
+
+
+def _pick_session_cookie(names, override: str | None = None):
+    """The most likely session cookie among these names.
+
+    Exact known names win over the suffix guess, so a server that has both
+    `overleaf_session2` and some other `.sid` cookie still picks the right one.
+    """
+    names = list(names)
+    if override:
+        return next((n for n in names if n == override), None)
+    for known in SESSION_COOKIE_NAMES:
+        if known in names:
+            return known
+    return next((n for n in names if n.endswith(SESSION_COOKIE_SUFFIX)), None)
+
 
 def _cookie_domain_for(host: str) -> str:
     """The domain to look cookies up under.
@@ -120,8 +148,11 @@ class OverleafClient:
     """Thin wrapper around pyoverleaf for cookie auth + a few extra endpoints
     (threads, ranges, plain-text doc download, file tree)."""
 
-    def __init__(self, base_url: str = OVERLEAF_BASE) -> None:
+    def __init__(self, base_url: str = OVERLEAF_BASE,
+                 cookie_name: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
+        # Set when a server names its session cookie something we cannot guess.
+        self.cookie_name = cookie_name or None
         self._api = None
         self._session: Optional[requests.Session] = None
 
@@ -184,13 +215,15 @@ class OverleafClient:
                 "Application → Cookies → https://www.overleaf.com, and copy the "
                 "Value of the row named 'overleaf_session2'."
             )
-        if not any(k in SESSION_COOKIE_NAMES for k in pairs):
+        if not _pick_session_cookie(pairs, self.cookie_name):
             raise UserFacingError(
                 "The pasted cookie does not contain an Overleaf session.\n\n"
                 "Copy the Value of the cookie named 'overleaf_session2' on "
-                "overleaf.com, or 'overleaf.sid' on a self-hosted Overleaf. "
+                "overleaf.com. A self-hosted Overleaf names it after itself, so "
+                "it ends in '.sid', for example 'overleaf.sid' or 'ifftex.sid'. "
                 "Look under Application, then Cookies, in your browser's "
-                "developer tools."
+                "developer tools.\n\n"
+                "What you pasted contained: " + ", ".join(sorted(pairs)[:15])
             )
 
         session = requests.Session()
@@ -257,15 +290,28 @@ class OverleafClient:
                 "their cookie store."
             ) from e
 
-        session_cookie = next(
-            (c for c in jar if c.name in SESSION_COOKIE_NAMES),
-            None,
-        )
+        wanted = _pick_session_cookie((c.name for c in jar), self.cookie_name)
+        session_cookie = next((c for c in jar if c.name == wanted), None) if wanted else None
         if session_cookie is None:
+            found = sorted({c.name for c in jar})
+            # Name what was actually there. A self-hosted server can call its
+            # session anything, and without this the user has no way to find out
+            # what to pass to --cookie-name.
+            listing = (
+                "\n\nCookies found for that address:\n  " + "\n  ".join(found[:25])
+                + "\n\nIf one of those is the session, pass it with "
+                  "--cookie-name, or type it into the window under the "
+                  "self-hosted options."
+            ) if found else ""
             raise UserFacingError(
-                f"No Overleaf session was found in {browser} for {host}.\n\n"
-                f"Open {self.base_url} in {browser}, sign in, and try again. "
-                "If you use a self-hosted Overleaf, check the address is right."
+                f"No Overleaf session was found in {browser} for {host}."
+                + ("" if self.cookie_name else "\n\nLooked for "
+                   + ", ".join(SESSION_COOKIE_NAMES) + f", and anything ending in "
+                   f"{SESSION_COOKIE_SUFFIX}.")
+                + (f"\n\nLooked for a cookie named {self.cookie_name!r}."
+                   if self.cookie_name else "")
+                + f"\n\nOpen {self.base_url} in {browser}, sign in, and try again."
+                + listing
             )
 
         session = requests.Session()
