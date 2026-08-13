@@ -172,10 +172,11 @@
 
   function outputFiles(exported, formats) {
     const date = new Date().toISOString().slice(0, 10);
+    const markdownName = `comments-${date}.md`;
     const files = [];
     if (formats.markdown) {
       files.push({
-        filename: `comments-${date}.md`,
+        filename: markdownName,
         mimeType: "text/markdown;charset=utf-8",
         content: exported.markdown,
       });
@@ -194,6 +195,14 @@
         content: exported.jsonl,
       });
     }
+    // Always written, like the Python export does, because the Markdown front
+    // matter names it and because it is what makes the folder legible to an
+    // assistant.
+    files.push({
+      filename: "agents.md",
+      mimeType: "text/markdown;charset=utf-8",
+      content: core.renderAgentsBrief(exported.payload, markdownName),
+    });
     if (formats.responseLetter) {
       files.push({
         filename: "response-letter.md",

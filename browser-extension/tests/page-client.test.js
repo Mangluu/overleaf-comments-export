@@ -73,7 +73,16 @@ test("collects the current project through same-origin Overleaf endpoints", asyn
   assert.equal(result.project.title, "Demo Project");
   assert.equal(result.summary.threadCount, 1);
   assert.match(result.generatedAt, /^\d{4}-\d{2}-\d{2}T/);
-  assert.equal(result.outputs.length, 2);
+  const names = result.outputs.map((output) => output.filename);
+  assert.ok(names.some((name) => /^comments-\d{4}-\d{2}-\d{2}\.md$/.test(name)));
+  assert.ok(names.includes("comments.json"));
+  // The Markdown front matter names agents.md, so it has to be written.
+  assert.ok(names.includes("agents.md"), `agents.md missing from ${names}`);
   assert.match(result.outputs[0].content, /Clarify this\./);
   assert.ok(requests.every((entry) => entry.options.credentials === "include"));
+
+  const markdown = result.outputs[0].content;
+  for (const key of ["file_count", "reviewer_count", "companion_json", "companion_agents"]) {
+    assert.match(markdown, new RegExp(`^${key}:`, "m"), `front matter is missing ${key}`);
+  }
 });

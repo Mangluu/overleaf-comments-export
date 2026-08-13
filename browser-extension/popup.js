@@ -188,15 +188,19 @@ async function initialize() {
 }
 
 async function collectFromPage(options) {
+  // The isolated world on purpose. Everything the injected code needs from
+  // the page is DOM, which the isolated world shares, and a relative fetch
+  // sends the session cookie there just the same. In the main world the page
+  // owns the globals, so a hostile page matching the project URL pattern
+  // could define __overleafCommentsExtension before us, make the real client
+  // return early, and have whatever it liked written to the user's Downloads.
   await chrome.scripting.executeScript({
     target: { tabId: activeTab.id },
-    world: "MAIN",
     files: ["src/export-core.js", "src/page-client.js"],
   });
 
   const [execution] = await chrome.scripting.executeScript({
     target: { tabId: activeTab.id },
-    world: "MAIN",
     func: async (exportOptions, injectionError) => {
       if (!globalThis.__overleafCommentsExtension) throw new Error(injectionError);
       return globalThis.__overleafCommentsExtension.collect(exportOptions);

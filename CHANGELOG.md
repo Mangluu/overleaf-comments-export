@@ -13,6 +13,12 @@ All notable changes to this project are documented here.
   folder. The extension is read-only, has no backend or telemetry, and requests
   only `activeTab`, `scripting`, and `downloads`.
 
+  It writes the same Markdown, JSON and `agents.md` as the Python export, under
+  the same `schema_version`, and the test suite fails if the two ever stop
+  agreeing. The PDF with the comments highlighted, the annotated LaTeX, the
+  per-reviewer reports and the reviewer filters remain Python only. The README
+  has a table saying which does what.
+
 ## [0.10.0] — 2026-08-12
 
 ### Added
