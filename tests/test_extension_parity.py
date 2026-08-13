@@ -9,6 +9,9 @@ wrong thing.
 These tests read the extension's JavaScript as text. That is crude, and it is
 the point: they cost nothing, they run in the existing suite, and they fail the
 moment somebody edits one side without the other.
+
+Every read names its encoding. The extension ships a Chinese interface, and on
+Windows a read without one uses cp1252 and dies on the first Chinese character.
 """
 
 from __future__ import annotations
@@ -50,7 +53,7 @@ def _python_front_matter() -> list[str]:
 
 def _extension_front_matter() -> list[str]:
     """The keys the extension writes, read out of its Markdown template."""
-    source = CORE.read_text()
+    source = CORE.read_text(encoding="utf-8")
     block = source.split("const lines = [", 1)[1].split('"---",', 2)[1]
     keys = []
     for line in block.splitlines():
@@ -62,7 +65,7 @@ def _extension_front_matter() -> list[str]:
 
 
 def test_both_declare_the_same_schema_version():
-    declared = re.search(r'SCHEMA_VERSION\s*=\s*"([^"]+)"', CORE.read_text())
+    declared = re.search(r'SCHEMA_VERSION\s*=\s*"([^"]+)"', CORE.read_text(encoding="utf-8"))
     assert declared, "the extension no longer declares a SCHEMA_VERSION"
     assert declared.group(1) == SCHEMA_VERSION, (
         f"the extension says schema {declared.group(1)} and Python says "
@@ -87,7 +90,7 @@ def test_the_markdown_front_matter_matches():
 def test_the_extension_writes_the_file_its_front_matter_names():
     """`companion_agents: agents.md` has to be true, or an assistant told to
     read the brief will not find one."""
-    client = (EXTENSION / "src" / "page-client.js").read_text()
+    client = (EXTENSION / "src" / "page-client.js").read_text(encoding="utf-8")
     assert '"agents.md"' in client, "the front matter names agents.md but nothing writes it"
 
 
@@ -96,7 +99,7 @@ def test_the_extension_never_asks_for_the_cookie_permission():
     session cookie. If that ever changes it must be a deliberate decision."""
     import json
 
-    manifest = json.loads((EXTENSION / "manifest.json").read_text())
+    manifest = json.loads((EXTENSION / "manifest.json").read_text(encoding="utf-8"))
     assert "cookies" not in manifest.get("permissions", [])
     assert not manifest.get("host_permissions"), "activeTab is meant to be the whole story"
 
@@ -104,5 +107,5 @@ def test_the_extension_never_asks_for_the_cookie_permission():
 def test_the_extension_injects_into_the_isolated_world():
     """The main world is the page's, and the page can define our globals before
     we do. Injecting there let a hostile page decide what got written to disk."""
-    popup = (EXTENSION / "popup.js").read_text()
+    popup = (EXTENSION / "popup.js").read_text(encoding="utf-8")
     assert '"MAIN"' not in popup, "injection must stay in the isolated world"
