@@ -170,6 +170,13 @@ def main(argv: list[str] | None = None) -> int:
         "installation. Install with the [pdf] extra to enable this.",
     )
     parser.add_argument(
+        "--include-source",
+        action="store_true",
+        help="Also write source/, the full text of every commented file. The "
+        "offsets in comments.json point into these, so an assistant can read "
+        "the whole paragraph a comment is about rather than a short window.",
+    )
+    parser.add_argument(
         "--annotate-style",
         choices=list(ANNOTATE_STYLES),
         default="highlight",
@@ -258,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
             response_letter=args.response_letter,
             annotated_tex=args.annotated_tex,
             annotated_pdf=args.annotated_pdf,
+            include_source=args.include_source,
             annotate_style=args.annotate_style,
             stable=args.stable,
             progress=lambda msg: print(msg, file=sys.stderr),

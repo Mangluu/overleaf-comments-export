@@ -104,6 +104,7 @@ class ExportResult:
     response_letter_path: Path | None = None
     annotated_dir: Path | None = None
     annotated_pdf_path: Path | None = None
+    source_dir: Path | None = None
 
 
 def _build_user_map(threads_raw: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -168,6 +169,24 @@ def _parse_threads(threads_raw: dict[str, Any]) -> dict[str, Thread]:
             ),
         )
     return out
+
+
+def safe_relative(pathname: str, doc_id: str) -> Path:
+    """A project path turned into something safe to write inside the export.
+
+    The name reaches us from Overleaf's file tree or, when that is unavailable,
+    from a member name inside the project zip. Zip entries are allowed to say
+    `../../elsewhere`, and a path like that would write outside the folder the
+    user chose. Overleaf is not hostile, but writing files is not the place to
+    rely on that.
+    """
+    if pathname.startswith("<unknown-"):
+        return Path(f"unknown-{doc_id}.tex")
+    parts = [
+        part for part in Path(pathname.replace("\\", "/")).parts
+        if part not in ("..", ".", "/") and not part.endswith(":")
+    ]
+    return Path(*parts) if parts else Path(f"unknown-{doc_id}.tex")
 
 
 def _build_doc_text(doc_id: str, pathname: str, text: str) -> DocText:
@@ -372,6 +391,7 @@ def run_export(
     response_letter: bool = False,
     annotated_tex: bool = False,
     annotated_pdf: bool = False,
+    include_source: bool = False,
     annotate_style: str = "highlight",
     stable: bool = False,
     progress: ProgressCallback | None = None,
@@ -781,9 +801,7 @@ def run_export(
                 style=annotate_style if annotate_style in ANNOTATE_STYLES else "highlight",
             )
             # Mirror the project layout so \input paths still resolve.
-            rel = doc.pathname
-            if rel.startswith("<unknown-"):
-                rel = f"unknown-{doc_id}.tex"
+            rel = safe_relative(doc.pathname, doc_id)
             target = annotated_dir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(annotated, encoding="utf-8")
@@ -837,8 +855,27 @@ def run_export(
                                   for p in placed if not p.highlighted),
                     )
 
+    source_dir: Path | None = None
+    if include_source and doc_texts:
+        # Written byte for byte as it was downloaded, because `offset` and
+        # `line` in comments.json index into exactly this text. An assistant
+        # asked to rewrite a paragraph can then read the paragraph, rather than
+        # working from the short window around the anchor.
+        source_dir = out_dir / "source"
+        for doc_id, doc in sorted(doc_texts.items()):
+            target = source_dir / safe_relative(doc.pathname, doc_id)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(doc.text, encoding="utf-8")
+        progress(
+            f"Wrote {len(doc_texts)} commented file(s) into source/ — the "
+            f"offsets in comments.json point into these"
+        )
+
     agents_path = out_dir / "agents.md"
-    agents_path.write_text(_build_agents_md(title, project_id, json_path.name, md_path.name), encoding="utf-8")
+    agents_path.write_text(
+        _build_agents_md(title, project_id, json_path.name, md_path.name,
+                         has_source=source_dir is not None),
+        encoding="utf-8")
     progress(f"Wrote {agents_path.name}")
 
     if stale_count:
@@ -860,6 +897,7 @@ def run_export(
         response_letter_path=letter_path,
         annotated_dir=annotated_dir,
         annotated_pdf_path=annotated_pdf_path,
+        source_dir=source_dir,
     )
 
 
@@ -1057,8 +1095,24 @@ def _doc_id_for_path(path: str, doc_id_to_path: dict[str, str]) -> str | None:
     return None
 
 
-def _build_agents_md(project_title: str, project_id: str, json_name: str, md_name: str) -> str:
+def _build_agents_md(project_title: str, project_id: str, json_name: str, md_name: str,
+                     has_source: bool = False) -> str:
     """A short instruction file for AI agents who'll ingest this batch."""
+    source_note = (
+        "## The source itself\n\n"
+        "The full text of every commented file is in `source/`, exactly as it\n"
+        "is in the project. The `offset` and `line` on each comment index into\n"
+        "those files, so you can read the whole paragraph a comment is about\n"
+        "rather than the short window in `context`. Edit proposals should quote\n"
+        "from there.\n\n"
+    ) if has_source else ""
+    no_source_note = (
+        "" if has_source else
+        "- The full `.tex` source of the paper. You only see a short window\n"
+        "  around each anchor. If you need more, ask the user to re-run the\n"
+        "  export with --include-source, which writes the commented files into\n"
+        "  `source/`.\n"
+    )
     return f"""# Agent brief — Overleaf comments for {project_title}
 
 You are reading an Overleaf comment export produced by
@@ -1110,12 +1164,9 @@ rendered output where truncation is true.
   insertions/deletions someone made with "Track Changes" enabled. Treat them
   as suggested edits to accept, reject, or modify.
 
-## What you do NOT have
+{source_note}## What you do NOT have
 
-- The full `.tex` source of the paper. You only see ~80 chars around each
-  anchor. If you need more context, ask the user to share the relevant
-  `.tex` file.
-- The ability to push edits back to Overleaf. Output any proposed edits as
+{no_source_note}- The ability to push edits back to Overleaf. Output any proposed edits as
   diffs or rewrites; the user will apply them.
 
 Project ID for reference: `{project_id}`.

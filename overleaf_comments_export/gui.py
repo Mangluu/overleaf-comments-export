@@ -594,6 +594,7 @@ class App:
         self.per_reviewer_var = tk.BooleanVar(value=bool(cfg.get("per_reviewer_reports", False)))
         self.annotated_var = tk.BooleanVar(value=bool(cfg.get("annotated_tex", False)))
         self.annotated_pdf_var = tk.BooleanVar(value=bool(cfg.get("annotated_pdf", True)))
+        self.include_source_var = tk.BooleanVar(value=bool(cfg.get("include_source", False)))
         self.stable_var = tk.BooleanVar(value=bool(cfg.get("stable", False)))
         self.detailed_var = tk.BooleanVar(value=cfg.get("render_mode", "compact") == "detailed")
         self.write_jsonl_var = tk.BooleanVar(value=bool(cfg.get("write_jsonl", True)))
@@ -627,6 +628,10 @@ class App:
              "on your computer, and hovering a highlight shows the comment. "
              "Every comment is also listed on a page at the end. Your own "
              "files are never touched."),
+            (self.include_source_var, "The text of the commented files",
+             "Writes source/, the full text of every file that has a comment "
+             "in it. An assistant can then read the whole paragraph a comment "
+             "is about, instead of the few words either side of it."),
             (self.stable_var, "Keep it tidy for version control",
              "Writes one file that only changes when the comments change, so "
              "it can live in a git repository without noise."),
@@ -818,6 +823,7 @@ class App:
             "response_letter": bool(self.response_letter_var.get()),
             "annotated_tex": bool(self.annotated_var.get()),
             "annotated_pdf": bool(self.annotated_pdf_var.get()),
+            "include_source": bool(self.include_source_var.get()),
             "stable": bool(self.stable_var.get()),
             "include_raw": bool(self.include_raw_var.get()),
         })
@@ -853,6 +859,7 @@ class App:
             response_letter=bool(self.response_letter_var.get()),
             annotated_tex=bool(self.annotated_var.get()),
             annotated_pdf=bool(self.annotated_pdf_var.get()),
+            include_source=bool(self.include_source_var.get()),
             stable=bool(self.stable_var.get()),
             include_raw=bool(self.include_raw_var.get()),
         )
@@ -927,6 +934,7 @@ class App:
             ("Data", result.json_path), ("Lines", result.jsonl_path),
             ("Letter", result.response_letter_path),
             ("Commented PDF", result.annotated_pdf_path),
+            ("Source", result.source_dir),
             ("Annotated LaTeX", result.annotated_dir),
             ("Per person", result.by_reviewer_dir), ("Notes for AI", result.agents_path),
         ):

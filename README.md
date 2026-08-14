@@ -125,6 +125,7 @@ Python 3.10 or newer, tested up to 3.14, on macOS, Windows, and Linux.
 | `response-letter.md` | Optional. A point-by-point reply document with a blank slot under every open comment. |
 | `commented.pdf` | Optional. Your paper as Overleaf builds it, with the comments highlighted on the text. |
 | `annotated/` | Optional. Your LaTeX with the comments embedded, if you would rather compile it yourself. |
+| `source/` | Optional. The text of every commented file. The offsets in `comments.json` index into these. |
 | `by-reviewer/<name>.md` | Optional. One file per reviewer, so you can work through them one person at a time. |
 
 ## Working through comments with an AI
@@ -142,10 +143,17 @@ Some things that work well.
 Tracked changes come through too, as insertions and deletions with the
 surrounding text, so a deletion reads as `before ~~removed~~ after`.
 
+By default an assistant sees a short window around each comment and no more,
+which is not enough to rewrite a paragraph. Add `--include-source` and the text
+of every commented file is written to `source/`, with the offsets on each
+comment indexing into it, so it can read the paragraph it is being asked to
+change.
+
 ## Useful options
 
 ```bash
 --pdf                      # a PDF of your paper with the comments in it
+--include-source           # the full text of every commented file
 --response-letter          # draft a point-by-point reply document
 --annotated-tex            # a copy of your source with the comments embedded
 --annotate-style todonotes # put those comments in the margin instead

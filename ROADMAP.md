@@ -17,6 +17,7 @@ place to start if you would like to contribute.
 - Response letter scaffold (`--response-letter`)
 - Git friendly output that does not churn between runs (`--stable`)
 - Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
+- The text of every commented file, so an assistant can read the paragraph (`--include-source`)
 - Downloadable apps for macOS, Windows and Linux, so Python is not needed
 - A window written for people who do not use a terminal, with dark mode
 - A read-only Chrome/Edge extension that exports the project in the current tab
@@ -26,9 +27,6 @@ place to start if you would like to contribute.
 
 Things I think are worth doing, roughly in order.
 
-- **Write out the full `.tex` source** (`--include-source`) — the export
-  currently gives an AI a snippet around each comment and nothing else, so it
-  cannot see the paragraph it is being asked to rewrite.
 - **Diff two exports** (`--since`) — reviews arrive in waves. `--stable` already
   lets git show you this. `--since` would say it in words, without needing a
   repository.

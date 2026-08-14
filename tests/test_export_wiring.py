@@ -245,3 +245,57 @@ def test_a_writable_folder_is_left_exactly_as_it_was(tmp_path, fake_overleaf):
     """The check writes a probe file. It must not survive."""
     _run(tmp_path)
     assert not (tmp_path / ".oce-write-test").exists()
+
+
+# --- writing the source out, so an assistant can read more than a window ---
+
+def test_the_source_is_written_and_the_offsets_point_into_it(tmp_path, fake_overleaf):
+    """The whole reason for this option: `offset` has to be a valid index into
+    the file that gets written, or an assistant cannot use it."""
+    import json
+
+    result = _run(tmp_path, include_source=True)
+    written = list((tmp_path / "source").rglob("*.tex"))
+    assert len(written) == 1
+    text = written[0].read_text(encoding="utf-8")
+    assert text == DOC_TEXT, "the file must be byte for byte what the offsets index"
+
+    comment = json.loads(result.json_path.read_text(encoding="utf-8"))["comments"][0]
+    at = comment["offset"]
+    assert text[at:at + len(comment["anchored_text"])] == comment["anchored_text"]
+    assert text.splitlines()[comment["line"] - 1].strip(), "the line number is off"
+
+
+def test_no_source_is_written_unless_it_was_asked_for(tmp_path, fake_overleaf):
+    _run(tmp_path)
+    assert not (tmp_path / "source").exists()
+
+
+def test_the_agent_brief_says_whether_the_source_is_there(tmp_path, fake_overleaf):
+    result = _run(tmp_path, include_source=True)
+    with_source = result.agents_path.read_text(encoding="utf-8")
+    assert "source/" in with_source
+    assert "--include-source" not in with_source, "it is there, do not tell them to ask for it"
+
+    other = tmp_path / "without"
+    _run(other)
+    without = (other / "agents.md").read_text(encoding="utf-8")
+    assert "--include-source" in without, "it should say how to get the source"
+
+
+def test_a_project_path_cannot_escape_the_export_folder(tmp_path, monkeypatch):
+    """Since the zip fallback, a filename can come from a zip member name, and
+    those are allowed to say ../../elsewhere."""
+    from overleaf_comments_export.export import safe_relative
+
+    class Escaping(FakeClient):
+        def download_project_zip(self, project_id):
+            return _zip_of({"../../../etc/passwd.tex": DOC_TEXT})
+
+    monkeypatch.setattr(export_mod, "OverleafClient", Escaping)
+    _run(tmp_path, include_source=True)
+    written = [p for p in tmp_path.rglob("*") if p.is_file()]
+    for path in written:
+        assert tmp_path in path.parents or path.parent == tmp_path or tmp_path in path.resolve().parents
+    assert not (tmp_path.parent / "etc").exists(), "it wrote outside the export folder"
+    assert str(safe_relative("../../etc/passwd", "d")) == "etc/passwd"

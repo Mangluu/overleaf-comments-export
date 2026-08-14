@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-08-14
+
+### Added
+- **`--include-source` writes the text of every commented file.** The export
+  gave an assistant a short window either side of each comment and nothing
+  more, so asking it to rewrite a paragraph meant asking it to rewrite
+  something it could not see. `source/` now holds each commented file exactly
+  as it is in the project, and the `offset` and `line` on every comment index
+  into those files, so the paragraph can actually be read. There is a tick box
+  for it in the window.
+
+  Verified on a real paper: all 83 comments' offsets index correctly into the
+  file that was written.
+
+### Fixed
+- A document's path is written into the export folder, and since the project
+  zip became a source of filenames that name can come from a zip member. Zip
+  entries are allowed to say `../../elsewhere`. Paths are now reduced to
+  something that stays inside the chosen folder.
+
 ## [0.12.0] — 2026-08-14
 
 ### Added
@@ -350,7 +370,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.12.0
 [0.11.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.1
 [0.11.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.0
