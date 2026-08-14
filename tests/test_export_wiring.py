@@ -215,22 +215,33 @@ def test_the_zip_is_not_fetched_when_the_tree_already_named_everything(tmp_path,
     assert json.loads(result.json_path.read_text(encoding="utf-8"))["comments"][0]["pathname"] == "main.tex"
 
 
-def test_a_folder_that_cannot_be_written_says_so_plainly(tmp_path, fake_overleaf):
+def test_a_folder_that_cannot_be_written_says_so_plainly(tmp_path, fake_overleaf, monkeypatch):
     """Picking an unwritable folder is an ordinary mistake, not a crash. It used
-    to surface as a raw PermissionError with an Errno in it."""
-    import os
-    import stat
+    to surface as a raw PermissionError with an Errno in it.
 
+    The refusal is simulated rather than made with chmod, because chmod on a
+    directory does not stop writes on Windows and the check is the same code on
+    every platform anyway.
+    """
     from overleaf_comments_export.client import UserFacingError
 
-    locked = tmp_path / "locked"
-    locked.mkdir()
-    os.chmod(locked, stat.S_IREAD | stat.S_IEXEC)
-    try:
-        with pytest.raises(UserFacingError) as excinfo:
-            _run(locked)
-        message = str(excinfo.value)
-        assert "Nothing can be written" in message
-        assert "Errno" not in message
-    finally:
-        os.chmod(locked, stat.S_IRWXU)
+    real_write = Path.write_text
+
+    def refuse(self, *args, **kwargs):
+        if self.name == ".oce-write-test":
+            raise PermissionError(13, "Permission denied")
+        return real_write(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", refuse)
+    with pytest.raises(UserFacingError) as excinfo:
+        _run(tmp_path)
+    message = str(excinfo.value)
+    assert "Nothing can be written" in message
+    assert str(tmp_path) in message, "the message must name the folder"
+    assert "Errno" not in message
+
+
+def test_a_writable_folder_is_left_exactly_as_it_was(tmp_path, fake_overleaf):
+    """The check writes a probe file. It must not survive."""
+    _run(tmp_path)
+    assert not (tmp_path / ".oce-write-test").exists()
