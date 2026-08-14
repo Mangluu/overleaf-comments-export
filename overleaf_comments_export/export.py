@@ -182,9 +182,13 @@ def safe_relative(pathname: str, doc_id: str) -> Path:
     """
     if pathname.startswith("<unknown-"):
         return Path(f"unknown-{doc_id}.tex")
+    # Split the string rather than parsing it as a path. Path semantics differ
+    # by platform: on Windows the root of "/etc/passwd" is a backslash, which a
+    # filter written for "/" lets through, and the absolute path that comes out
+    # replaces the output folder entirely when joined to it.
     parts = [
-        part for part in Path(pathname.replace("\\", "/")).parts
-        if part not in ("..", ".", "/") and not part.endswith(":")
+        part for part in pathname.replace("\\", "/").split("/")
+        if part not in ("", ".", "..") and not (len(part) == 2 and part[1] == ":")
     ]
     return Path(*parts) if parts else Path(f"unknown-{doc_id}.tex")
 

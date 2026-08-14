@@ -303,3 +303,9 @@ def test_a_project_path_cannot_escape_the_export_folder(tmp_path, monkeypatch):
     assert safe_relative("../../etc/passwd", "d").as_posix() == "etc/passwd"
     assert safe_relative("/etc/passwd", "d").as_posix() == "etc/passwd"
     assert safe_relative("sections/intro.tex", "d").as_posix() == "sections/intro.tex"
+    assert safe_relative("C:\\Windows\\system32\\evil.tex", "d").as_posix() == "Windows/system32/evil.tex"
+    # Whatever comes in, the result must be relative. An absolute path joined
+    # to the output folder replaces it, which is the escape this prevents.
+    for hostile in ("/etc/passwd", "../../etc/passwd", "C:/Windows/evil.tex",
+                    "\\\\server\\share\\evil.tex", "....//....//etc", ""):
+        assert not safe_relative(hostile, "d").is_absolute(), hostile
