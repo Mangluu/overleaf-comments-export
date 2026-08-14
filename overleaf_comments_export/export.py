@@ -22,7 +22,7 @@ from .model import (
     TrackedChange,
 )
 from .render import render_markdown, render_response_letter
-from .sections import find_headings, nearest_heading
+from .sections import enclosing_float, find_floats, find_headings, nearest_heading
 
 SCHEMA_VERSION = "1.3"
 # Characters of surrounding text captured on either side of an anchor. The
@@ -204,6 +204,7 @@ def _build_doc_text(doc_id: str, pathname: str, text: str) -> DocText:
         text=text,
         line_starts=line_starts,
         headings=headings,
+        floats=find_floats(text, line_starts),
     )
 
 
@@ -345,6 +346,11 @@ def _comment_to_jsonl_record(
         "col": c.col,
         "offset": c.offset,
         "nearest_heading": c.nearest_heading,
+        "enclosing_float": (
+            {"kind": c.float_ref.kind, "number": c.float_ref.number,
+             "label": c.float_ref.label, "caption": c.float_ref.caption}
+            if c.float_ref else None
+        ),
         "anchored_text": c.anchored_text,
         "stale": c.stale,
         "reply_count": max(0, len(thread.messages) - 1) if thread else 0,
@@ -553,6 +559,7 @@ def run_export(
                         nearest_heading=heading,
                         stale=stale,
                         context=context,
+                        float_ref=enclosing_float(doc.floats, resolved_offset),
                     )
                 )
                 referenced_thread_ids.add(str(thread_id))
@@ -1050,6 +1057,11 @@ def _build_structured_json(
                 "col": c.col,
                 "offset": c.offset,
                 "nearest_heading": c.nearest_heading,
+        "enclosing_float": (
+            {"kind": c.float_ref.kind, "number": c.float_ref.number,
+             "label": c.float_ref.label, "caption": c.float_ref.caption}
+            if c.float_ref else None
+        ),
                 "anchored_text": c.anchored_text,
                 "stale": c.stale,
                 "reply_count": max(

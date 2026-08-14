@@ -184,6 +184,13 @@ def render_markdown(
             "- **Most active reviewers:** "
             + ", ".join(f"{name} ({n})" for name, n in top)
         )
+    if anchored:
+        addressed = sum(1 for c in anchored
+                        if (t := threads.get(c.thread_id)) is not None and t.resolved)
+        out.append(
+            f"- **Addressed:** {addressed} of {len(anchored)} "
+            f"([the list is at the end](#still-to-address))"
+        )
     out.append("")
 
     by_file_comments: dict[str, list[AnchoredComment]] = defaultdict(list)
@@ -283,6 +290,7 @@ def render_markdown(
         for thread in orphan_threads:
             _emit_orphan_thread(out, thread)
 
+    out.extend(render_checklist(threads, anchored))
     return "\n".join(out).rstrip() + "\n"
 
 
@@ -414,6 +422,8 @@ def _emit_comment_compact(out: list[str], c: AnchoredComment, thread: Thread | N
         head = f"**{c.short_id}** _{status}_ — “{quote}”"
     else:
         head = f"**{c.short_id}** _{status}_ — _(empty anchor)_"
+    if c.float_ref is not None:
+        head += f" — in {c.float_ref.describe()}"
     out.append(head)
     if thread is None or not thread.messages:
         out.append("- _(no messages)_")
@@ -496,3 +506,44 @@ def _emit_orphan_thread(out: list[str], thread: Thread) -> None:
             body = (msg.content or "").strip().replace("\n", " ")
             out.append(f"  - {who} · {when}: {body}")
     out.append("")
+
+
+def render_checklist(
+    threads: dict[str, Thread], anchored: list[AnchoredComment]
+) -> list[str]:
+    """A tick list of every comment, so you can see what is left.
+
+    Deliberately stateless. A tick means Overleaf says the thread is resolved,
+    nothing more. Keeping progress in a side file would mean merging it on
+    every run, which is the easiest way to introduce bugs nobody can reproduce.
+    Tick the boxes yourself as you work; a fresh export starts from Overleaf
+    again.
+    """
+    if not anchored:
+        return []
+    done = sum(1 for c in anchored
+               if (t := threads.get(c.thread_id)) is not None and t.resolved)
+    out = ["## Still to address", "",
+           f"{done} of {len(anchored)} done, going by what is resolved in Overleaf.",
+           ""]
+    for c in anchored:
+        thread = threads.get(c.thread_id)
+        box = "x" if thread is not None and thread.resolved else " "
+        quote, clipped = _clip_right(" ".join((c.anchored_text or "").split()), 48)
+        quote = (quote + "…") if clipped else (quote or "(empty anchor)")
+        if c.float_ref is not None:
+            where = c.float_ref.describe()
+        else:
+            # The deepest heading only, and bounded. A full path with a paper
+            # title in it makes every line unreadable, and this is a list you
+            # scan rather than read.
+            heading = (c.nearest_heading or c.pathname).split(" > ")[-1]
+            where, clipped = _clip_right(heading, 40)
+            where = (where + "…") if clipped else where
+        who = ""
+        if thread is not None and thread.messages:
+            first = min(thread.messages, key=lambda m: m.timestamp_ms)
+            who = " — " + _humanize_user(first.user_name, first.user_email, first.user_id)
+        out.append(f"- [{box}] **{c.short_id}** “{quote}” — {where}{who}")
+    out.append("")
+    return out

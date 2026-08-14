@@ -18,6 +18,8 @@ place to start if you would like to contribute.
 - Git friendly output that does not churn between runs (`--stable`)
 - Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
 - The text of every commented file, so an assistant can read the paragraph (`--include-source`)
+- A checklist of what is left to address, ticked from Overleaf's own resolved flag
+- Figure and table detection, so a comment on a caption says which figure
 - Downloadable apps for macOS, Windows and Linux, so Python is not needed
 - A window written for people who do not use a terminal, with dark mode
 - A read-only Chrome/Edge extension that exports the project in the current tab
@@ -30,10 +32,6 @@ Things I think are worth doing, roughly in order.
 - **Diff two exports** (`--since`) — reviews arrive in waves. `--stable` already
   lets git show you this. `--since` would say it in words, without needing a
   repository.
-- **What's left checklist** — a checkbox list keyed by short ID, so you can see
-  how much of the review you have worked through. **help wanted**
-- **Figure and table captions** — a comment anchored inside a `figure`
-  environment should say so, not just give a line number. **help wanted**
 - **`--doctor`** — one command that says whether your login works and what it
   can see, so "it doesn't work" becomes answerable without a conversation.
 

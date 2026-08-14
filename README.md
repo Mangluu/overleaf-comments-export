@@ -46,7 +46,9 @@ tool with a window** that does everything, including the PDF. There is a
 ```
 
 Every comment sits in its section, next to the words it was attached to, with
-its replies underneath and a stable id you can point at.
+its replies underneath and a stable id you can point at. A comment written on a
+caption says which figure or table it is in. At the end there is a tick list of
+every comment, so you can see how much of the review is left.
 
 ## Get it
 

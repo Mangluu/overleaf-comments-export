@@ -55,6 +55,9 @@ class AnchoredComment:
     nearest_heading: Optional[str]
     stale: bool
     context: Optional[SourceContext] = None
+    # The figure or table this sits inside, when it sits inside one. Reviewers
+    # comment on captions constantly, and a line number in a float says little.
+    float_ref: Optional["Float"] = None
 
 
 @dataclass
@@ -84,9 +87,28 @@ class Heading:
 
 
 @dataclass
+class Float:
+    """A figure or table environment, and where it sits in the source."""
+    kind: str                  # "figure" or "table"
+    number: int | None         # as LaTeX would number it, None when uncaptioned
+    caption: Optional[str]
+    label: Optional[str]
+    start: int                 # char offset of \begin
+    end: int                   # char offset just past \end
+    line_no: int
+
+    def describe(self) -> str:
+        """How it should read to someone working through comments."""
+        name = self.kind.capitalize()
+        head = f"{name} {self.number}" if self.number else f"an unnumbered {self.kind}"
+        return f"{head} (`{self.label}`)" if self.label else head
+
+
+@dataclass
 class DocText:
     doc_id: str
     pathname: str
     text: str
     line_starts: list[int]
     headings: list[Heading]
+    floats: list["Float"] = field(default_factory=list)

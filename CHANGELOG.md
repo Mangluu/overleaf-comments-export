@@ -4,6 +4,35 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-08-14
+
+### Added
+- **A checklist of what is left to address.** The export said what the comments
+  were and nothing about progress, and on a paper with ninety of them across
+  three reviewers, "what is left" is the question you ask most often. Every
+  comment now appears as a tick box at the end of the Markdown, with a count in
+  the summary that links to it.
+
+  Deliberately stateless. A tick means Overleaf says that thread is resolved,
+  nothing more. Progress is not kept in a side file, because a file that has to
+  be merged on every run is the easiest way to introduce bugs nobody can
+  reproduce. Tick the boxes as you work, and a fresh export starts from
+  Overleaf again.
+  ([#1](https://github.com/Mangluu/overleaf-comments-export/issues/1))
+
+- **A comment inside a figure or table says so.** It reads `in Figure 3
+  (\`fig:spi-by-condition\`)` rather than giving a line number under whichever
+  section happened to be above it, which is often the wrong one because a float
+  drifts from the text it was written beside. Reviewers comment on captions
+  constantly.
+
+  `figure*` and `table*` share their counter with the unstarred form, an
+  uncaptioned float takes no number because LaTeX does not give it one, a
+  caption belonging to a subfigure or to a nested float is not mistaken for the
+  outer one, and a commented-out float is ignored. A comment that is not in a
+  float is unchanged. The enclosing float is in `comments.json` too.
+  ([#2](https://github.com/Mangluu/overleaf-comments-export/issues/2))
+
 ## [0.13.0] — 2026-08-14
 
 ### Added
@@ -370,7 +399,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.12.0
 [0.11.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.1

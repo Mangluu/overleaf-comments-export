@@ -169,3 +169,79 @@ def test_tracked_change_compact_render():
     assert "T001" in md
     assert "insertion" in md
     assert "+ New sentence." in md
+
+
+# --- the checklist of what is left (issue #1) ---
+
+def _thread(tid, resolved=False, who="A. Reviewer"):
+    return Thread(id=tid, resolved=resolved, messages=[Message(
+        id=f"m{tid}", content="Please fix.", timestamp_ms=1000,
+        user_id=who, user_name=who)])
+
+
+def _anchored(short_id, tid, anchor="a novel framework", heading="Method", float_ref=None):
+    return AnchoredComment(
+        thread_id=tid, short_id=short_id, doc_id="d", pathname="main.tex",
+        offset=0, anchored_text=anchor, line_no=1, col=1,
+        nearest_heading=heading, stale=False,
+        context=SourceContext(anchor=anchor), float_ref=float_ref)
+
+
+def test_the_checklist_ticks_what_overleaf_says_is_resolved():
+    from overleaf_comments_export.render import render_checklist
+
+    threads = {"t1": _thread("t1", resolved=True), "t2": _thread("t2")}
+    lines = render_checklist(threads, [_anchored("C001", "t1"), _anchored("C002", "t2")])
+    text = "\n".join(lines)
+    assert "1 of 2 done" in text
+    assert "- [x] **C001**" in text
+    assert "- [ ] **C002**" in text
+
+
+def test_the_checklist_says_which_figure_when_there_is_one():
+    from overleaf_comments_export.model import Float
+    from overleaf_comments_export.render import render_checklist
+
+    fig = Float(kind="figure", number=3, caption="A plot.", label="fig:spi",
+                start=0, end=10, line_no=1)
+    lines = render_checklist({"t1": _thread("t1")},
+                             [_anchored("C001", "t1", float_ref=fig)])
+    assert "Figure 3 (`fig:spi`)" in "\n".join(lines)
+
+
+def test_a_long_heading_does_not_take_over_the_line():
+    """nearest_heading can be a whole paper title, and this is a list you scan."""
+    from overleaf_comments_export.render import render_checklist
+
+    long = "Title: " + "Telling Actions Apart Needs Touch " * 4
+    lines = render_checklist({"t1": _thread("t1")}, [_anchored("C001", "t1", heading=long)])
+    entry = [ln for ln in lines if ln.startswith("- [")][0]
+    assert len(entry) < 140, entry
+    assert "…" in entry
+
+
+def test_only_the_deepest_heading_is_shown():
+    from overleaf_comments_export.render import render_checklist
+
+    lines = render_checklist({"t1": _thread("t1")},
+                             [_anchored("C001", "t1", heading="Results > Effects > Post hoc")])
+    entry = [ln for ln in lines if ln.startswith("- [")][0]
+    assert "Post hoc" in entry and "Results >" not in entry
+
+
+def test_nothing_at_all_when_there_are_no_comments():
+    from overleaf_comments_export.render import render_checklist
+
+    assert render_checklist({}, []) == []
+
+
+def test_the_checklist_appears_in_the_markdown_with_a_link_from_the_summary():
+    threads = {"t1": _thread("t1", resolved=True), "t2": _thread("t2")}
+    md = render_markdown(
+        project_title="Demo", project_id="a" * 24, threads=threads,
+        anchored=[_anchored("C001", "t1"), _anchored("C002", "t2")],
+        orphan_threads=[], changes=[])
+    assert "## Still to address" in md
+    assert "**Addressed:** 1 of 2" in md
+    assert "#still-to-address" in md, "the summary should link to it"
+    assert md.index("## Summary") < md.index("## Still to address")
