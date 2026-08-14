@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.11.1] — 2026-08-13
+
 ### Fixed
 - **Running a second export in the window left the first one's log file
   attached.** Every later run wrote into it as well, and a file handle was kept
@@ -329,7 +331,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.1
 [0.11.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.10.0
 [0.9.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.9.1
