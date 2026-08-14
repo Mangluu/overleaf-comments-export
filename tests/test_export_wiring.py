@@ -298,4 +298,8 @@ def test_a_project_path_cannot_escape_the_export_folder(tmp_path, monkeypatch):
     for path in written:
         assert tmp_path in path.parents or path.parent == tmp_path or tmp_path in path.resolve().parents
     assert not (tmp_path.parent / "etc").exists(), "it wrote outside the export folder"
-    assert str(safe_relative("../../etc/passwd", "d")) == "etc/passwd"
+    # as_posix(): a Path prints with backslashes on Windows, and the point
+    # here is the shape of the path rather than the separator.
+    assert safe_relative("../../etc/passwd", "d").as_posix() == "etc/passwd"
+    assert safe_relative("/etc/passwd", "d").as_posix() == "etc/passwd"
+    assert safe_relative("sections/intro.tex", "d").as_posix() == "sections/intro.tex"
