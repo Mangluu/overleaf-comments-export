@@ -158,6 +158,9 @@ class OverleafClient:
         self.base_url = base_url.rstrip("/")
         # Set when a server names its session cookie something we cannot guess.
         self.cookie_name = cookie_name or None
+        # Set by run_export. Checked between retry attempts, so a stop takes
+        # effect during the waiting rather than only after it.
+        self.should_cancel = None
         self._api = None
         self._session: Optional[requests.Session] = None
 
@@ -372,13 +375,16 @@ class OverleafClient:
         """
         last_exc: Exception | None = None
         for attempt in range(attempts):
+            if self.should_cancel is not None and self.should_cancel():
+                from .export import ExportCancelled
+                raise ExportCancelled()
             try:
                 r = self.session.request(method, url, timeout=timeout, **kwargs)
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
                 last_exc = e
                 if attempt == attempts - 1:
                     raise UserFacingError(_network_hint(e)) from e
-                time.sleep(2**attempt)
+                self._sleep(2**attempt)
                 continue
             if r.status_code in RETRY_STATUSES and attempt < attempts - 1:
                 wait = r.headers.get("Retry-After")
@@ -389,10 +395,20 @@ class OverleafClient:
                 logger.warning(
                     "%s returned %s — retrying in %.0fs", url, r.status_code, delay
                 )
-                time.sleep(delay)
+                self._sleep(delay)
                 continue
             return r
         raise UserFacingError(_network_hint(last_exc or Exception()))  # pragma: no cover
+
+    def _sleep(self, seconds: float) -> None:
+        """Wait, but in short steps so a cancel is noticed while waiting."""
+        waited = 0.0
+        while waited < seconds:
+            if self.should_cancel is not None and self.should_cancel():
+                from .export import ExportCancelled
+                raise ExportCancelled()
+            time.sleep(min(0.25, seconds - waited))
+            waited += 0.25
 
     def _get(self, path: str, expect_json: bool = True) -> Any:
         url = f"{self.base_url}{path}"

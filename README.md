@@ -165,6 +165,12 @@ surrounding text, so a deletion reads as `before ~~removed~~ after`.
 
 Run `overleaf-comments-export --help` for the full list.
 
+## Stopping an export
+
+Press Stop in the window, or Ctrl-C on the command line. Nothing is written
+when you stop, so the folder is left as it was. A step already in progress has
+to finish first, so it can take a moment.
+
 ## Appearance
 
 The window follows whether your computer is set to light or dark. There is an

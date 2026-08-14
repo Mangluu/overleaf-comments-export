@@ -107,3 +107,33 @@ def test_cookie_is_masked_on_screen(app):
 def test_technical_log_starts_hidden(app):
     assert not app.details_var.get()
     assert not app.details.winfo_ismapped()
+
+
+def test_stop_button_appears_only_while_running_and_recovers(app):
+    """Until this existed the Run button stayed disabled until the export
+    finished, which on a hung step meant forever."""
+    import threading
+    import time
+
+    assert not app.stop_btn.winfo_manager(), "Stop is showing before anything runs"
+
+    app.run_btn.configure(state="disabled")
+    app.stop_btn.pack(side="left")
+    app.worker = threading.Thread(target=lambda: time.sleep(5), daemon=True)
+    app.worker.start()
+
+    app._on_stop()
+    assert app.cancel_requested is True
+    # str(): ttk returns a Tcl index object here rather than a plain string.
+    assert str(app.stop_btn.cget("state")) == "disabled", "Stop can be pressed twice"
+
+    app._on_cancelled()
+    assert str(app.run_btn.cget("state")) == "normal", "Run never came back"
+    assert not app.stop_btn.winfo_manager()
+    assert app.cancel_requested is False, "the flag would cancel the next run too"
+
+
+def test_stop_does_nothing_when_nothing_is_running(app):
+    app.worker = None
+    app._on_stop()
+    assert app.cancel_requested is False

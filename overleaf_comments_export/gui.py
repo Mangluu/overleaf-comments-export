@@ -18,7 +18,7 @@ from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from .client import UserFacingError, parse_project_id
-from .export import ExportResult, run_export
+from .export import ExportCancelled, ExportResult, run_export
 
 
 PALETTES = {
@@ -243,6 +243,8 @@ class App:
         self.config = _load_config()
         self.queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.worker: threading.Thread | None = None
+        # Set when Stop is pressed. The worker reads it between steps.
+        self.cancel_requested = False
         self.last_result: ExportResult | None = None
         self.theme_choice = tk.StringVar(value=self.config.get("theme", "system"))
 
@@ -659,6 +661,11 @@ class App:
             self.run_btn.configure(style="Accent.TButton")
         except tk.TclError:
             pass
+        self.stop_btn = ttk.Button(row, text="Stop", command=self._on_stop)
+        Tooltip(self.stop_btn,
+                "Stops the export. Nothing is written when you stop, so the "
+                "folder is left as it was. A step already in progress has to "
+                "finish first, so it can take a moment.", self)
         self.open_md_btn = ttk.Button(row, text="Open the comments",
                                       command=self._open_markdown, state="disabled")
         self.open_md_btn.pack(side="left", padx=8)
@@ -816,6 +823,9 @@ class App:
         })
 
         self.run_btn.configure(state="disabled")
+        self.cancel_requested = False
+        self.stop_btn.configure(state="normal")
+        self.stop_btn.pack(side="left", padx=8)
         self.open_md_btn.configure(state="disabled")
         self.open_folder_btn.configure(state="disabled")
         self.progress.start(12)
@@ -853,9 +863,32 @@ class App:
         def progress(msg: str) -> None:
             self.queue.put(("log", msg))
         try:
-            self.queue.put(("done", run_export(progress=progress, **params)))
+            self.queue.put(("done", run_export(
+                progress=progress, should_cancel=lambda: self.cancel_requested,
+                **params)))
+        except ExportCancelled:
+            self.queue.put(("cancelled", None))
         except Exception as e:
             self.queue.put(("error", (e, traceback.format_exc())))
+
+    def _on_stop(self) -> None:
+        if not self.worker or not self.worker.is_alive():
+            return
+        self.cancel_requested = True
+        self.stop_btn.configure(state="disabled")
+        self._set_status("Stopping…", "hint")
+        self._append_log(
+            "Stopping. The step in progress has to finish first, so this can "
+            "take a moment. Nothing will be written.")
+
+    def _on_cancelled(self) -> None:
+        self.progress.stop()
+        self.cancel_requested = False
+        self.stop_btn.pack_forget()
+        self.stop_btn.configure(state="normal")
+        self.run_btn.configure(state="normal")
+        self._set_status("Stopped. Nothing was written.", "hint")
+        self._append_log("Stopped.")
 
     def _pump_queue(self) -> None:
         try:
@@ -865,6 +898,8 @@ class App:
                     self._append_log(str(payload))
                 elif kind == "done":
                     self._on_done(payload)  # type: ignore[arg-type]
+                elif kind == "cancelled":
+                    self._on_cancelled()
                 elif kind == "error":
                     err, tb = payload  # type: ignore[misc]
                     self._on_error(err, tb)
@@ -875,6 +910,7 @@ class App:
     def _on_done(self, result: ExportResult) -> None:
         self.last_result = result
         self.progress.stop()
+        self.stop_btn.pack_forget()
         self.run_btn.configure(state="normal")
         self.open_md_btn.configure(state="normal")
         self.open_folder_btn.configure(state="normal")
@@ -914,6 +950,8 @@ class App:
 
     def _on_error(self, err: BaseException, tb: str) -> None:
         self.progress.stop()
+        self.stop_btn.pack_forget()
+        self.cancel_requested = False
         self.run_btn.configure(state="normal")
         if isinstance(err, UserFacingError):
             self._set_status("That did not work. See the message.", "bad")

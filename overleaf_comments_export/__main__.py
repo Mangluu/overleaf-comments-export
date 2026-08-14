@@ -10,7 +10,7 @@ from pathlib import Path
 from . import __version__
 from .annotate import ANNOTATE_STYLES
 from .client import OverleafClient, UserFacingError
-from .export import ExportResult, run_export
+from .export import ExportCancelled, ExportResult, run_export
 
 
 def _no_tkinter_message() -> str:
@@ -262,6 +262,11 @@ def main(argv: list[str] | None = None) -> int:
             stable=args.stable,
             progress=lambda msg: print(msg, file=sys.stderr),
         )
+    except (KeyboardInterrupt, ExportCancelled):
+        # Ctrl-C is how you cancel on the command line. It is not a crash, and
+        # nothing has been half-written, so say so and leave quietly.
+        print("\nStopped. Nothing was written.", file=sys.stderr)
+        return 130
     except UserFacingError as e:
         # Expected, explainable failures: no traceback, just what to do next.
         print(f"\n{e}", file=sys.stderr)

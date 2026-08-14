@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-08-14
+
+### Added
+- **An export can be stopped.** There is a Stop button in the window while one
+  is running, and Ctrl-C on the command line. Until now the Run button stayed
+  disabled until the export finished, so a step that hung left the window stuck
+  with no way out short of quitting it.
+
+  Nothing is written when you stop. The checks sit between steps and inside the
+  loops that do the repeated work, including the last one before any file is
+  created, so the output folder is left exactly as it was rather than holding
+  half an export. Waiting out a retry is broken into short steps too, so
+  stopping during a backoff does not have to sit through the whole delay.
+
+  A step already in progress has to finish first. A request in flight cannot be
+  interrupted from another thread, and neither can reading a browser's cookie
+  store, so stopping takes effect at the next boundary rather than instantly.
+  The window says so while it waits.
+
 ## [0.11.1] — 2026-08-13
 
 ### Fixed
@@ -331,7 +350,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.12.0
 [0.11.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.1
 [0.11.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.10.0

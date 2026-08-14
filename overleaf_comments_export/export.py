@@ -58,10 +58,33 @@ def _to_ms(value: Any) -> int | None:
     return None
 
 ProgressCallback = Callable[[str], None]
+# Returns True when the user has asked for the export to stop.
+CancelCheck = Callable[[], bool]
+
+
+class ExportCancelled(Exception):
+    """The user asked for the export to stop.
+
+    Not an error. Nothing is half-written when this is raised, because the
+    checks sit between steps rather than inside them.
+    """
 
 
 def _noop_progress(_: str) -> None:
     pass
+
+
+def _stop_if_asked(should_cancel: CancelCheck | None) -> None:
+    """Cooperative cancellation.
+
+    A network call already in flight cannot be interrupted from here, and
+    neither can reading a browser's cookie store, so the checks sit at every
+    step boundary and inside the loops that do the repeated work. In practice
+    that is where an export spends its time, so stopping takes effect within a
+    document rather than at the very end.
+    """
+    if should_cancel is not None and should_cancel():
+        raise ExportCancelled()
 
 
 @dataclass
@@ -352,6 +375,7 @@ def run_export(
     annotate_style: str = "highlight",
     stable: bool = False,
     progress: ProgressCallback | None = None,
+    should_cancel: CancelCheck | None = None,
 ) -> ExportResult:
     """Programmatic entry point used by both the CLI and the GUI."""
     progress = progress or _noop_progress
@@ -393,12 +417,14 @@ def run_export(
     logger.info("Project id: %s", project_id)
 
     client = OverleafClient(base_url=base_url, cookie_name=cookie_name)
+    client.should_cancel = should_cancel
     if cookie_value:
         progress("Authenticating with the pasted session cookie…")
     else:
         progress(f"Authenticating via {browser} browser cookie…")
     client.connect(browser=browser, cookie_value=cookie_value)
 
+    _stop_if_asked(should_cancel)
     progress("Fetching threads…")
     threads_raw = client.get_threads(project_id)
     progress(f"Got {len(threads_raw)} thread(s).")
@@ -412,6 +438,7 @@ def run_export(
     user_map = _build_user_map(threads_raw)
     threads = _parse_threads(threads_raw)
 
+    _stop_if_asked(should_cancel)
     progress("Fetching project file tree…")
     metadata = client.get_project_metadata(project_id)
     doc_id_to_path: dict[str, str] = {}
@@ -426,6 +453,7 @@ def run_export(
     project_display_name = metadata.get("name") or project_title or project_id
     progress(f"Mapped {len(doc_id_to_path)} doc(s) to paths. Project: {project_display_name}")
 
+    _stop_if_asked(should_cancel)
     progress("Fetching project ranges (anchors + tracked changes)…")
     ranges_payload = client.get_project_ranges(project_id)
     if ranges_payload is not None:
@@ -449,6 +477,7 @@ def run_export(
         zip_index: dict[str, list[str]] | None = None
 
         for doc_id, comments_list, changes_list in docs_with_anchors:
+            _stop_if_asked(should_cancel)
             if not comments_list and not changes_list:
                 continue
             pathname = doc_id_to_path.get(doc_id)
@@ -636,6 +665,9 @@ def run_export(
 
     # A dated filename makes every run a new file, so git shows additions
     # instead of a diff. In stable mode there is one file that gets updated.
+    # The last chance to stop before anything is written. After this the files
+    # start appearing, and a half-written export folder is worse than none.
+    _stop_if_asked(should_cancel)
     md_path = out_dir / ("comments.md" if stable else f"comments-{date.today().isoformat()}.md")
     md_path.write_text(markdown, encoding="utf-8")
     progress(f"Wrote {md_path.name}")
@@ -740,6 +772,7 @@ def run_export(
             by_doc.setdefault(c.doc_id, []).append(c)
         written = 0
         for doc_id, doc_comments in sorted(by_doc.items()):
+            _stop_if_asked(should_cancel)
             doc = doc_texts.get(doc_id)
             if doc is None:
                 continue
@@ -763,6 +796,7 @@ def run_export(
 
     annotated_pdf_path: Path | None = None
     if annotated_pdf:
+        _stop_if_asked(should_cancel)
         progress("Fetching the PDF Overleaf built…")
         try:
             pdf = client.download_compiled_pdf(project_id, metadata.get("rootDocId"))
