@@ -64,8 +64,25 @@ unzip it, and open it. There is nothing else to install, and no Python needed.
 
 The first time you open it, macOS or Windows will warn you about an app it has
 not checked. That is because signing an app costs money every year, not because
-anything is wrong. On macOS, right-click the app and choose Open. On Windows,
-click More info, then Run anyway.
+anything is wrong.
+
+On **Windows**, click More info, then Run anyway.
+
+On **macOS 15 and newer** the old advice of right-clicking and choosing Open no
+longer works, and the warning gives you no way through. Do this instead. Double
+click the app, click Done on the warning, then open System Settings, go to
+Privacy & Security, scroll down to Security, and click **Open Anyway** next to
+the message about the app. Confirm, then open the app again.
+
+If you would rather use the Terminal, this does the same thing in one line, and
+you can drag the app into the window instead of typing its path:
+
+```bash
+xattr -dr com.apple.quarantine "/path/to/Overleaf Comments Export.app"
+```
+
+None of this applies to the Python install or the browser extension, which
+macOS does not gate.
 
 **If you prefer a browser extension**, Chrome, Edge, and other Chromium
 browsers can run the exporter inside the Overleaf project you already have
