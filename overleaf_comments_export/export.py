@@ -67,16 +67,24 @@ CancelCheck = Callable[[], bool]
 class ExportCancelled(Exception):
     """The user asked for the export to stop.
 
-    Not an error. Nothing is half-written when this is raised, because the
-    checks sit between steps rather than inside them.
+    Not an error. Most of the checks sit before anything is written, but the
+    slow optional extras (the annotated LaTeX, the PDF) are checked while they
+    run, and by then the comments themselves are on disk. `written` carries
+    what landed, so the message can say so instead of promising an empty
+    folder it cannot deliver.
     """
+
+    def __init__(self, written: list[str] | None = None) -> None:
+        super().__init__("the export was stopped")
+        self.written = written or []
 
 
 def _noop_progress(_: str) -> None:
     pass
 
 
-def _stop_if_asked(should_cancel: CancelCheck | None) -> None:
+def _stop_if_asked(should_cancel: CancelCheck | None,
+                   written: list[str] | None = None) -> None:
     """Cooperative cancellation.
 
     A network call already in flight cannot be interrupted from here, and
@@ -86,7 +94,7 @@ def _stop_if_asked(should_cancel: CancelCheck | None) -> None:
     document rather than at the very end.
     """
     if should_cancel is not None and should_cancel():
-        raise ExportCancelled()
+        raise ExportCancelled(written)
 
 
 @dataclass
@@ -702,15 +710,22 @@ def run_export(
     resolved_count = sum(
         1 for c in anchored if threads.get(c.thread_id) and threads[c.thread_id].resolved
     )
-    # If filters hide most threads, also surface the totals over the surviving set
-    thread_count_after = len({c.thread_id for c in anchored} | {t.id for t in orphan_threads})
+    # Everything downstream of here sees only the threads that survived the
+    # filters. It used to get the whole dictionary, so --reviewer and
+    # --no-resolved dropped comments from the Markdown while comments.json
+    # still carried the excluded discussions in full, and the summary counted
+    # reviewers nobody had asked to see. The browser extension has always
+    # narrowed the set here; this brings Python into line with it.
+    visible_thread_ids = {c.thread_id for c in anchored} | {t.id for t in orphan_threads}
+    visible_threads = {tid: t for tid, t in threads.items() if tid in visible_thread_ids}
+    thread_count_after = len(visible_thread_ids)
     stale_count = sum(1 for c in anchored if c.stale)
 
     mode_lit = "detailed" if (render_mode or "").lower() == "detailed" else "compact"
     markdown = render_markdown(
         project_title=title,
         project_id=project_id,
-        threads=threads,
+        threads=visible_threads,
         anchored=anchored,
         orphan_threads=orphan_threads,
         changes=changes,
@@ -725,12 +740,13 @@ def run_export(
     _stop_if_asked(should_cancel)
     md_path = out_dir / ("comments.md" if stable else f"comments-{date.today().isoformat()}.md")
     md_path.write_text(markdown, encoding="utf-8")
+    files_written: list[str] = [md_path.name]
     progress(f"Wrote {md_path.name}")
 
     json_payload = _build_structured_json(
         project_id=project_id,
         project_title=title,
-        threads=threads,
+        threads=visible_threads,
         anchored=anchored,
         changes=changes,
         orphan_threads=orphan_threads,
@@ -769,10 +785,12 @@ def run_export(
                              else previous_from),
                          stable=stable),
             encoding="utf-8")
+        files_written.append(since_path.name)
         progress(f"Wrote {since_path.name}")
 
     json_path = out_dir / "comments.json"
     json_path.write_text(json.dumps(json_payload, indent=2, default=str), encoding="utf-8")
+    files_written.append(json_path.name)
     progress(f"Wrote {json_path.name}")
 
     # JSONL companion (one comment per line, self-contained)
@@ -780,9 +798,10 @@ def run_export(
         jsonl_path = out_dir / "comments.jsonl"
         with jsonl_path.open("w", encoding="utf-8") as f:
             for c in anchored:
-                rec = _comment_to_jsonl_record(c, threads.get(c.thread_id), user_map)
+                rec = _comment_to_jsonl_record(c, visible_threads.get(c.thread_id), user_map)
                 f.write(json.dumps(rec, default=str))
                 f.write("\n")
+        files_written.append(jsonl_path.name)
         progress(f"Wrote {jsonl_path.name} ({len(anchored)} record(s))")
 
     # Per-reviewer sub-reports
@@ -790,7 +809,7 @@ def run_export(
         by_reviewer_dir = out_dir / "by-reviewer"
         by_reviewer_dir.mkdir(exist_ok=True)
         reviewers: dict[str, str] = {}  # display name -> slug
-        for t in threads.values():
+        for t in visible_threads.values():
             for m in t.messages:
                 name = m.user_name or m.user_email or m.user_id
                 if not name:
@@ -804,7 +823,7 @@ def run_export(
         for reviewer_name, slug in reviewers.items():
             sub_anchored = [
                 c for c in anchored
-                if _thread_matches_reviewer(threads.get(c.thread_id), [reviewer_name])
+                if _thread_matches_reviewer(visible_threads.get(c.thread_id), [reviewer_name])
             ]
             sub_changes = [
                 ch for ch in changes
@@ -819,7 +838,7 @@ def run_export(
             sub_md = render_markdown(
                 project_title=f"{title} — {reviewer_name}",
                 project_id=project_id,
-                threads=threads,
+                threads=visible_threads,
                 anchored=sub_anchored,
                 orphan_threads=sub_orphans,
                 changes=sub_changes,
@@ -834,7 +853,7 @@ def run_export(
     if response_letter:
         letter_path = out_dir / "response-letter.md"
         letter_path.write_text(
-            render_response_letter(title, project_id, threads, anchored, stable=stable),
+            render_response_letter(title, project_id, visible_threads, anchored, stable=stable),
             encoding="utf-8",
         )
         progress(f"Wrote {letter_path.name}")
@@ -847,12 +866,12 @@ def run_export(
             by_doc.setdefault(c.doc_id, []).append(c)
         written = 0
         for doc_id, doc_comments in sorted(by_doc.items()):
-            _stop_if_asked(should_cancel)
+            _stop_if_asked(should_cancel, files_written)
             doc = doc_texts.get(doc_id)
             if doc is None:
                 continue
             annotated, n = annotate_document(
-                doc.text, doc_comments, threads,
+                doc.text, doc_comments, visible_threads,
                 style=annotate_style if annotate_style in ANNOTATE_STYLES else "highlight",
             )
             # Mirror the project layout so \input paths still resolve.
@@ -869,7 +888,7 @@ def run_export(
 
     annotated_pdf_path: Path | None = None
     if annotated_pdf:
-        _stop_if_asked(should_cancel)
+        _stop_if_asked(should_cancel, files_written)
         progress("Fetching the PDF Overleaf built…")
         try:
             pdf = client.download_compiled_pdf(project_id, metadata.get("rootDocId"))
@@ -893,7 +912,7 @@ def run_export(
                 progress("No commented source to match against, skipping the PDF.")
             else:
                 try:
-                    out_bytes, placed = annotate_pdf(pdf, sources, anchored, threads)
+                    out_bytes, placed = annotate_pdf(pdf, sources, anchored, visible_threads)
                 except PdfAnnotationUnavailable as e:
                     raise UserFacingError(str(e)) from e
                 annotated_pdf_path = out_dir / "commented.pdf"
@@ -976,6 +995,14 @@ def _serialize_context(ctx: SourceContext | None) -> dict[str, Any] | None:
         "truncated_before": ctx.truncated_before,
         "truncated_after": ctx.truncated_after,
     }
+
+
+def _thread_span(thread: Thread | None) -> tuple[str | None, str | None]:
+    """First and last message times of a thread, as ISO strings."""
+    if thread is None or not thread.messages:
+        return None, None
+    ordered = sorted(thread.messages, key=lambda m: m.timestamp_ms)
+    return _iso(ordered[0].timestamp_ms), _iso(ordered[-1].timestamp_ms)
 
 
 def _serialize_thread(
@@ -1111,6 +1138,11 @@ def _build_structured_json(
         ),
                 "anchored_text": c.anchored_text,
                 "stale": c.stale,
+                # When the point was first raised, and when the thread last
+                # moved. The browser extension has emitted both under the same
+                # schema version since it shipped.
+                "created_at": _thread_span(threads.get(c.thread_id))[0],
+                "last_activity_at": _thread_span(threads.get(c.thread_id))[1],
                 "reply_count": max(
                     0, len(threads[c.thread_id].messages) - 1
                 ) if c.thread_id in threads else 0,
@@ -1210,7 +1242,8 @@ You are reading an Overleaf comment export produced by
 - `files` — list of `{{ pathname, doc_id, comment_count, change_count,
   comment_short_ids, change_short_ids }}`
 - `comments` — list of `{{ short_id, thread_id, doc_id, pathname, line, col,
-  offset, nearest_heading, anchored_text, stale, context }}`. To get the
+  offset, nearest_heading, enclosing_float, anchored_text, stale, created_at,
+  last_activity_at, reply_count, context }}`. To get the
   discussion, look up `threads[thread_id]`.
 - `tracked_changes` — list of `{{ short_id, id, doc_id, pathname, kind
   (insertion|deletion), content, line, col, offset, nearest_heading, user,

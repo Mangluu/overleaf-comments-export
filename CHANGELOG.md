@@ -4,6 +4,55 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-08-18
+
+Everything here came out of an external code review. All of it was live, and
+the whole test suite was green over every one of them.
+
+### Fixed
+- **Filters did not reach `comments.json`.** `--reviewer` and `--no-resolved`
+  dropped comments from the Markdown, and the JSON next to it still carried
+  every excluded discussion in full, message by message. The response letter,
+  `comments.jsonl` and the per-reviewer reports had the same hole, and
+  `summary` counted threads and reviewers nobody had asked to see. A reply on
+  a filtered-out thread could also come back as new feedback in
+  `whats-new.md`. Everything downstream of the filters now sees only the
+  threads that survived them, which is what the browser extension has always
+  done.
+- **Stopping an export said "Nothing was written" when something had been.**
+  The cancel checks inside the annotated-LaTeX and PDF steps fire after the
+  comments are already on disk. Both the window and the command line now name
+  what landed. (The core files cannot be split from each other: there is no
+  cancellation point between them.)
+- **Stale comment anchors could carry an offset past the end of the file.**
+  `--include-source` promises those offsets index into `source/`, and one
+  past the end slices to nothing, so the context read as though there were
+  none. The offset is now clamped, as the line and column already were.
+- **The remembered session cookie was saved world-readable.** `config.json`
+  was written 0644 inside a 0755 folder, so any other account on the machine
+  could read a live Overleaf session. Now 0600 in a 0700 folder, where the
+  platform supports it.
+
+### Changed
+- **The two exports really do share schema 1.3 now.** Both declared it while
+  emitting different JSON. The extension was missing the `comment_short_ids`
+  and `change_short_ids` its own agent brief promised, and carried an
+  `occurred_at` that duplicated `timestamp` and nothing read. Python was
+  missing `created_at` and `last_activity_at`. Fixed on both sides.
+
+  `tests/test_schema_parity.py` now runs the extension's real core in node and
+  Python's real export over one shared fixture and compares the shapes, so a
+  future divergence fails CI. The two remaining differences are listed in the
+  test with reasons: `enclosing_float` needs float detection the extension
+  does not have, and `report_language` has no meaning in Python.
+- Extension version 1.1.0, since its JSON output changed.
+
+### Added
+- **CI runs the window tests.** All 16 skip themselves unless `OCE_GUI_TESTS`
+  is set, and nothing ever set it, so the interface most people actually use
+  was never exercised automatically. A new job runs them on Linux under xvfb
+  and on macOS, plus a check that the window comes up at a sane size.
+
 ## [0.17.0] — 2026-08-18
 
 ### Added

@@ -216,7 +216,20 @@ def _load_config() -> dict:
 def _save_config(data: dict) -> None:
     try:
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        # This file holds an Overleaf session cookie when "remember" is ticked,
+        # and it was being written world-readable. Owner only, and the folder
+        # too, so nobody else with an account on the machine can read it. Not
+        # supported on Windows, where the call is a no-op.
+        _owner_only(CONFIG_PATH, 0o600)
+        _owner_only(CONFIG_PATH.parent, 0o700)
     except Exception:
+        pass
+
+
+def _owner_only(path: Path, mode: int) -> None:
+    try:
+        path.chmod(mode)
+    except (OSError, NotImplementedError):
         pass
 
 
@@ -1100,8 +1113,8 @@ class App:
             self.queue.put(("done", run_export(
                 progress=progress, should_cancel=lambda: self.cancel_requested,
                 **params)))
-        except ExportCancelled:
-            self.queue.put(("cancelled", None))
+        except ExportCancelled as e:
+            self.queue.put(("cancelled", e.written))
         except Exception as e:
             self.queue.put(("error", (e, traceback.format_exc())))
 
@@ -1140,16 +1153,23 @@ class App:
         self._set_status("Stopping…", "hint")
         self._append_log(
             "Stopping. The step in progress has to finish first, so this can "
-            "take a moment. Nothing will be written.")
+            "take a moment.")
 
-    def _on_cancelled(self) -> None:
+    def _on_cancelled(self, written: list[str] | None = None) -> None:
         self.progress.stop()
         self.progress.pack_forget()
         self.cancel_requested = False
         self.stop_btn.pack_forget()
         self.stop_btn.configure(state="normal")
         self.run_btn.configure(state="normal")
-        self._set_status("Stopped. Nothing was written.", "hint")
+        # Stopping during the slow extras happens after the comments are
+        # already on disk. Saying "nothing was written" there sends people
+        # looking for files that are sitting in the folder.
+        if written:
+            self._set_status(f"Stopped. {', '.join(written)} had already been "
+                             "written. The rest was not.", "hint")
+        else:
+            self._set_status("Stopped. Nothing was written.", "hint")
         self._append_log("Stopped.")
 
     def _pump_queue(self) -> None:
@@ -1161,7 +1181,7 @@ class App:
                 elif kind == "done":
                     self._on_done(payload)  # type: ignore[arg-type]
                 elif kind == "cancelled":
-                    self._on_cancelled()
+                    self._on_cancelled(payload or [])
                 elif kind == "error":
                     err, tb = payload  # type: ignore[misc]
                     self._on_error(err, tb)

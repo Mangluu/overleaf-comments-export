@@ -32,6 +32,60 @@ jobs:
       - name: Run pytest
         run: python -m pytest tests/ -v
 
+  window:
+    # The window is what most people who download this actually use, and its
+    # tests skip themselves unless OCE_GUI_TESTS is set, so nothing had ever
+    # run them automatically. Linux needs a virtual display; macOS has one.
+    name: Window on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Tk and a virtual display
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+
+      - name: Install package + test extras
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,gui]"
+
+      - name: Run the window tests
+        env:
+          OCE_GUI_TESTS: "1"
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a python -m pytest tests/test_gui.py -v
+          else
+            python -m pytest tests/test_gui.py -v
+          fi
+
+      - name: The window has to at least open
+        env:
+          OCE_GUI_TESTS: "1"
+        run: |
+          RUN=""
+          [ "$RUNNER_OS" = "Linux" ] && RUN="xvfb-run -a"
+          $RUN python -c "
+import tkinter as tk
+from overleaf_comments_export.gui import App
+root = tk.Tk()
+App(root)
+root.update_idletasks()
+w, h = root.winfo_reqwidth(), root.winfo_reqheight()
+print(f'window asks for {w} x {h}')
+assert w > 400 and h > 300, 'the window came up empty'
+root.destroy()
+"
+
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest

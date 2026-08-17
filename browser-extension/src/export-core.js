@@ -8,7 +8,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "1.3";
-  const TOOL_VERSION = "1.0.0-extension";
+  const TOOL_VERSION = "1.1.0-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 
@@ -796,6 +796,10 @@ Project ID for reference: \`${payload.project.id}\`.
         doc_id: docId,
         comment_count: visibleComments.filter((comment) => comment.pathname === pathname).length,
         change_count: trackedChanges.filter((change) => change.pathname === pathname).length,
+        // The Python export has always written these, and this file's own
+        // agent brief below promises them. They were simply missing.
+        comment_short_ids: visibleComments.filter((comment) => comment.pathname === pathname).map((comment) => comment.shortId),
+        change_short_ids: trackedChanges.filter((change) => change.pathname === pathname).map((change) => change.shortId),
       });
     }
 
@@ -838,7 +842,6 @@ Project ID for reference: \`${payload.project.id}\`.
       nearest_heading: change.nearestHeading,
       user: change.user,
       timestamp: isoTimestamp(change.timestampMs),
-      occurred_at: isoTimestamp(change.timestampMs),
       context: change.context ? {
         line: change.context.line,
         before: change.context.before,

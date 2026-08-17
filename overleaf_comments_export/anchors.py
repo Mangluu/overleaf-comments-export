@@ -57,5 +57,10 @@ def resolve_anchor(
             line, col = offset_to_line_col(doc.line_starts, idx)
             return idx, line, col, True
 
-    line, col = offset_to_line_col(doc.line_starts, min(offset, max(0, len(text) - 1)))
-    return offset, line, col, True
+    # The bounded offset, not the one Overleaf gave us. --include-source
+    # promises that `offset` indexes into the files in source/, and a stale
+    # anchor whose text was deleted can carry an offset past the end, which
+    # slices to nothing and silently reads as "no context here".
+    safe = min(max(offset, 0), max(0, len(text) - 1))
+    line, col = offset_to_line_col(doc.line_starts, safe)
+    return safe, line, col, True
