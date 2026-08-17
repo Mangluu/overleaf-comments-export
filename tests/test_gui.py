@@ -105,8 +105,23 @@ def test_cookie_is_masked_on_screen(app):
 
 
 def test_technical_log_starts_hidden(app):
-    assert not app.details_var.get()
-    assert not app.details.grid_info() != {}
+    """It opens in a window of its own, so the main one keeps its size."""
+    assert app.details_window is None
+    assert app.log is None
+
+
+def test_the_log_keeps_what_was_said_while_it_was_shut(app):
+    """Lines arrive during an export whether or not the window is open."""
+    app._append_log("said while shut")
+    app.details_var.set(True)
+    app._toggle_details()
+    assert "said while shut" in app.log.get("1.0", "end")
+    app._append_log("said while open")
+    assert "said while open" in app.log.get("1.0", "end")
+    app.details_var.set(False)
+    app._toggle_details()
+    assert app.details_window is None and app.log is None
+    app._append_log("safe with it shut")
 
 
 def test_stop_button_appears_only_while_running_and_recovers(app):
@@ -146,9 +161,38 @@ def test_nothing_scrolls_and_it_all_fits(app):
     assert not hasattr(app, "canvas"), "the scrolling canvas is gone"
     # A window taller than this does not fit a 1280x800 laptop once the menu
     # bar and dock are taken off, and there is no scrollbar to rescue it.
+    # Must fit a 1280x800 laptop once the menu bar and dock are gone.
     assert app.root.winfo_reqheight() < 780, app.root.winfo_reqheight()
 
 
 def test_the_progress_bar_is_hidden_until_something_runs(app):
     """An idle indeterminate bar reads as a stuck one."""
     assert not app.progress.winfo_manager(), "an idle bar reads as a stuck one"
+
+
+def test_optional_rows_do_not_push_anything_out_of_reach(app):
+    """Without a scrollbar, anything that falls off the bottom is unreachable.
+    Ticking the self-hosted box and choosing to paste a cookie both add rows,
+    and the window has to grow to match."""
+    app.root.update_idletasks()
+    app.self_hosted_var.set(True)
+    app._toggle_self_hosted()
+    app.browser_box.set("I will paste it myself")
+    app._on_browser_change()
+    app.root.update_idletasks()
+    assert app.root.winfo_height() >= app.root.winfo_reqheight(), (
+        "the window is smaller than its contents and there is nothing to scroll"
+    )
+    # The folder card is last in the left column and the first thing to be lost.
+    assert app.out_var is not None
+    assert app.root.minsize()[1] >= min(
+        app.root.winfo_reqheight(), app.root.winfo_screenheight() - 140)
+
+
+def test_the_window_never_grows_past_the_screen(app):
+    """A window taller than the display is no more reachable than a card
+    scrolled off the bottom."""
+    app.details_var.set(True)
+    app._toggle_details()
+    app.root.update_idletasks()
+    assert app.root.winfo_height() <= app.root.winfo_screenheight()

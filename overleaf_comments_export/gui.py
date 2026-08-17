@@ -369,7 +369,7 @@ class App:
 
         # Classic tk widgets are not themed by ttk, so they need doing by hand.
         for widget, opts in (
-            (getattr(self, "log", None),
+            (getattr(self, "log", None) if getattr(self, "log", None) is not None else None,
              {"background": self.palette["field_bg"],
               "foreground": self.palette["fg"],
               "insertbackground": self.palette["fg"],
@@ -400,6 +400,23 @@ class App:
         if hasattr(self, "url_status"):
             self._validate_url()
 
+    # The widest field label there is. Every card reserves this many pixels for
+    # its first column, so the entries line up down the whole window even
+    # though each card has a grid of its own. Measured in the actual font
+    # rather than set in characters, because a character width is an average
+    # and reserving 19 of them made the window 200 pixels wider than it needed.
+    WIDEST_LABEL = "Link to your paper"
+
+    def _label_column(self, card) -> None:
+        card.columnconfigure(0, minsize=self.font_label.measure(self.WIDEST_LABEL) + 12)
+
+    def _field_label(self, parent, text: str, row: int, **kw):
+        """A label in the left column of a card, aligned with all the others."""
+        self._label_column(parent)
+        label = ttk.Label(parent, text=text, anchor="w", style="Card.TLabel")
+        label.grid(row=row, column=0, sticky="w", pady=4, **kw)
+        return label
+
     def _card(self, parent, title: str | None = None):
         """A section as a card: a surface, generous padding, and no border.
 
@@ -408,8 +425,8 @@ class App:
         Space and a heading separate things perfectly well.
         """
         wrap = ttk.Frame(parent, style="Page.TFrame")
-        wrap.pack(fill="x", pady=(0, 10))
-        card = ttk.Frame(wrap, style="Card.TFrame", padding=14)
+        wrap.pack(fill="x", pady=(0, 8))
+        card = ttk.Frame(wrap, style="Card.TFrame", padding=13)
         card.pack(fill="x")
         if title:
             ttk.Label(card, text=title, style="Section.TLabel").pack(
@@ -478,8 +495,8 @@ class App:
 
         body = ttk.Frame(outer, style="Page.TFrame")
         body.grid(row=2, column=0, sticky="nsew")
-        body.columnconfigure(0, weight=1, uniform="cols")
-        body.columnconfigure(1, weight=1, uniform="cols")
+        body.columnconfigure(0, weight=3)
+        body.columnconfigure(1, weight=2)
         body.rowconfigure(0, weight=1)
 
         left = ttk.Frame(body, style="Page.TFrame")
@@ -487,22 +504,22 @@ class App:
         right = ttk.Frame(body, style="Page.TFrame")
         right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
+        # Left is what to point it at, right is what comes out. The two cards
+        # that grow when you tick something are both on the left, so putting
+        # the folder on the right keeps the columns level when they do.
         self._build_step_paper(left)
         self._build_step_signin(left)
-        self._build_step_save(left)
+        self._build_step_save(right)
         self._build_include(right, aside=left)
 
         self._build_actions(outer, row=3)
         self._build_status(outer, row=4)
         self._build_details(outer, row=5)
 
-        # Size to the content, then let the user make it bigger but not so
-        # small that something is cut off with no way to reach it.
-        self.root.update_idletasks()
-        self.root.minsize(self.root.winfo_reqwidth(), self.root.winfo_reqheight())
+        self._fit_window()
 
     def _step_box(self, parent, number, title):
-        box = self._card(parent, f"{number}  ·  {title}")
+        box = self._card(parent, title)
         box.pack(fill="x", pady=(0, 12))
         box.columnconfigure(1, weight=1)
         return box
@@ -512,7 +529,7 @@ class App:
     def _build_step_paper(self, parent) -> None:
         box = self._step_box(parent, 1, "Which paper")
 
-        ttk.Label(box, text="Link to your paper:").grid(row=0, column=0, sticky="w", pady=4)
+        self._field_label(box, "Link to your paper", 0)
         self.url_var = tk.StringVar(value=self.config.get("project_url", ""))
         self.url_var.trace_add("write", lambda *_: self._validate_url())
         self.url_entry = ttk.Entry(box, textvariable=self.url_var)
@@ -523,7 +540,7 @@ class App:
         self._hint(box, "Open the paper in Overleaf and copy the address from "
                         "the top of your browser.", row=2)
 
-        ttk.Label(box, text="Title (optional):").grid(row=3, column=0, sticky="w", pady=4)
+        self._field_label(box, "Title (optional)", 3)
         self.title_var = tk.StringVar(value=self.config.get("project_title", ""))
         ttk.Entry(box, textvariable=self.title_var).grid(
             row=3, column=1, columnspan=2, sticky="ew", pady=4)
@@ -538,7 +555,8 @@ class App:
         Tooltip(cb, "Tick this if you do not use overleaf.com, for example an "
                     "Overleaf your department installed itself.", self)
 
-        self.base_label = ttk.Label(box, text="Its address:")
+        self.base_label = ttk.Label(box, text="Its address", anchor="w",
+                                    style="Card.TLabel")
         self.base_var = tk.StringVar(
             value=self.config.get("base_url", "https://www.overleaf.com"))
         self.base_entry = ttk.Entry(box, textvariable=self.base_var)
@@ -553,7 +571,8 @@ class App:
         # Almost nobody needs this. A self-hosted Overleaf names its session
         # cookie after itself, and anything ending in .sid is found without
         # being told, so the box is here only for the servers that do neither.
-        self.cookie_name_label = ttk.Label(box, text="Session cookie name:")
+        self.cookie_name_label = ttk.Label(box, text="Cookie name",
+                                           anchor="w", style="Card.TLabel")
         self.cookie_name_var = tk.StringVar(value=self.config.get("cookie_name", ""))
         self.cookie_name_entry = ttk.Entry(box, textvariable=self.cookie_name_var)
         self.cookie_name_note = ttk.Label(
@@ -571,6 +590,29 @@ class App:
                 "found automatically.", self)
         self._toggle_self_hosted()
 
+    def _fit_window(self) -> None:
+        """Keep the window at least as big as what is in it.
+
+        Without a scrollbar there is no way to reach anything that falls off
+        the bottom, and ticking the self-hosted box or choosing to paste a
+        cookie adds rows. Growing the window is the only honest answer: the
+        alternative is a card the user cannot see or scroll to.
+        """
+        self.root.update_idletasks()
+        need_w = self.root.winfo_reqwidth()
+        need_h = self.root.winfo_reqheight()
+        # Never grow past the screen. Opening the technical log wants more room
+        # than a laptop has, and a window taller than the display is no more
+        # reachable than a card scrolled off the bottom. The log has a
+        # scrollbar of its own, so it is the part that gives.
+        room_w = self.root.winfo_screenwidth() - 80
+        room_h = self.root.winfo_screenheight() - 140
+        want_w, want_h = min(need_w, room_w), min(need_h, room_h)
+        self.root.minsize(min(need_w, room_w), min(need_h, room_h))
+        if self.root.winfo_width() < want_w or self.root.winfo_height() < want_h:
+            self.root.geometry(f"{max(self.root.winfo_width(), want_w)}x"
+                               f"{max(self.root.winfo_height(), want_h)}")
+
     def _toggle_self_hosted(self) -> None:
         show = self.self_hosted_var.get()
         for w in (self.base_label, self.base_entry, self.base_note,
@@ -579,6 +621,7 @@ class App:
             w.grid() if show else w.grid_remove()
         if not show:
             self.base_var.set("https://www.overleaf.com")
+        self._fit_window()
 
     def _validate_url(self) -> None:
         raw = self.url_var.get().strip()
@@ -600,7 +643,7 @@ class App:
     def _build_step_signin(self, parent) -> None:
         box = self._step_box(parent, 2, "Let it see your Overleaf")
 
-        ttk.Label(box, text="Sign in using:").grid(row=0, column=0, sticky="w", pady=4)
+        self._field_label(box, "Sign in using", 0)
         default_browser = self.config.get("browser", "safari")
         if default_browser not in BROWSER_LABELS:
             default_browser = "safari"
@@ -624,7 +667,8 @@ class App:
             variable=self.show_advanced_var, command=self._refresh_browser_choices,
         ).grid(row=2, column=1, columnspan=2, sticky="w")
 
-        self.cookie_label = ttk.Label(box, text="Paste it here:")
+        self.cookie_label = ttk.Label(box, text="Paste it here", anchor="w",
+                                      style="Card.TLabel")
         self.cookie_frame = ttk.Frame(box)
         self.cookie_frame.columnconfigure(0, weight=1)
         self.cookie_var = tk.StringVar(value=self.config.get("cookie_value", ""))
@@ -669,12 +713,13 @@ class App:
         manual = key == "manual"
         for w in (self.cookie_label, self.cookie_frame, self.cookie_remember):
             w.grid() if manual else w.grid_remove()
+        self._fit_window()
 
     # ---- 3. where to put it ----
 
     def _build_step_save(self, parent) -> None:
         box = self._step_box(parent, 3, "Where to save it")
-        ttk.Label(box, text="Folder:").grid(row=0, column=0, sticky="w", pady=4)
+        self._field_label(box, "Folder", 0)
         self.out_var = tk.StringVar(value=self.config.get("out_dir", ""))
         ttk.Entry(box, textvariable=self.out_var).grid(row=0, column=1, sticky="ew", pady=4)
         ttk.Button(box, text="Choose…", command=self._pick_folder).grid(
@@ -748,19 +793,20 @@ class App:
         ]
 
         def put(parent, title, rows):
-            ttk.Label(parent, text=title, style="Section.TLabel").pack(
-                anchor="w", pady=(8, 3))
+            if title:
+                ttk.Label(parent, text=title, style="Section.TLabel").pack(
+                    anchor="w", pady=(6, 2))
             for var, label, tip in rows:
                 cb = ttk.Checkbutton(parent, text=label, variable=var,
                                      style="Card.TCheckbutton")
-                cb.pack(anchor="w", pady=1)
+                cb.pack(anchor="w")
                 Tooltip(cb, tip, self)
 
         # The documents are the real choice, so they get the full width. The
         # two qualifying groups sit side by side underneath, which keeps the
         # whole window short enough not to need scrolling.
         by_title = {title: rows for title, rows in groups}
-        put(box, "Documents to write", by_title["Documents to write"])
+        put(box, "", by_title["Documents to write"])
 
         # The two qualifying groups sit side by side underneath, which is what
         # keeps the window short enough not to need scrolling. Giving each its
@@ -776,19 +822,20 @@ class App:
 
         who = ttk.Frame(box, style="Card.TFrame")
         who.pack(fill="x", pady=(12, 0))
-        ttk.Label(who, text="Only these people", style="Card.TLabel").pack(anchor="w")
+        ttk.Label(who, text="Only these people (everyone, if empty)",
+                  style="Card.TLabel").pack(anchor="w")
         self.reviewer_filter_var = tk.StringVar(value=self.config.get("reviewer_filter", ""))
         ent = ttk.Entry(who, textvariable=self.reviewer_filter_var)
         ent.pack(fill="x", pady=(3, 0))
         Tooltip(ent, "Part of a name or email keeps only their comments. "
                      "Separate several with commas. Leave empty for everybody.", self)
-        self._hint_in(who, "Leave empty to include everyone who commented.")
+
 
     # ---- run ----
 
     def _build_actions(self, parent, row=None) -> None:
         holder = ttk.Frame(parent, style="Page.TFrame")
-        holder.grid(row=row, column=0, sticky="ew", pady=(14, 8))
+        holder.grid(row=row, column=0, sticky="ew", pady=(10, 6))
         row = holder
         # sv_ttk ships an Accent button that already matches its theme, so use
         # that when it is there and fall back to our own colours when it is not.
@@ -825,21 +872,53 @@ class App:
         box.grid(row=row, column=0, sticky="ew", pady=(0, 8))
         self.progress = ttk.Progressbar(box, mode="indeterminate")
         self._progress_holder = box
-        self.status = ttk.Label(box, text="Fill in the left-hand side, then "
-                                          "press Export my comments.",
+        self.status = ttk.Label(box, text="Fill in the boxes above, then press "
+                                          "Export my comments.",
                                 font=self.font_status, wraplength=680, justify="left")
         self.status.pack(anchor="w", pady=(6, 0))
 
     def _build_details(self, parent, row=None) -> None:
+        """The log lives in a window of its own.
+
+        Inline it added a couple of hundred pixels to a window that has no
+        scrollbar, which on a laptop pushed the folder card off the bottom
+        where nothing could reach it. It is reference output anyway: you want
+        it open beside the window while the export runs, not shoving it.
+        """
         holder = ttk.Frame(parent, style="Page.TFrame")
         holder.grid(row=row, column=0, sticky="ew")
         self.details_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(holder, text="Show technical details",
                         variable=self.details_var,
                         command=self._toggle_details).pack(anchor="w")
-        self.details = ttk.Frame(holder)
-        self.details.columnconfigure(0, weight=1)
-        self.log = tk.Text(self.details, height=8, wrap="word", state="disabled",
+        ttk.Label(holder, text=f"Settings file: {CONFIG_PATH}",
+                  style="PageHint.TLabel", font=self.font_small).pack(
+            anchor="w", pady=(2, 0))
+        # Everything said so far, so opening the window later still shows it.
+        self._log_lines: list[str] = []
+        self.details_window = None
+        self.log = None
+
+    def _toggle_details(self) -> None:
+        if not self.details_var.get():
+            if self.details_window is not None:
+                self.details_window.destroy()
+            self.details_window, self.log = None, None
+            return
+        if self.details_window is not None:
+            self.details_window.lift()
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title("Technical details")
+        win.configure(background=self.palette["bg"])
+        win.geometry(f"720x420+{self.root.winfo_rootx() + 60}"
+                     f"+{self.root.winfo_rooty() + 80}")
+        frame = ttk.Frame(win, style="Page.TFrame", padding=12)
+        frame.pack(fill="both", expand=True)
+        frame.rowconfigure(0, weight=1)
+        frame.columnconfigure(0, weight=1)
+        self.log = tk.Text(frame, wrap="word", state="disabled",
                            font=self.font_mono, relief="flat", padx=10, pady=8,
                            borderwidth=0, highlightthickness=1,
                            highlightbackground=self.palette["rule"],
@@ -847,20 +926,22 @@ class App:
                            foreground=self.palette["fg"],
                            insertbackground=self.palette["fg"])
         self.log.grid(row=0, column=0, sticky="nsew")
-        sb = ttk.Scrollbar(self.details, command=self.log.yview)
-        sb.grid(row=0, column=1, sticky="ns")
-        self.log.configure(yscrollcommand=sb.set)
-        ttk.Label(self.details, text=f"Settings file: {CONFIG_PATH}",
-                  style="Hint.TLabel", font=self.font_small).grid(
-            row=1, column=0, sticky="w", pady=(4, 0))
-        self.details.pack(fill="both", expand=True, pady=(4, 0))
-        self.details.pack_forget()
+        bar = ttk.Scrollbar(frame, command=self.log.yview)
+        bar.grid(row=0, column=1, sticky="ns")
+        self.log.configure(yscrollcommand=bar.set)
 
-    def _toggle_details(self) -> None:
-        if self.details_var.get():
-            self.details.pack(fill="both", expand=True, pady=(4, 0))
-        else:
-            self.details.pack_forget()
+        def closed():
+            self.details_var.set(False)
+            win.destroy()
+            self.details_window, self.log = None, None
+
+        win.protocol("WM_DELETE_WINDOW", closed)
+        self.details_window = win
+        if self._log_lines:
+            self.log.configure(state="normal")
+            self.log.insert("end", "\n".join(self._log_lines) + "\n")
+            self.log.see("end")
+            self.log.configure(state="disabled")
 
     # ---------------- dialogs ----------------
 
@@ -901,8 +982,12 @@ class App:
     # ---------------- running ----------------
 
     def _append_log(self, msg: str) -> None:
+        line = msg.rstrip("\n")
+        self._log_lines.append(line)
+        if self.log is None:
+            return                      # kept in memory until the window opens
         self.log.configure(state="normal")
-        self.log.insert("end", msg.rstrip("\n") + "\n")
+        self.log.insert("end", line + "\n")
         self.log.see("end")
         self.log.configure(state="disabled")
 

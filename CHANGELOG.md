@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.16.2] — 2026-08-18
+
+### Changed
+- **The field labels line up.** Each card has a grid of its own, so they could
+  not share a column; every card now reserves the same measured width for its
+  first column, and the entries start on a common edge down the window.
+- **The technical log opens in a window of its own.** Inline it added a couple
+  of hundred pixels to a window that has no scrollbar, which on a laptop pushed
+  the folder card off the bottom where nothing could reach it. It is reference
+  output, better read beside the window than shoving it. Lines said while it is
+  closed are kept and appear when it opens.
+- The folder moved to the right-hand column, next to what to include, since
+  both are about what comes out. The two cards that grow when you tick
+  something are both on the left, so the window no longer changes height when
+  they do.
+- The step numbers are gone. They implied a wizard, and once the third card
+  moved columns they no longer read in order.
+
+### Fixed
+- Ticking "My university runs its own Overleaf" or choosing to paste a cookie
+  added rows that could push the last card out of sight, with no scrollbar to
+  reach it. The window grows to fit, and stops at the size of the screen.
+
 ## [0.16.1] — 2026-08-18
 
 ### Changed
@@ -491,7 +514,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.16.2...HEAD
+[0.16.2]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.16.2
 [0.16.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.16.1
 [0.16.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.15.0
