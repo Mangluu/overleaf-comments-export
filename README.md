@@ -143,11 +143,38 @@ Python 3.10 or newer, tested up to 3.14, on macOS, Windows, and Linux.
 | `comments.json` | The same data, structured. Threads, anchors, tracked changes, source context. |
 | `comments.jsonl` | One self-contained record per comment, for pipelines. |
 | `agents.md` | A short brief telling an AI assistant how to read the other two. |
+| `whats-new.md` | Only what changed since your last export into that folder. Written from the second run onwards. |
 | `response-letter.md` | Optional. A point-by-point reply document with a blank slot under every open comment. |
 | `commented.pdf` | Optional. Your paper as Overleaf builds it, with the comments highlighted on the text. |
 | `annotated/` | Optional. Your LaTeX with the comments embedded, if you would rather compile it yourself. |
 | `source/` | Optional. The text of every commented file. The offsets in `comments.json` index into these. |
 | `by-reviewer/<name>.md` | Optional. One file per reviewer, so you can work through them one person at a time. |
+
+## What changed since last time
+
+Reviews arrive in waves. Export into the same folder again and you get
+`whats-new.md`, which lists only what moved since the previous run.
+
+- Comments that are new
+- Threads that picked up replies, with just the new replies
+- Comments somebody edited after you had already read them, showing both versions
+- What was marked resolved, and what was reopened
+- Threads that are gone, usually because somebody deleted them
+- New tracked changes
+
+Nothing needs turning on. The previous export is already sitting in the folder,
+and it gets read before this run overwrites it. To compare against some other
+export instead, point `--since` at that folder. To skip it, `--no-since`.
+
+The same lists are in `comments.json` under `since`, as short ids, so you can
+ask an assistant to work through only the new feedback.
+
+Two things worth knowing. Short ids are assigned in file then line order, so
+one new comment near the top shifts every id below it. `whats-new.md` uses the
+ids from the run that wrote it, and the comparison itself is done on thread
+ids, so renumbering never shows up as change. And if you run with different
+filters than last time, deletions are not reported, because a comment hidden by
+`--no-resolved` has not gone anywhere.
 
 ## Working through comments with an AI
 
@@ -187,6 +214,8 @@ change.
 --stable                   # output that only changes when the comments change
 --cookie "PASTE"           # sign in with a pasted cookie
 --base-url https://...     # a self-hosted Overleaf
+--since ../january         # compare against a different earlier export
+--no-since                 # do not compare against an earlier export
 --no-jsonl                 # skip comments.jsonl
 --include-raw              # keep the untouched Overleaf data in comments.json
 --version                  # which version this is

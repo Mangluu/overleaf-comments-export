@@ -23,6 +23,8 @@ from .model import (
 )
 from .render import render_markdown, render_response_letter
 from .sections import enclosing_float, find_floats, find_headings, nearest_heading
+from .since import (SINCE_FILENAME, compare, load_previous, render_since,
+                    short_ids)
 
 SCHEMA_VERSION = "1.3"
 # Characters of surrounding text captured on either side of an anchor. The
@@ -105,6 +107,8 @@ class ExportResult:
     annotated_dir: Path | None = None
     annotated_pdf_path: Path | None = None
     source_dir: Path | None = None
+    since_path: Path | None = None
+    since_summary: str | None = None
 
 
 def _build_user_map(threads_raw: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -404,6 +408,8 @@ def run_export(
     include_source: bool = False,
     annotate_style: str = "highlight",
     stable: bool = False,
+    since: str | Path | None = None,
+    write_since: bool = True,
     progress: ProgressCallback | None = None,
     should_cancel: CancelCheck | None = None,
 ) -> ExportResult:
@@ -424,6 +430,24 @@ def run_export(
             "Pick somewhere else, for example a new folder on your Desktop. "
             f"The system said: {e.strerror or e}"
         ) from e
+    # Read the previous export now, because comments.json is about to be
+    # overwritten by this one. With no --since given, the previous export in
+    # this same folder is the thing anyone actually means.
+    previous: dict | None = None
+    previous_from = ""
+    if write_since:
+        wanted = Path(since).expanduser() if since else out_dir
+        previous = load_previous(wanted)
+        if since and previous is None:
+            raise UserFacingError(
+                f"No previous export to compare against here.\n\n{wanted}\n\n"
+                "Point --since at an export folder, or at the comments.json "
+                "inside one."
+            )
+        if previous is not None:
+            p = Path(wanted)
+            previous_from = str(p if p.is_file() else p / "comments.json")
+
     log_path = out_dir / "comments.log"
 
     # Drop the handler from any previous export in this process before adding
@@ -727,6 +751,26 @@ def run_export(
         "reviewer_filter": reviewer_filter,
         "render_mode": mode_lit,
     }
+    since_path: Path | None = None
+    since_summary: str | None = None
+    if previous is not None:
+        changed = compare(previous, json_payload)
+        since_summary = changed.summary()
+        progress(since_summary)
+        if changed.comparable:
+            json_payload["since"] = {"compared_with": previous_from,
+                                     **short_ids(changed)}
+        since_path = out_dir / SINCE_FILENAME
+        since_path.write_text(
+            render_since(changed, project_title=title,
+                         previous_path=(
+                             "the previous export in this folder"
+                             if Path(previous_from).parent == out_dir
+                             else previous_from),
+                         stable=stable),
+            encoding="utf-8")
+        progress(f"Wrote {since_path.name}")
+
     json_path = out_dir / "comments.json"
     json_path.write_text(json.dumps(json_payload, indent=2, default=str), encoding="utf-8")
     progress(f"Wrote {json_path.name}")
@@ -885,7 +929,8 @@ def run_export(
     agents_path = out_dir / "agents.md"
     agents_path.write_text(
         _build_agents_md(title, project_id, json_path.name, md_path.name,
-                         has_source=source_dir is not None),
+                         has_source=source_dir is not None,
+                         since_name=since_path.name if since_path else None),
         encoding="utf-8")
     progress(f"Wrote {agents_path.name}")
 
@@ -909,6 +954,8 @@ def run_export(
         annotated_dir=annotated_dir,
         annotated_pdf_path=annotated_pdf_path,
         source_dir=source_dir,
+        since_path=since_path,
+        since_summary=since_summary,
     )
 
 
@@ -1112,7 +1159,7 @@ def _doc_id_for_path(path: str, doc_id_to_path: dict[str, str]) -> str | None:
 
 
 def _build_agents_md(project_title: str, project_id: str, json_name: str, md_name: str,
-                     has_source: bool = False) -> str:
+                     has_source: bool = False, since_name: str | None = None) -> str:
     """A short instruction file for AI agents who'll ingest this batch."""
     source_note = (
         "## The source itself\n\n"
@@ -1122,6 +1169,16 @@ def _build_agents_md(project_title: str, project_id: str, json_name: str, md_nam
         "rather than the short window in `context`. Edit proposals should quote\n"
         "from there.\n\n"
     ) if has_source else ""
+    since_note = (
+        f"## What is new since last time\n\n"
+        f"`{since_name}` lists only what changed since the previous export, and\n"
+        f"`{json_name}` carries the same thing under `since` as lists of short\n"
+        f"IDs: `new_comments`, `new_replies`, `edited`, `resolved`, `reopened`,\n"
+        f"`new_tracked_changes`. When the user asks about new feedback, work\n"
+        f"from those lists rather than the whole export. Note that `edited`\n"
+        f"means the reviewer changed the wording of a comment you may already\n"
+        f"have answered.\n\n"
+    ) if since_name else ""
     no_source_note = (
         "" if has_source else
         "- The full `.tex` source of the paper. You only see a short window\n"
@@ -1180,7 +1237,7 @@ rendered output where truncation is true.
   insertions/deletions someone made with "Track Changes" enabled. Treat them
   as suggested edits to accept, reject, or modify.
 
-{source_note}## What you do NOT have
+{source_note}{since_note}## What you do NOT have
 
 {no_source_note}- The ability to push edits back to Overleaf. Output any proposed edits as
   diffs or rewrites; the user will apply them.

@@ -1183,7 +1183,12 @@ class App:
             bits.append(f"{result.open_count} still open")
         if result.tracked_change_count:
             bits.append(f"{result.tracked_change_count} tracked change(s)")
-        self._set_status("Done. Found " + ", ".join(bits) + ".", "ok")
+        done = "Done. Found " + ", ".join(bits) + "."
+        # What changed since last time is the more useful half of the sentence
+        # once you have exported the same paper before.
+        if result.since_summary:
+            done += " " + result.since_summary
+        self._set_status(done, "ok")
 
         self._append_log(f"Comments: {result.markdown_path}")
         for label, path in (
@@ -1193,6 +1198,7 @@ class App:
             ("Source", result.source_dir),
             ("Annotated LaTeX", result.annotated_dir),
             ("Per person", result.by_reviewer_dir), ("Notes for AI", result.agents_path),
+            ("What is new", result.since_path),
         ):
             if path is not None:
                 self._append_log(f"{label}: {path}")

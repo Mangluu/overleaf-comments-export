@@ -104,6 +104,20 @@ def main(argv: list[str] | None = None) -> int:
         "else entirely.",
     )
     parser.add_argument(
+        "--since",
+        metavar="PATH",
+        help="Compare against a specific earlier export and write "
+        "whats-new.md. PATH is an export folder or the comments.json inside "
+        "one. Without this, the previous export in the output folder is used "
+        "when there is one.",
+    )
+    parser.add_argument(
+        "--no-since",
+        dest="write_since",
+        action="store_false",
+        help="Do not compare against any earlier export.",
+    )
+    parser.add_argument(
         "--base-url",
         default="https://www.overleaf.com",
         help="Override the Overleaf base URL (for self-hosted instances).",
@@ -293,6 +307,8 @@ def main(argv: list[str] | None = None) -> int:
             include_source=args.include_source,
             annotate_style=args.annotate_style,
             stable=args.stable,
+            since=args.since,
+            write_since=args.write_since,
             progress=lambda msg: print(msg, file=sys.stderr),
         )
     except (KeyboardInterrupt, ExportCancelled):

@@ -17,6 +17,8 @@ place to start if you would like to contribute.
 - Response letter scaffold (`--response-letter`)
 - Git friendly output that does not churn between runs (`--stable`)
 - Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
+- `commented.pdf` (`--pdf`), your paper as Overleaf builds it with every comment
+  highlighted on the text it belongs to, needing no LaTeX on your machine
 - The text of every commented file, so an assistant can read the paragraph (`--include-source`)
 - A checklist of what is left to address, ticked from Overleaf's own resolved flag
 - `--doctor`, which says what is wrong with a setup in plain words
@@ -25,19 +27,23 @@ place to start if you would like to contribute.
 - A window written for people who do not use a terminal, with dark mode
 - A read-only Chrome/Edge extension that exports the project in the current tab
   without reading or storing browser cookies
+- `whats-new.md`, which says what changed since the previous export into the
+  same folder, so a second wave of review does not mean rereading the first
 
 ## Next
 
 Things I think are worth doing, roughly in order.
 
-- **Diff two exports** (`--since`) — reviews arrive in waves. `--stable` already
-  lets git show you this. `--since` would say it in words, without needing a
-  repository.
+- **Resolving `\input` and `\include`** so a multi-file project gets the right
+  section for every comment. Right now a comment in a file that is included
+  from the main document is anchored correctly but attributed to the nearest
+  heading inside that file alone. **help wanted**
+- **Offline re-render from a saved `comments.json`**, so a folder you already
+  exported stays usable when the API changes underneath it, and so you can try
+  a different `--render-mode` without hitting Overleaf again.
 
 ## Later
 
-- Offline re-render from a saved `comments.json`, for when the API breaks
-- Resolving `\input` and `\include` so multi-file projects get correct sections
 - Deep links back to the right place in Overleaf
 - A single-file interactive HTML viewer for co-authors who will never install
   anything
@@ -50,8 +56,6 @@ Saying no is part of a roadmap.
   applying edits. This tool reads. Writing needs endpoints this project does
   not use, and it turns a safe utility into something that can damage your
   project.
-- **Mapping comments to PDF page numbers** — it needs compile output that is
-  not reachable from the endpoints this tool uses, and would break constantly.
 - **Telemetry of any kind.** This tool handles your session cookie. It will
   never phone home. Downloads and issues are the only feedback it gets, which
   is exactly why filing an issue matters.

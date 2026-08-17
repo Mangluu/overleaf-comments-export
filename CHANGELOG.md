@@ -4,6 +4,37 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-08-18
+
+### Added
+- **`whats-new.md`, what changed since your last export.** Reviews arrive in
+  waves, and the second export of a paper is mostly comments you read last
+  week. This lists only what moved: new comments, threads that picked up
+  replies with just the new replies quoted, comments somebody edited after you
+  read them with both versions shown, what was resolved, what was reopened,
+  what is gone, and new tracked changes.
+
+  Nothing needs turning on. The previous export is already in the folder and is
+  read before this run overwrites it. `--since PATH` compares against a
+  different export instead, and `--no-since` skips it.
+
+  The same lists are in `comments.json` under `since` as short ids, and
+  `agents.md` explains them, so an assistant can be asked to work through only
+  the new feedback.
+
+  The comparison is done on thread ids, never short ids. Short ids are assigned
+  in file then line order, so one new comment near the top of a paper shifts
+  every id below it, and a diff keyed on them would report a whole paper as
+  new on every run.
+
+  Where the filters differ from the previous run, deletions are not reported,
+  since a comment hidden by `--no-resolved` has not gone anywhere.
+
+### Changed
+- The window's Done line now also says what changed since the last export.
+- The roadmap said mapping comments to PDF pages was not planned, which
+  `--pdf` has done since 0.10. Removed, and `--pdf` added to what is shipped.
+
 ## [0.16.3] — 2026-08-18
 
 ### Changed
