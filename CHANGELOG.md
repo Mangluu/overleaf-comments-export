@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.16.3] — 2026-08-18
+
+### Changed
+- **Shorter hints.** Every line under a field said in two or three lines what
+  fits in one. The window is 165px narrower for it, and reads faster. The two
+  facts worth keeping are still there, said briefly: reading Chrome's cookies
+  does not work on Windows, and tracked changes on a self-hosted Overleaf need
+  Server Pro.
+- The link field is wide enough for a project link, which is the longest thing
+  anyone types into this window.
+
 ## [0.16.2] — 2026-08-18
 
 ### Changed

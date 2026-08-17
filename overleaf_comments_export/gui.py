@@ -120,12 +120,11 @@ BROWSER_LABELS = {
 }
 
 BROWSER_NOTES = {
-    "safari": "Reads Safari's cookie file. No password needed.",
-    "firefox": "Reads Firefox's cookie file. No password needed.",
-    "manual": "Works on every computer and browser. Press How? for the steps.",
-    "auto": "Looks through the browsers installed on this computer.",
-    "chrome": "Asks for your computer's login password every time. On Windows "
-              "this cannot work at all, so paste the cookie instead.",
+    "safari": "Reads Safari's cookies. No password needed.",
+    "firefox": "Reads Firefox's cookies. No password needed.",
+    "manual": "Works everywhere. Press How? for the steps.",
+    "auto": "Tries the browsers on this computer.",
+    "chrome": "Asks for your login password. On Windows, paste instead.",
     "chromium": "Asks for your computer's login password every time.",
     "edge": "Asks for your computer's login password every time.",
     "brave": "Asks for your computer's login password every time.",
@@ -441,13 +440,13 @@ class App:
     def _hint_in(self, parent, text: str):
         """A quiet line of explanation under whatever it belongs to."""
         label = ttk.Label(parent, text=text, style="Hint.TLabel",
-                          font=self.font_small, wraplength=620, justify="left")
+                          font=self.font_small, wraplength=380, justify="left")
         label.pack(anchor="w", pady=(3, 0))
         return label
 
     def _hint(self, parent, text, row, col=1, span=2):
         lbl = ttk.Label(parent, text=text, style="Hint.TLabel", font=self.font_small,
-                        wraplength=540, justify="left")
+                        wraplength=380, justify="left")
         lbl.grid(row=row, column=col, columnspan=span, sticky="w", pady=(0, 6))
         return lbl
 
@@ -532,19 +531,18 @@ class App:
         self._field_label(box, "Link to your paper", 0)
         self.url_var = tk.StringVar(value=self.config.get("project_url", ""))
         self.url_var.trace_add("write", lambda *_: self._validate_url())
-        self.url_entry = ttk.Entry(box, textvariable=self.url_var)
+        self.url_entry = ttk.Entry(box, textvariable=self.url_var, width=44)
         self.url_entry.grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
         self.url_status = ttk.Label(box, text="", font=self.font_small,
                                     style="Hint.TLabel")
         self.url_status.grid(row=1, column=1, columnspan=2, sticky="w")
-        self._hint(box, "Open the paper in Overleaf and copy the address from "
-                        "the top of your browser.", row=2)
+        self._hint(box, "Copy it from your browser's address bar.", row=2)
 
         self._field_label(box, "Title (optional)", 3)
         self.title_var = tk.StringVar(value=self.config.get("project_title", ""))
         ttk.Entry(box, textvariable=self.title_var).grid(
             row=3, column=1, columnspan=2, sticky="ew", pady=4)
-        self._hint(box, "Only used as the heading of the exported file.", row=4)
+        self._hint(box, "Used as the heading of the export.", row=4)
 
         self.self_hosted_var = tk.BooleanVar(
             value=bool(self.config.get("self_hosted", False)))
@@ -561,9 +559,9 @@ class App:
             value=self.config.get("base_url", "https://www.overleaf.com"))
         self.base_entry = ttk.Entry(box, textvariable=self.base_var)
         self.base_note = ttk.Label(
-            box, text="For example  https://overleaf.my-university.edu  — comments "
-                     "work, but tracked changes need Overleaf Server Pro.",
-            style="Hint.TLabel", font=self.font_small, wraplength=520, justify="left")
+            box, text="For example  https://overleaf.my-university.edu\n"
+                 "Tracked changes need Server Pro.",
+            style="Hint.TLabel", font=self.font_small, wraplength=380, justify="left")
         self.base_label.grid(row=6, column=0, sticky="w", pady=4)
         self.base_entry.grid(row=6, column=1, columnspan=2, sticky="ew", pady=4)
         self.base_note.grid(row=7, column=1, columnspan=2, sticky="w")
@@ -576,10 +574,8 @@ class App:
         self.cookie_name_var = tk.StringVar(value=self.config.get("cookie_name", ""))
         self.cookie_name_entry = ttk.Entry(box, textvariable=self.cookie_name_var)
         self.cookie_name_note = ttk.Label(
-            box, text="Leave empty unless the export says it could not find a "
-                     "session. It then lists the cookies it did find, and one of "
-                     "those goes here.",
-            style="Hint.TLabel", font=self.font_small, wraplength=520, justify="left")
+            box, text="Only if the export says it could not find a session.",
+            style="Hint.TLabel", font=self.font_small, wraplength=380, justify="left")
         self.cookie_name_label.grid(row=8, column=0, sticky="w", pady=4)
         self.cookie_name_entry.grid(row=8, column=1, columnspan=2, sticky="ew", pady=4)
         self.cookie_name_note.grid(row=9, column=1, columnspan=2, sticky="w")
@@ -724,8 +720,7 @@ class App:
         ttk.Entry(box, textvariable=self.out_var).grid(row=0, column=1, sticky="ew", pady=4)
         ttk.Button(box, text="Choose…", command=self._pick_folder).grid(
             row=0, column=2, sticky="w", padx=8)
-        self._hint(box, "A new folder of its own is easiest, for example a "
-                        "folder called Comments next to your paper.", row=1)
+        self._hint(box, "A new folder of its own is easiest.", row=1)
 
     # ---- what to include ----
 
