@@ -111,10 +111,12 @@ the Python tool when you want the PDF, or any of the rest of it. Both write the
 same Markdown and JSON, under the same `schema_version`, and a test in the suite
 fails if that ever stops being true.
 
-**If you use Python**, it is one command:
+**If you use Python**, it is one command. `--upgrade` matters: without it pip
+leaves an old version in place and says "Requirement already satisfied", so you
+end up running whatever you installed months ago.
 
 ```bash
-pip install overleaf-comments-export
+pip install --upgrade "overleaf-comments-export[gui,pdf]"
 overleaf-comments-export --gui
 ```
 
@@ -206,7 +208,7 @@ Appearance picker in the top right if you would rather fix it one way.
 ## Comments inside the PDF
 
 ```bash
-pip install 'overleaf-comments-export[pdf]'
+pip install --upgrade "overleaf-comments-export[pdf]"
 overleaf-comments-export --project-url <link> --out ./review --pdf
 ```
 

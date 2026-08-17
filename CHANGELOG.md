@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.14.1] — 2026-08-16
+
+### Fixed
+- **The macOS instructions did not work.** Both the README and the note inside
+  the downloaded zip said to right-click the app and choose Open. Apple removed
+  that in macOS 15, and on 15 and newer the warning offers only Done and Move to
+  Bin, so anyone who downloaded the Mac app was told to do something impossible
+  and given nothing else to try. Both now describe System Settings, Privacy &
+  Security, Open Anyway, and the one-line `xattr` command for anyone who prefers
+  the Terminal.
+- **"Could not read Overleaf cookies" blamed Chrome.** On a Mac every browser's
+  cookie store sits behind Full Disk Access, Safari included, and a freshly
+  downloaded app has none. The message sent Safari users looking for a problem
+  they did not have, and never mentioned that pasting the cookie needs no
+  permission at all. It now gives the three routes in order of how little they
+  ask of you.
+- **`pip install` left old versions in place.** The README said
+  `pip install overleaf-comments-export`, which pip satisfies with whatever is
+  already installed, so someone who installed months ago upgraded nothing and
+  saw "Requirement already satisfied". It now says `--upgrade`.
+- The window title carries the version, so it is visible at a glance which one
+  is running.
+
 ## [0.14.0] — 2026-08-14
 
 ### Added
@@ -399,7 +422,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.1
 [0.14.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.12.0

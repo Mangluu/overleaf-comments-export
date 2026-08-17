@@ -398,3 +398,31 @@ def test_something_that_is_not_a_zip_is_not_returned(monkeypatch):
 
     c = _client(monkeypatch, lambda method, url, **kw: Streamed())
     assert c.download_project_zip("abc") is None
+
+
+def test_the_cookie_failure_offers_a_route_that_needs_no_permission(monkeypatch):
+    """A downloaded Mac app has no Full Disk Access, so on macOS every browser's
+    cookie store is unreadable. The message used to blame Chrome, which sent
+    Safari users hunting for a problem they did not have."""
+    import sys as _sys
+
+    from overleaf_comments_export.client import _cookie_read_failed
+
+    monkeypatch.setattr(_sys, "platform", "darwin")
+    message = _cookie_read_failed("safari")
+    assert "Full Disk Access" in message
+    # The options that need no permission must come before the one that does.
+    assert message.index("paste") < message.index("Full Disk Access", message.index("paste"))
+    assert "extension" in message
+    assert "Chrome" not in message, "do not blame Chrome to a Safari user"
+
+
+def test_the_cookie_failure_reads_differently_off_macos(monkeypatch):
+    import sys as _sys
+
+    from overleaf_comments_export.client import _cookie_read_failed
+
+    monkeypatch.setattr(_sys, "platform", "win32")
+    message = _cookie_read_failed("chrome")
+    assert "Full Disk Access" not in message, "that is a macOS thing"
+    assert "Chrome 127" in message

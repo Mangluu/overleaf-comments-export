@@ -236,7 +236,11 @@ class Tooltip:
 class App:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        root.title("Overleaf Comments Export")
+        # The version goes in the title bar. Someone who installed with pip
+        # and no --upgrade can be running a year-old copy without knowing, and
+        # every bug report is easier when the version is on screen.
+        from . import __version__
+        root.title(f"Overleaf Comments Export {__version__}")
         root.geometry("780x900")
         root.minsize(640, 600)
 

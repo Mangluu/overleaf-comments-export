@@ -83,6 +83,50 @@ def _pick_session_cookie(names, override: str | None = None):
     return next((n for n in names if n.endswith(SESSION_COOKIE_SUFFIX)), None)
 
 
+def _cookie_read_failed(browser: str) -> str:
+    """Why a browser's cookie store could not be read, and what to do instead.
+
+    On a Mac every browser's cookies sit behind Full Disk Access, Safari very
+    much included. The old wording blamed Chrome, which sent Safari users
+    looking for a problem they did not have. Granting Full Disk Access to a
+    downloaded app is also a lot to ask, so the options that need no permission
+    at all come first.
+    """
+    import sys
+
+    lines = [f"Could not read the Overleaf cookie from {browser}.", ""]
+    if sys.platform == "darwin":
+        lines += [
+            "macOS keeps every browser's cookies behind Full Disk Access, so "
+            "nothing can read them until you allow it. There are three ways "
+            "round this, easiest first.",
+            "",
+            "1. Paste the cookie instead. Choose \"I will paste it myself\" and "
+            "press How? for the steps. Nothing needs permission and it works "
+            "on every browser.",
+            "",
+            "2. Use the browser extension, which reads the Overleaf tab you "
+            "already have open and never touches the cookie:",
+            "   https://github.com/Mangluu/overleaf-comments-export/tree/main/browser-extension",
+            "",
+            "3. Grant Full Disk Access to this app. Open System Settings, go to "
+            "Privacy & Security, then Full Disk Access, press +, and choose "
+            f"this app. Then quit it and open it again. {browser.capitalize()} "
+            "must also be signed in to Overleaf.",
+        ]
+    else:
+        lines += [
+            f"Check that {browser} is installed and signed in to Overleaf.",
+            "",
+            "If it is, its cookie store cannot be read on this computer. That "
+            "happens with Chrome 127 and newer on Windows, and with browsers "
+            "installed from Snap on Linux. Choose \"I will paste it myself\" "
+            "instead and press How? for the steps, or use the browser "
+            "extension, which needs no cookie at all.",
+        ]
+    return "\n".join(lines)
+
+
 def _cookie_domain_for(host: str) -> str:
     """The domain to look cookies up under.
 
@@ -291,11 +335,7 @@ class OverleafClient:
             jar = loader(domain_name=domain_name)
         except Exception as e:
             raise UserFacingError(
-                f"Could not read Overleaf cookies from {browser}. Make sure {browser} "
-                "is installed and you are signed in to overleaf.com in it. On macOS, "
-                "browsers like Chrome may require granting Terminal/the launcher app "
-                "Full Disk Access in System Settings → Privacy & Security to read "
-                "their cookie store."
+                _cookie_read_failed(browser)
             ) from e
 
         wanted = _pick_session_cookie((c.name for c in jar), self.cookie_name)
