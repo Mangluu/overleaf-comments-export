@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.15.0] — 2026-08-17
+
+### Added
+- **`--doctor`, and a "Check my setup" button in the window.** One pass over
+  everything that commonly goes wrong, with what to do about each in plain
+  words: the Python version, whether the copy you are running is the current
+  one, root certificates, PDF support, the Tk toolkit, whether Overleaf is
+  reachable, and whether your session works.
+
+  Every problem anyone hit was diagnosable and nobody diagnosed it. Someone ran
+  a version from months earlier because `pip install` without `--upgrade` says
+  "Requirement already satisfied" and stops. Someone else could not read a
+  cookie because a downloaded app has no Full Disk Access. None of those
+  announce themselves. It exits non-zero when something needs fixing, so it can
+  be pasted into a bug report.
+
+### Fixed
+- **Scrolling barely worked, and on Linux not at all.** The wheel handler
+  divided the movement by three and truncated, so on a Mac trackpad, where the
+  system already scales it, a small movement scrolled zero and the window did
+  not move. On Windows the same arithmetic jumped forty lines per notch. X11
+  sends buttons rather than a delta and was not handled at all. Each platform
+  is now treated the way it actually reports.
+- The wheel was bound to every widget, so the technical log could not be
+  scrolled once it was longer than its box. It keeps its own now.
+
 ## [0.14.1] — 2026-08-16
 
 ### Fixed
@@ -422,7 +448,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.15.0
 [0.14.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.1
 [0.14.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.13.0

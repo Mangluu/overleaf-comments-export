@@ -396,6 +396,15 @@ overleaf-comments-export --project-url <link> --out ./out --cookie "PASTE_HERE"
 
 ## When something goes wrong
 
+Run the check first. It looks at everything that commonly breaks and says what
+to do about each.
+
+```bash
+overleaf-comments-export --doctor
+```
+
+There is a **Check my setup** button in the window that does the same thing.
+
 | What you see | What it means |
 |---|---|
 | Could not look up www.overleaf.com | This computer is offline, or a VPN is in the way. Nothing to do with your project. |

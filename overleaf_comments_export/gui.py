@@ -341,6 +341,34 @@ class App:
 
     # ---------------- layout ----------------
 
+    def _wheel_units(self, event) -> int:
+        """How far one wheel or trackpad movement should scroll.
+
+        Tk reports it three different ways. X11 sends button 4 and 5 with no
+        delta at all. Windows sends multiples of 120. macOS sends a small
+        number the system has already scaled for trackpad acceleration, so it
+        wants passing through rather than dividing.
+        """
+        if getattr(event, "num", None) == 4:
+            return -3
+        if getattr(event, "num", None) == 5:
+            return 3
+        delta = getattr(event, "delta", 0)
+        if sys.platform == "darwin":
+            return -delta
+        return -int(delta / 120) * 3 or (-1 if delta > 0 else 1)
+
+    def _on_wheel(self, event):
+        """Scroll the page, unless the pointer is over something that scrolls
+        itself. The log has its own scrollbar, and taking its wheel events away
+        made it impossible to read once it was longer than the box."""
+        widget = event.widget
+        while widget is not None:
+            if isinstance(widget, (tk.Text, tk.Listbox)):
+                return
+            widget = getattr(widget, "master", None)
+        self.canvas.yview_scroll(self._wheel_units(event), "units")
+
     def _build(self) -> None:
         # A scrollable body, so the window still works on a small screen.
         container = ttk.Frame(self.root)
@@ -357,10 +385,12 @@ class App:
         canvas.configure(yscrollcommand=scroll.set)
         canvas.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
-        canvas.bind_all(
-            "<MouseWheel>",
-            lambda e: canvas.yview_scroll(int(-1 * (e.delta / 3)), "units"),
-        )
+        # Wheel and trackpad. Every platform reports this differently, and
+        # dividing the delta the way this used to meant a small trackpad
+        # movement on a Mac scrolled int(-1/3) = 0 units, so the window simply
+        # did not move.
+        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            canvas.bind_all(sequence, self._on_wheel)
         outer.columnconfigure(0, weight=1)
 
         header = ttk.Frame(outer)
@@ -670,6 +700,13 @@ class App:
             self.run_btn.configure(style="Accent.TButton")
         except tk.TclError:
             pass
+        self.doctor_btn = ttk.Button(row, text="Check my setup",
+                                     command=self._on_doctor)
+        self.doctor_btn.pack(side="right")
+        Tooltip(self.doctor_btn,
+                "Looks at everything that commonly goes wrong, and says what "
+                "to do about each. Run this first when something does not "
+                "work.", self)
         self.stop_btn = ttk.Button(row, text="Stop", command=self._on_stop)
         Tooltip(self.stop_btn,
                 "Stops the export. Nothing is written when you stop, so the "
@@ -881,6 +918,33 @@ class App:
             self.queue.put(("cancelled", None))
         except Exception as e:
             self.queue.put(("error", (e, traceback.format_exc())))
+
+    def _on_doctor(self) -> None:
+        """Run the checks and show them, without touching the browser.
+
+        The sign-in test is left out on purpose: it can sit for a long time
+        reading a cookie store, and this needs to answer quickly.
+        """
+        from .doctor import run as run_doctor
+
+        self.doctor_btn.configure(state="disabled")
+        self._set_status("Checking…", "hint")
+        self.root.update_idletasks()
+        lines: list[str] = []
+        try:
+            base = (self.base_var.get().strip() if self.self_hosted_var.get()
+                    else "https://www.overleaf.com")
+            run_doctor(base_url=base or "https://www.overleaf.com",
+                       check_session=False, out=lines.append)
+        except Exception as e:                     # a check must never crash the window
+            lines.append(f"The check itself failed: {type(e).__name__}: {e}")
+        finally:
+            self.doctor_btn.configure(state="normal")
+        self._set_status("", "hint")
+        self.details_var.set(True)
+        self._toggle_details()
+        for line in lines:
+            self._append_log(line)
 
     def _on_stop(self) -> None:
         if not self.worker or not self.worker.is_alive():

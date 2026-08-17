@@ -137,3 +137,49 @@ def test_stop_does_nothing_when_nothing_is_running(app):
     app.worker = None
     app._on_stop()
     assert app.cancel_requested is False
+
+
+def test_the_wheel_moves_the_page_on_every_platform(app, monkeypatch):
+    """A Mac trackpad sends a delta of 1 or 2. Dividing it by three and
+    truncating, as this used to, scrolled zero units and the window did not
+    move at all."""
+    import sys as _sys
+
+    class Event:
+        def __init__(self, delta=0, num=None):
+            self.delta, self.num = delta, num
+
+    monkeypatch.setattr(_sys, "platform", "darwin")
+    assert app._wheel_units(Event(delta=1)) == -1, "a small trackpad move did nothing"
+    assert app._wheel_units(Event(delta=2)) == -2
+    assert app._wheel_units(Event(delta=-1)) == 1, "it must scroll both ways"
+
+    monkeypatch.setattr(_sys, "platform", "win32")
+    assert app._wheel_units(Event(delta=120)) == -3, "one notch, not forty lines"
+    assert app._wheel_units(Event(delta=-120)) == 3
+
+    # X11 sends buttons rather than a delta, and used to be ignored entirely.
+    assert app._wheel_units(Event(num=4)) == -3
+    assert app._wheel_units(Event(num=5)) == 3
+
+
+def test_the_log_keeps_its_own_wheel(app):
+    """bind_all took the wheel from every widget, so the log could not be
+    scrolled once it was longer than its box."""
+    import tkinter as tk
+
+    scrolled = []
+    app.canvas.yview_scroll = lambda *a: scrolled.append(a)
+
+    class Event:
+        delta, num = 3, None
+        widget = None
+
+    event = Event()
+    event.widget = app.log
+    app._on_wheel(event)
+    assert not scrolled, "the page moved instead of the log"
+
+    event.widget = app.canvas
+    app._on_wheel(event)
+    assert scrolled, "the page did not move"

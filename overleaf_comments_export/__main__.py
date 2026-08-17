@@ -53,6 +53,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Launch the graphical interface (default if no other args).",
     )
     parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Check this computer's setup and say what is wrong, in plain "
+        "words. Run this first when something does not work.",
+    )
+    parser.add_argument(
+        "--no-session",
+        action="store_true",
+        help="With --doctor, skip the sign-in test, which is the only part "
+        "that touches your browser.",
+    )
+    parser.add_argument(
         "--project-url",
         help="Full Overleaf project URL, e.g. https://www.overleaf.com/project/<24-hex-id>.",
     )
@@ -205,6 +217,16 @@ def main(argv: list[str] | None = None) -> int:
         write_jsonl=True,
     )
     args = parser.parse_args(argv)
+
+    if args.doctor:
+        logging.basicConfig(level=logging.WARNING, stream=sys.stderr)
+        from .doctor import run as run_doctor
+
+        return run_doctor(
+            base_url=args.base_url, browser=args.browser,
+            cookie_value=args.cookie or os.environ.get("OVERLEAF_SESSION") or None,
+            cookie_name=args.cookie_name, check_session=not args.no_session,
+        )
 
     if args.gui or (not args.project_url and not args.out):
         try:

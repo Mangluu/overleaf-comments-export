@@ -19,6 +19,7 @@ place to start if you would like to contribute.
 - Comments embedded in the LaTeX, so the compiled PDF carries them (`--annotated-tex`)
 - The text of every commented file, so an assistant can read the paragraph (`--include-source`)
 - A checklist of what is left to address, ticked from Overleaf's own resolved flag
+- `--doctor`, which says what is wrong with a setup in plain words
 - Figure and table detection, so a comment on a caption says which figure
 - Downloadable apps for macOS, Windows and Linux, so Python is not needed
 - A window written for people who do not use a terminal, with dark mode
@@ -32,8 +33,6 @@ Things I think are worth doing, roughly in order.
 - **Diff two exports** (`--since`) — reviews arrive in waves. `--stable` already
   lets git show you this. `--since` would say it in words, without needing a
   repository.
-- **`--doctor`** — one command that says whether your login works and what it
-  can see, so "it doesn't work" becomes answerable without a conversation.
 
 ## Later
 
