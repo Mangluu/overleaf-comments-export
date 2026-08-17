@@ -62,11 +62,11 @@ def test_good_link_is_confirmed(app):
 
 
 def test_self_hosted_address_is_hidden_until_asked_for(app):
-    assert not app.base_entry.winfo_ismapped()
+    assert not app.base_entry.grid_info() != {}
     app.self_hosted_var.set(True)
     app._toggle_self_hosted()
     app.root.update()
-    assert app.base_entry.winfo_ismapped()
+    assert app.base_entry.grid_info() != {}
 
 
 def test_unticking_self_hosted_restores_the_normal_address(app):
@@ -82,12 +82,12 @@ def test_cookie_box_appears_only_when_pasting(app):
     app.browser_box.set("Safari")
     app._on_browser_change()
     app.root.update()
-    assert not app.cookie_entry.winfo_ismapped()
+    assert not app.cookie_frame.grid_info() != {}
 
     app.browser_box.set("I will paste it myself")
     app._on_browser_change()
     app.root.update()
-    assert app.cookie_entry.winfo_ismapped()
+    assert app.cookie_frame.grid_info() != {}
     assert app.browser_var.get() == "manual"
 
 
@@ -106,7 +106,7 @@ def test_cookie_is_masked_on_screen(app):
 
 def test_technical_log_starts_hidden(app):
     assert not app.details_var.get()
-    assert not app.details.winfo_ismapped()
+    assert not app.details.grid_info() != {}
 
 
 def test_stop_button_appears_only_while_running_and_recovers(app):
@@ -139,47 +139,16 @@ def test_stop_does_nothing_when_nothing_is_running(app):
     assert app.cancel_requested is False
 
 
-def test_the_wheel_moves_the_page_on_every_platform(app, monkeypatch):
-    """A Mac trackpad sends a delta of 1 or 2. Dividing it by three and
-    truncating, as this used to, scrolled zero units and the window did not
-    move at all."""
-    import sys as _sys
-
-    class Event:
-        def __init__(self, delta=0, num=None):
-            self.delta, self.num = delta, num
-
-    monkeypatch.setattr(_sys, "platform", "darwin")
-    assert app._wheel_units(Event(delta=1)) == -1, "a small trackpad move did nothing"
-    assert app._wheel_units(Event(delta=2)) == -2
-    assert app._wheel_units(Event(delta=-1)) == 1, "it must scroll both ways"
-
-    monkeypatch.setattr(_sys, "platform", "win32")
-    assert app._wheel_units(Event(delta=120)) == -3, "one notch, not forty lines"
-    assert app._wheel_units(Event(delta=-120)) == 3
-
-    # X11 sends buttons rather than a delta, and used to be ignored entirely.
-    assert app._wheel_units(Event(num=4)) == -3
-    assert app._wheel_units(Event(num=5)) == 3
+def test_nothing_scrolls_and_it_all_fits(app):
+    """The form used to scroll, which hid half the decisions and made the
+    wheel behaviour matter. Now everything is on screen at once."""
+    app.root.update_idletasks()
+    assert not hasattr(app, "canvas"), "the scrolling canvas is gone"
+    # A window taller than this does not fit a 1280x800 laptop once the menu
+    # bar and dock are taken off, and there is no scrollbar to rescue it.
+    assert app.root.winfo_reqheight() < 780, app.root.winfo_reqheight()
 
 
-def test_the_log_keeps_its_own_wheel(app):
-    """bind_all took the wheel from every widget, so the log could not be
-    scrolled once it was longer than its box."""
-    import tkinter as tk
-
-    scrolled = []
-    app.canvas.yview_scroll = lambda *a: scrolled.append(a)
-
-    class Event:
-        delta, num = 3, None
-        widget = None
-
-    event = Event()
-    event.widget = app.log
-    app._on_wheel(event)
-    assert not scrolled, "the page moved instead of the log"
-
-    event.widget = app.canvas
-    app._on_wheel(event)
-    assert scrolled, "the page did not move"
+def test_the_progress_bar_is_hidden_until_something_runs(app):
+    """An idle indeterminate bar reads as a stuck one."""
+    assert not app.progress.winfo_manager(), "an idle bar reads as a stuck one"

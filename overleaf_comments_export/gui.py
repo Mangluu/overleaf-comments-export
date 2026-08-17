@@ -326,7 +326,7 @@ class App:
             # everything else, which is why nothing stood out.
             self.font_title = tkfont.Font(
                 family=_first_installed(self.root, _SERIF_STACK),
-                size=size + 12, weight="normal")
+                size=size + 8, weight="normal")
             self.font_section = base.copy()
             self.font_section.configure(size=size, weight="bold")
             self.font_label = base.copy()
@@ -369,8 +369,6 @@ class App:
 
         # Classic tk widgets are not themed by ttk, so they need doing by hand.
         for widget, opts in (
-            (getattr(self, "canvas", None),
-             {"background": self.palette["bg"]}),
             (getattr(self, "log", None),
              {"background": self.palette["field_bg"],
               "foreground": self.palette["fg"],
@@ -410,12 +408,12 @@ class App:
         Space and a heading separate things perfectly well.
         """
         wrap = ttk.Frame(parent, style="Page.TFrame")
-        wrap.pack(fill="x", pady=(0, 14))
-        card = ttk.Frame(wrap, style="Card.TFrame", padding=18)
+        wrap.pack(fill="x", pady=(0, 10))
+        card = ttk.Frame(wrap, style="Card.TFrame", padding=14)
         card.pack(fill="x")
         if title:
             ttk.Label(card, text=title, style="Section.TLabel").pack(
-                anchor="w", pady=(0, 10))
+                anchor="w", pady=(0, 8))
         # The contents get their own frame, so a caller can use grid or pack
         # as it likes. Tk refuses to have both inside one container, and the
         # heading above is packed.
@@ -438,57 +436,16 @@ class App:
 
     # ---------------- layout ----------------
 
-    def _wheel_units(self, event) -> int:
-        """How far one wheel or trackpad movement should scroll.
-
-        Tk reports it three different ways. X11 sends button 4 and 5 with no
-        delta at all. Windows sends multiples of 120. macOS sends a small
-        number the system has already scaled for trackpad acceleration, so it
-        wants passing through rather than dividing.
-        """
-        if getattr(event, "num", None) == 4:
-            return -3
-        if getattr(event, "num", None) == 5:
-            return 3
-        delta = getattr(event, "delta", 0)
-        if sys.platform == "darwin":
-            return -delta
-        return -int(delta / 120) * 3 or (-1 if delta > 0 else 1)
-
-    def _on_wheel(self, event):
-        """Scroll the page, unless the pointer is over something that scrolls
-        itself. The log has its own scrollbar, and taking its wheel events away
-        made it impossible to read once it was longer than the box."""
-        widget = event.widget
-        while widget is not None:
-            if isinstance(widget, (tk.Text, tk.Listbox)):
-                return
-            widget = getattr(widget, "master", None)
-        self.canvas.yview_scroll(self._wheel_units(event), "units")
-
     def _build(self) -> None:
-        # A scrollable body, so the window still works on a small screen.
-        container = ttk.Frame(self.root)
-        container.pack(fill="both", expand=True)
-        canvas = tk.Canvas(container, highlightthickness=0,
-                           background=self.palette["bg"])
-        self.canvas = canvas
-        scroll = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        outer = ttk.Frame(canvas, padding=22, style="Page.TFrame")
-        outer.bind("<Configure>",
-                   lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
-        window = canvas.create_window((0, 0), window=outer, anchor="nw")
-        canvas.bind("<Configure>", lambda e: canvas.itemconfigure(window, width=e.width))
-        canvas.configure(yscrollcommand=scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
-        # Wheel and trackpad. Every platform reports this differently, and
-        # dividing the delta the way this used to meant a small trackpad
-        # movement on a Mac scrolled int(-1/3) = 0 units, so the window simply
-        # did not move.
-        for sequence in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
-            canvas.bind_all(sequence, self._on_wheel)
+        # No scrolling. Everything that has to be decided is on screen at once,
+        # in two columns: what to point it at on the left, what to get out of it
+        # on the right. A form you have to scroll through hides half the
+        # decisions, and the wheel behaviour was never going to be as good as
+        # simply not needing it.
+        outer = ttk.Frame(self.root, padding=22, style="Page.TFrame")
+        outer.pack(fill="both", expand=True)
         outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(2, weight=1)
 
         header = ttk.Frame(outer, style="Page.TFrame")
         header.grid(row=0, column=0, sticky="ew")
@@ -507,29 +464,42 @@ class App:
                             "dark": "Dark"}[self.theme_choice.get()])
         self.theme_box.pack(side="left")
         self.theme_box.bind("<<ComboboxSelected>>", self._on_theme_pick)
+
         ttk.Label(
             outer,
             text="Pulls the review comments out of your paper and writes them "
                  "somewhere you can read them. Everything stays on this "
                  "computer.",
-            style="PageHint.TLabel", font=self.font_small, wraplength=680,
+            style="PageHint.TLabel", font=self.font_small, wraplength=760,
             justify="left",
         ).grid(row=1, column=0, sticky="w", pady=(4, 12))
-        rule = tk.Frame(outer, height=1, background=self.palette["rule"])
-        rule.grid(row=1, column=0, sticky="sew", pady=(0, 0))
-        self._rule = rule
+        self._rule = tk.Frame(outer, height=1, background=self.palette["rule"])
+        self._rule.grid(row=1, column=0, sticky="sew")
 
         body = ttk.Frame(outer, style="Page.TFrame")
         body.grid(row=2, column=0, sticky="nsew")
-        body.columnconfigure(0, weight=1)
+        body.columnconfigure(0, weight=1, uniform="cols")
+        body.columnconfigure(1, weight=1, uniform="cols")
+        body.rowconfigure(0, weight=1)
 
-        self._build_step_paper(body)
-        self._build_step_signin(body)
-        self._build_step_save(body)
-        self._build_include(body)
-        self._build_actions(body)
-        self._build_status(body)
-        self._build_details(body)
+        left = ttk.Frame(body, style="Page.TFrame")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        right = ttk.Frame(body, style="Page.TFrame")
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+
+        self._build_step_paper(left)
+        self._build_step_signin(left)
+        self._build_step_save(left)
+        self._build_include(right, aside=left)
+
+        self._build_actions(outer, row=3)
+        self._build_status(outer, row=4)
+        self._build_details(outer, row=5)
+
+        # Size to the content, then let the user make it bigger but not so
+        # small that something is cut off with no way to reach it.
+        self.root.update_idletasks()
+        self.root.minsize(self.root.winfo_reqwidth(), self.root.winfo_reqheight())
 
     def _step_box(self, parent, number, title):
         box = self._card(parent, f"{number}  ·  {title}")
@@ -714,7 +684,7 @@ class App:
 
     # ---- what to include ----
 
-    def _build_include(self, parent) -> None:
+    def _build_include(self, parent, aside=None) -> None:
         box = self._card(parent, "What to include")
 
         cfg = self.config
@@ -777,14 +747,32 @@ class App:
             ]),
         ]
 
-        for title, rows in groups:
-            ttk.Label(box, text=title, style="Section.TLabel").pack(
-                anchor="w", pady=(10, 4))
+        def put(parent, title, rows):
+            ttk.Label(parent, text=title, style="Section.TLabel").pack(
+                anchor="w", pady=(8, 3))
             for var, label, tip in rows:
-                cb = ttk.Checkbutton(box, text=label, variable=var,
+                cb = ttk.Checkbutton(parent, text=label, variable=var,
                                      style="Card.TCheckbutton")
                 cb.pack(anchor="w", pady=1)
                 Tooltip(cb, tip, self)
+
+        # The documents are the real choice, so they get the full width. The
+        # two qualifying groups sit side by side underneath, which keeps the
+        # whole window short enough not to need scrolling.
+        by_title = {title: rows for title, rows in groups}
+        put(box, "Documents to write", by_title["Documents to write"])
+
+        # The two qualifying groups sit side by side underneath, which is what
+        # keeps the window short enough not to need scrolling. Giving each its
+        # own card cost more in padding than the pairing saved.
+        pair = ttk.Frame(box, style="Card.TFrame")
+        pair.pack(fill="x")
+        pair.columnconfigure(0, weight=1, uniform="opts")
+        pair.columnconfigure(1, weight=1, uniform="opts")
+        for i, title in enumerate(("Which comments", "How to write it")):
+            col = ttk.Frame(pair, style="Card.TFrame")
+            col.grid(row=0, column=i, sticky="nw")
+            put(col, title, by_title[title])
 
         who = ttk.Frame(box, style="Card.TFrame")
         who.pack(fill="x", pady=(12, 0))
@@ -798,9 +786,10 @@ class App:
 
     # ---- run ----
 
-    def _build_actions(self, parent) -> None:
-        row = ttk.Frame(parent, style="Page.TFrame")
-        row.pack(fill="x", pady=(2, 10))
+    def _build_actions(self, parent, row=None) -> None:
+        holder = ttk.Frame(parent, style="Page.TFrame")
+        holder.grid(row=row, column=0, sticky="ew", pady=(14, 8))
+        row = holder
         # sv_ttk ships an Accent button that already matches its theme, so use
         # that when it is there and fall back to our own colours when it is not.
         style_name = "Go.TButton"
@@ -831,24 +820,26 @@ class App:
                                           command=self._open_folder, state="disabled")
         self.open_folder_btn.pack(side="left")
 
-    def _build_status(self, parent) -> None:  # noqa: D401 - see below
-        box = ttk.Frame(parent)
-        box.pack(fill="x", pady=(0, 8))
+    def _build_status(self, parent, row=None) -> None:
+        box = ttk.Frame(parent, style="Page.TFrame")
+        box.grid(row=row, column=0, sticky="ew", pady=(0, 8))
         self.progress = ttk.Progressbar(box, mode="indeterminate")
-        self.progress.pack(fill="x")
-        self.status = ttk.Label(box, text="Fill in the three steps above, then "
-                                          "press Get my comments.",
+        self._progress_holder = box
+        self.status = ttk.Label(box, text="Fill in the left-hand side, then "
+                                          "press Export my comments.",
                                 font=self.font_status, wraplength=680, justify="left")
         self.status.pack(anchor="w", pady=(6, 0))
 
-    def _build_details(self, parent) -> None:
+    def _build_details(self, parent, row=None) -> None:
+        holder = ttk.Frame(parent, style="Page.TFrame")
+        holder.grid(row=row, column=0, sticky="ew")
         self.details_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(parent, text="Show technical details",
+        ttk.Checkbutton(holder, text="Show technical details",
                         variable=self.details_var,
                         command=self._toggle_details).pack(anchor="w")
-        self.details = ttk.Frame(parent)
+        self.details = ttk.Frame(holder)
         self.details.columnconfigure(0, weight=1)
-        self.log = tk.Text(self.details, height=12, wrap="word", state="disabled",
+        self.log = tk.Text(self.details, height=8, wrap="word", state="disabled",
                            font=self.font_mono, relief="flat", padx=10, pady=8,
                            borderwidth=0, highlightthickness=1,
                            highlightbackground=self.palette["rule"],
@@ -989,6 +980,7 @@ class App:
         self.stop_btn.pack(side="left", padx=8)
         self.open_md_btn.configure(state="disabled")
         self.open_folder_btn.configure(state="disabled")
+        self.progress.pack(fill="x", pady=(0, 4))
         self.progress.start(12)
         self._set_status("Working… this usually takes a few seconds.")
         self._append_log("-" * 60)
@@ -1072,6 +1064,7 @@ class App:
 
     def _on_cancelled(self) -> None:
         self.progress.stop()
+        self.progress.pack_forget()
         self.cancel_requested = False
         self.stop_btn.pack_forget()
         self.stop_btn.configure(state="normal")
@@ -1099,6 +1092,7 @@ class App:
     def _on_done(self, result: ExportResult) -> None:
         self.last_result = result
         self.progress.stop()
+        self.progress.pack_forget()
         self.stop_btn.pack_forget()
         self.run_btn.configure(state="normal")
         self.open_md_btn.configure(state="normal")
@@ -1140,6 +1134,7 @@ class App:
 
     def _on_error(self, err: BaseException, tb: str) -> None:
         self.progress.stop()
+        self.progress.pack_forget()
         self.stop_btn.pack_forget()
         self.cancel_requested = False
         self.run_btn.configure(state="normal")

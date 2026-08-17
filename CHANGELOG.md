@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.16.1] — 2026-08-18
+
+### Changed
+- **Nothing scrolls any more.** The window was one long scrolling form, so half
+  the decisions were always off screen and the wheel behaviour mattered. It is
+  two columns now: what to point it at on the left, what to get out of it on
+  the right, and the button along the bottom. Everything is visible at once,
+  and the window will not shrink below the size its contents need.
+- The progress bar is hidden until something is running. An idle indeterminate
+  bar reads as a stuck one.
+
+### Fixed
+- A test asserting that the paste-your-cookie box stays hidden was checking
+  `winfo_ismapped`, which is false for everything while the test window is
+  withdrawn, so it passed without ever testing anything. It now checks the
+  container that actually gets hidden.
+
 ## [0.16.0] — 2026-08-18
 
 ### Changed
@@ -474,7 +491,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.16.1
 [0.16.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.15.0
 [0.14.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.1
