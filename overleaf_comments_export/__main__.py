@@ -241,7 +241,10 @@ def main(argv: list[str] | None = None) -> int:
             return launch_gui()
         except Exception as e:
             # Typically TclError on a headless machine (SSH, server, container).
-            if "display" in str(e).lower() or type(e).__name__ == "TclError":
+            # Only an actual missing display. Treating every TclError as one
+            # hid a real layout bug behind advice about headless servers.
+            text = str(e).lower()
+            if "display" in text or "no $display" in text or "couldn't connect" in text:
                 print(
                     "There is no screen to open a window on.\n\n"
                     "This looks like a computer without a desktop (a server, or "

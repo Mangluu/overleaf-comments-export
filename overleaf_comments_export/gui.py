@@ -21,18 +21,51 @@ from .client import UserFacingError, parse_project_id
 from .export import ExportCancelled, ExportResult, run_export
 
 
+# Paper and ink. This is a tool for people working on a manuscript, so the
+# light theme is the warm off-white of printed paper rather than screen white,
+# and the text is the warm near-black of ink rather than pure black. The accent
+# is a muted scholarly green, close to Overleaf's own but calmer, because it
+# appears beside a lot of text and a saturated green would shout.
 PALETTES = {
     "light": {
-        "bg": "#ffffff", "fg": "#1a1a1a", "hint": "#666666",
-        "field_bg": "#ffffff", "ok": "#1a7f4b", "bad": "#b3261e",
-        "tip_bg": "#ffffe0", "tip_fg": "#222222",
+        "bg": "#F7F5F0",          # the page
+        "surface": "#FFFFFF",     # cards sitting on it
+        "fg": "#1C1B18",          # ink
+        "hint": "#6E6A61",        # pencil
+        "rule": "#E3DFD5",        # hairline
+        "field_bg": "#FFFFFF",
+        "accent": "#2E7D4F", "accent_fg": "#FFFFFF", "accent_soft": "#E8F1EA",
+        "ok": "#2E7D4F", "bad": "#A8352A", "warn": "#8A6A1F",
+        "tip_bg": "#FFFDF4", "tip_fg": "#2A2822",
     },
     "dark": {
-        "bg": "#1c1c1c", "fg": "#e6e6e6", "hint": "#a0a0a0",
-        "field_bg": "#2b2b2b", "ok": "#5ddb9a", "bad": "#ff8a80",
-        "tip_bg": "#3a3a2a", "tip_fg": "#f0f0e0",
+        "bg": "#141311",          # warm dark, not blue-black
+        "surface": "#232019",
+        "fg": "#EDE9E0",
+        "hint": "#9C968B",
+        "rule": "#332F2A",
+        "field_bg": "#2A2622",
+        "accent": "#5FB98A", "accent_fg": "#10241A", "accent_soft": "#243128",
+        "ok": "#5FB98A", "bad": "#E08C81", "warn": "#D2AC5E",
+        "tip_bg": "#2C2822", "tip_fg": "#EDE9E0",
     },
 }
+
+# A serif for the name, because this is a tool for people writing papers and a
+# serif says that before any of the words do. Each platform's best is tried in
+# turn, and Tk falls back on its own if none are installed.
+_SERIF_STACK = ("New York", "Iowan Old Style", "Palatino", "Georgia",
+                "Charter", "Times New Roman", "serif")
+_MONO_STACK = ("SF Mono", "Menlo", "Cascadia Mono", "Consolas",
+               "DejaVu Sans Mono", "monospace")
+
+
+def _first_installed(root, families: tuple[str, ...]) -> str:
+    available = {f.lower() for f in tkfont.families(root)}
+    for name in families:
+        if name.lower() in available:
+            return name
+    return families[-1]
 
 
 def detect_system_theme() -> str:
@@ -274,7 +307,9 @@ class App:
         try:
             import sv_ttk  # type: ignore
             sv_ttk.set_theme(mode)
+            self.themed = True
         except Exception:
+            self.themed = False
             try:
                 style = ttk.Style()
                 for preferred in ("aqua", "vista", "clam"):
@@ -286,20 +321,51 @@ class App:
 
         if not hasattr(self, "font_title"):
             base = tkfont.nametofont("TkDefaultFont")
-            size = base.cget("size") or 12
-            self.font_title = base.copy()
-            self.font_title.configure(size=size + 4, weight="bold")
+            size = abs(base.cget("size") or 13)
+            # A real hierarchy. Everything used to sit within two points of
+            # everything else, which is why nothing stood out.
+            self.font_title = tkfont.Font(
+                family=_first_installed(self.root, _SERIF_STACK),
+                size=size + 12, weight="normal")
+            self.font_section = base.copy()
+            self.font_section.configure(size=size, weight="bold")
+            self.font_label = base.copy()
             self.font_small = base.copy()
-            self.font_small.configure(size=max(9, abs(size) - 1))
+            self.font_small.configure(size=max(9, size - 2))
             self.font_status = base.copy()
-            self.font_status.configure(size=size + 1)
+            self.font_status.configure(size=size)
+            self.font_mono = tkfont.Font(
+                family=_first_installed(self.root, _MONO_STACK), size=max(9, size - 2))
 
         # Hint text is one shared style, so a theme change repaints all of it
         # at once instead of chasing every label.
+        p = self.palette
         style = ttk.Style()
-        style.configure("Hint.TLabel", foreground=self.palette["hint"])
-        style.configure("Ok.TLabel", foreground=self.palette["ok"])
-        style.configure("Bad.TLabel", foreground=self.palette["bad"])
+        style.configure("Hint.TLabel", foreground=p["hint"], background=p["surface"])
+        style.configure("Ok.TLabel", foreground=p["ok"], background=p["surface"])
+        style.configure("Bad.TLabel", foreground=p["bad"], background=p["surface"])
+        # Cards are a surface colour and generous padding, with no border.
+        # Borders around every group were most of what made this look busy.
+        style.configure("Card.TFrame", background=p["surface"])
+        style.configure("Page.TFrame", background=p["bg"])
+        style.configure("Card.TLabel", background=p["surface"], foreground=p["fg"])
+        style.configure("Title.TLabel", background=p["bg"], foreground=p["fg"],
+                        font=self.font_title)
+        style.configure("Section.TLabel", background=p["surface"], foreground=p["fg"],
+                        font=self.font_section)
+        style.configure("PageHint.TLabel", background=p["bg"], foreground=p["hint"])
+        style.configure("Card.TCheckbutton", background=p["surface"], foreground=p["fg"])
+        style.configure("Card.TRadiobutton", background=p["surface"], foreground=p["fg"])
+        # The one button that matters gets the accent; everything else stays quiet.
+        style.configure("Go.TButton", font=self.font_section)
+        try:
+            style.configure("Go.TButton", background=p["accent"],
+                            foreground=p["accent_fg"])
+            style.map("Go.TButton",
+                      background=[("active", p["accent"]), ("disabled", p["rule"])],
+                      foreground=[("disabled", p["hint"])])
+        except tk.TclError:
+            pass
 
         # Classic tk widgets are not themed by ttk, so they need doing by hand.
         for widget, opts in (
@@ -308,7 +374,10 @@ class App:
             (getattr(self, "log", None),
              {"background": self.palette["field_bg"],
               "foreground": self.palette["fg"],
-              "insertbackground": self.palette["fg"]}),
+              "insertbackground": self.palette["fg"],
+              "highlightbackground": self.palette["rule"]}),
+            (getattr(self, "_rule", None),
+             {"background": self.palette["rule"]}),
         ):
             if widget is not None:
                 try:
@@ -332,6 +401,34 @@ class App:
         # Repaint the bits that carry a colour of their own.
         if hasattr(self, "url_status"):
             self._validate_url()
+
+    def _card(self, parent, title: str | None = None):
+        """A section as a card: a surface, generous padding, and no border.
+
+        Every group used to be a ttk.LabelFrame, and a dozen boxed outlines
+        stacked down the window was most of what made this look cluttered.
+        Space and a heading separate things perfectly well.
+        """
+        wrap = ttk.Frame(parent, style="Page.TFrame")
+        wrap.pack(fill="x", pady=(0, 14))
+        card = ttk.Frame(wrap, style="Card.TFrame", padding=18)
+        card.pack(fill="x")
+        if title:
+            ttk.Label(card, text=title, style="Section.TLabel").pack(
+                anchor="w", pady=(0, 10))
+        # The contents get their own frame, so a caller can use grid or pack
+        # as it likes. Tk refuses to have both inside one container, and the
+        # heading above is packed.
+        body = ttk.Frame(card, style="Card.TFrame")
+        body.pack(fill="both", expand=True)
+        return body
+
+    def _hint_in(self, parent, text: str):
+        """A quiet line of explanation under whatever it belongs to."""
+        label = ttk.Label(parent, text=text, style="Hint.TLabel",
+                          font=self.font_small, wraplength=620, justify="left")
+        label.pack(anchor="w", pady=(3, 0))
+        return label
 
     def _hint(self, parent, text, row, col=1, span=2):
         lbl = ttk.Label(parent, text=text, style="Hint.TLabel", font=self.font_small,
@@ -377,7 +474,7 @@ class App:
                            background=self.palette["bg"])
         self.canvas = canvas
         scroll = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        outer = ttk.Frame(canvas, padding=16)
+        outer = ttk.Frame(canvas, padding=22, style="Page.TFrame")
         outer.bind("<Configure>",
                    lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
         window = canvas.create_window((0, 0), window=outer, anchor="nw")
@@ -393,15 +490,15 @@ class App:
             canvas.bind_all(sequence, self._on_wheel)
         outer.columnconfigure(0, weight=1)
 
-        header = ttk.Frame(outer)
+        header = ttk.Frame(outer, style="Page.TFrame")
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
         ttk.Label(header, text="Overleaf Comments Export",
-                  font=self.font_title).grid(row=0, column=0, sticky="w")
+                  style="Title.TLabel").grid(row=0, column=0, sticky="w")
 
-        appearance = ttk.Frame(header)
+        appearance = ttk.Frame(header, style="Page.TFrame")
         appearance.grid(row=0, column=1, sticky="e")
-        ttk.Label(appearance, text="Appearance:", style="Hint.TLabel",
+        ttk.Label(appearance, text="Appearance", style="PageHint.TLabel",
                   font=self.font_small).pack(side="left", padx=(0, 6))
         self.theme_box = ttk.Combobox(
             appearance, state="readonly", width=13,
@@ -415,11 +512,14 @@ class App:
             text="Pulls the review comments out of your paper and writes them "
                  "somewhere you can read them. Everything stays on this "
                  "computer.",
-            style="Hint.TLabel", font=self.font_small, wraplength=680,
+            style="PageHint.TLabel", font=self.font_small, wraplength=680,
             justify="left",
-        ).grid(row=1, column=0, sticky="w", pady=(2, 14))
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
+        rule = tk.Frame(outer, height=1, background=self.palette["rule"])
+        rule.grid(row=1, column=0, sticky="sew", pady=(0, 0))
+        self._rule = rule
 
-        body = ttk.Frame(outer)
+        body = ttk.Frame(outer, style="Page.TFrame")
         body.grid(row=2, column=0, sticky="nsew")
         body.columnconfigure(0, weight=1)
 
@@ -432,7 +532,7 @@ class App:
         self._build_details(body)
 
     def _step_box(self, parent, number, title):
-        box = ttk.LabelFrame(parent, text=f" {number}. {title} ", padding=12)
+        box = self._card(parent, f"{number}  ·  {title}")
         box.pack(fill="x", pady=(0, 12))
         box.columnconfigure(1, weight=1)
         return box
@@ -615,10 +715,7 @@ class App:
     # ---- what to include ----
 
     def _build_include(self, parent) -> None:
-        box = ttk.LabelFrame(parent, text="  What to include  ", padding=12)
-        box.pack(fill="x", pady=(0, 12))
-        for i in (0, 1):
-            box.columnconfigure(i, weight=1)
+        box = self._card(parent, "What to include")
 
         cfg = self.config
         self.include_open_var = tk.BooleanVar(value=bool(cfg.get("include_open", True)))
@@ -634,72 +731,87 @@ class App:
         self.write_jsonl_var = tk.BooleanVar(value=bool(cfg.get("write_jsonl", True)))
         self.include_raw_var = tk.BooleanVar(value=bool(cfg.get("include_raw", False)))
 
-        rows = [
-            (self.include_open_var, "Comments still open",
-             "Comments nobody has marked as done yet."),
-            (self.include_resolved_var, "Comments marked done",
-             "Threads someone already ticked off in Overleaf."),
-            (self.include_changes_var, "Tracked changes",
-             "Text people inserted or deleted with Track Changes on. Needs "
-             "Overleaf Premium, or Server Pro if self-hosted."),
-            (self.response_letter_var, "A reply letter to fill in",
-             "Writes response-letter.md, a point-by-point document with a "
-             "blank space under each comment for your answer."),
-            (self.per_reviewer_var, "A separate file per person",
-             "One file for each person who commented, so you can work through "
-             "them one at a time."),
-            (self.annotated_pdf_var, "A PDF of the paper with the comments in it",
-             "Writes commented.pdf: your paper exactly as Overleaf builds it, "
-             "with each comment highlighted on the words it was written about, "
-             "coloured by who wrote it. Hover a highlight to read the comment. "
-             "Nothing to install and nothing to compile. Open the result in a "
-             "web browser: Preview on a Mac shows the highlights but not the "
-             "comments."),
-            (self.annotated_var, "The LaTeX source with the comments in it",
-             "Writes a copy of your LaTeX into a folder called annotated, with "
-             "the commented words highlighted in the colour of whoever "
-             "commented on them. Compile it, upload it to Overleaf or build it "
-             "on your computer, and hovering a highlight shows the comment. "
-             "Every comment is also listed on a page at the end. Your own "
-             "files are never touched."),
-            (self.include_source_var, "The text of the commented files",
-             "Writes source/, the full text of every file that has a comment "
-             "in it. An assistant can then read the whole paragraph a comment "
-             "is about, instead of the few words either side of it."),
-            (self.stable_var, "Keep it tidy for version control",
-             "Writes one file that only changes when the comments change, so "
-             "it can live in a git repository without noise."),
-            (self.detailed_var, "Show more of the surrounding text",
-             "More of the sentence around each comment, on several lines."),
-            (self.write_jsonl_var, "Also write the data file for other tools",
-             "comments.jsonl, one comment per line. Harmless to leave on."),
-            (self.include_raw_var, "Include the raw data from Overleaf",
-             "Only useful for reporting a problem. Makes the file much bigger."),
+        # Three named groups rather than twelve boxes in a grid. The old list
+        # put "Keep it tidy for version control" next to "A PDF of the paper",
+        # which are not the same kind of decision at all.
+        groups = [
+            ("Which comments", [
+                (self.include_open_var, "Still open",
+                 "Comments nobody has marked as done yet."),
+                (self.include_resolved_var, "Marked done",
+                 "Threads someone already ticked off in Overleaf."),
+                (self.include_changes_var, "Tracked changes",
+                 "Text people inserted or deleted with Track Changes on. Needs "
+                 "Overleaf Premium, or Server Pro if self-hosted."),
+            ]),
+            ("Documents to write", [
+                (self.annotated_pdf_var, "The paper, with comments highlighted in it",
+                 "Writes commented.pdf: your paper exactly as Overleaf builds "
+                 "it, with each comment highlighted on the words it was written "
+                 "about, coloured by who wrote it. Nothing to install and "
+                 "nothing to compile. Open it in a web browser: Preview on a "
+                 "Mac shows the highlights but not the comments."),
+                (self.response_letter_var, "A reply letter to fill in",
+                 "response-letter.md, a point-by-point document with a blank "
+                 "space under each comment for your answer."),
+                (self.per_reviewer_var, "One file per person",
+                 "So you can work through one reviewer at a time."),
+                (self.annotated_var, "The LaTeX, with comments in it",
+                 "A copy of your source with the commented words highlighted, "
+                 "to compile yourself. Your own files are never touched."),
+                (self.include_source_var, "The text of the commented files",
+                 "source/, the full text of every file that has a comment in "
+                 "it, so an assistant can read the whole paragraph rather than "
+                 "the few words either side."),
+            ]),
+            ("How to write it", [
+                (self.stable_var, "Tidy for version control",
+                 "One file that only changes when the comments change, so it "
+                 "can live in a git repository without noise."),
+                (self.detailed_var, "More of the surrounding text",
+                 "More of the sentence around each comment, on several lines."),
+                (self.write_jsonl_var, "The data file for other tools",
+                 "comments.jsonl, one comment per line. Harmless to leave on."),
+                (self.include_raw_var, "The raw data from Overleaf",
+                 "Only useful for reporting a problem. Makes the file bigger."),
+            ]),
         ]
-        for i, (var, label, tip) in enumerate(rows):
-            cb = ttk.Checkbutton(box, text=label, variable=var)
-            cb.grid(row=i // 2, column=i % 2, sticky="w", pady=2, padx=(0, 12))
-            Tooltip(cb, tip, self)
 
-        ttk.Label(box, text="Only these people (optional):").grid(
-            row=len(rows) // 2 + 1, column=0, sticky="w", pady=(10, 2))
+        for title, rows in groups:
+            ttk.Label(box, text=title, style="Section.TLabel").pack(
+                anchor="w", pady=(10, 4))
+            for var, label, tip in rows:
+                cb = ttk.Checkbutton(box, text=label, variable=var,
+                                     style="Card.TCheckbutton")
+                cb.pack(anchor="w", pady=1)
+                Tooltip(cb, tip, self)
+
+        who = ttk.Frame(box, style="Card.TFrame")
+        who.pack(fill="x", pady=(12, 0))
+        ttk.Label(who, text="Only these people", style="Card.TLabel").pack(anchor="w")
         self.reviewer_filter_var = tk.StringVar(value=self.config.get("reviewer_filter", ""))
-        ent = ttk.Entry(box, textvariable=self.reviewer_filter_var)
-        ent.grid(row=len(rows) // 2 + 1, column=1, sticky="ew", pady=(10, 2))
-        Tooltip(ent, "Type part of a name or email to keep only their comments. "
+        ent = ttk.Entry(who, textvariable=self.reviewer_filter_var)
+        ent.pack(fill="x", pady=(3, 0))
+        Tooltip(ent, "Part of a name or email keeps only their comments. "
                      "Separate several with commas. Leave empty for everybody.", self)
+        self._hint_in(who, "Leave empty to include everyone who commented.")
 
     # ---- run ----
 
     def _build_actions(self, parent) -> None:
-        row = ttk.Frame(parent)
-        row.pack(fill="x", pady=(4, 8))
-        self.run_btn = ttk.Button(row, text="Get my comments", command=self._on_run)
-        self.run_btn.pack(side="left")
+        row = ttk.Frame(parent, style="Page.TFrame")
+        row.pack(fill="x", pady=(2, 10))
+        # sv_ttk ships an Accent button that already matches its theme, so use
+        # that when it is there and fall back to our own colours when it is not.
+        style_name = "Go.TButton"
         try:
-            self.run_btn.configure(style="Accent.TButton")
+            ttk.Style().layout("Accent.TButton")
+            style_name = "Accent.TButton"
         except tk.TclError:
-            pass
+            pass                       # no sv_ttk here, our own colours stand in
+        self.run_btn = ttk.Button(row, text="Export my comments",
+                                  command=self._on_run, style=style_name)
+        self.run_btn.pack(side="left")
         self.doctor_btn = ttk.Button(row, text="Check my setup",
                                      command=self._on_doctor)
         self.doctor_btn.pack(side="right")
@@ -719,7 +831,7 @@ class App:
                                           command=self._open_folder, state="disabled")
         self.open_folder_btn.pack(side="left")
 
-    def _build_status(self, parent) -> None:
+    def _build_status(self, parent) -> None:  # noqa: D401 - see below
         box = ttk.Frame(parent)
         box.pack(fill="x", pady=(0, 8))
         self.progress = ttk.Progressbar(box, mode="indeterminate")
@@ -737,7 +849,9 @@ class App:
         self.details = ttk.Frame(parent)
         self.details.columnconfigure(0, weight=1)
         self.log = tk.Text(self.details, height=12, wrap="word", state="disabled",
-                           font=self.font_small,
+                           font=self.font_mono, relief="flat", padx=10, pady=8,
+                           borderwidth=0, highlightthickness=1,
+                           highlightbackground=self.palette["rule"],
                            background=self.palette["field_bg"],
                            foreground=self.palette["fg"],
                            insertbackground=self.palette["fg"])

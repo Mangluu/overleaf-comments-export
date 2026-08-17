@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.16.0] — 2026-08-18
+
+### Changed
+- **The window was redesigned.** It read as a form with a dozen boxed outlines
+  stacked down it, and everything was set within two points of everything else,
+  so nothing stood out.
+
+  It is paper and ink now. The light theme is the warm off-white of a printed
+  page rather than screen white, the text is the warm near-black of ink, and
+  the accent is a muted scholarly green. The name is set in a serif, because
+  this is a tool for people writing papers and a serif says so before any of
+  the words do.
+
+  Sections are cards, which are a surface and generous space rather than a
+  border, since a dozen outlines was most of what made it look busy. The twelve
+  options are now three named groups, because "Keep it tidy for version
+  control" and "A PDF of the paper" were sitting side by side as though they
+  were the same kind of decision. The technical log is set in a monospaced
+  face, which is what it always wanted.
+
+### Fixed
+- A `TclError` while the window was being built was reported as "there is no
+  screen to open a window on", which is advice about headless servers and had
+  nothing to do with the actual fault. Only a genuinely missing display says
+  that now.
+
 ## [0.15.0] — 2026-08-17
 
 ### Added
@@ -448,7 +474,8 @@ First public release.
 - Compact and detailed rendering modes.
 - Tkinter GUI.
 
-[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Mangluu/overleaf-comments-export/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.15.0
 [0.14.1]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.1
 [0.14.0]: https://github.com/Mangluu/overleaf-comments-export/releases/tag/v0.14.0
