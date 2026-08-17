@@ -100,7 +100,7 @@ test("assembles comments, replies, resolved threads, changes, and output formats
   assert.equal(exported.payload.comments[0].created_at, "2023-11-14T22:13:20.000Z");
   assert.equal(exported.payload.comments[0].last_activity_at, "2023-11-14T22:13:21.000Z");
   assert.equal(exported.payload.comments[0].nearest_heading, "Introduction");
-  assert.equal(exported.payload.tracked_changes[0].occurred_at, "2023-11-14T22:13:23.000Z");
+  assert.equal(exported.payload.tracked_changes[0].timestamp, "2023-11-14T22:13:23.000Z");
   assert.deepEqual(exported.payload.orphan_thread_ids, ["threadResolved"]);
   assert.match(exported.markdown, /Please define this term\./);
   assert.match(exported.markdown, /Commented: 2023-11-14 22:13 UTC/);

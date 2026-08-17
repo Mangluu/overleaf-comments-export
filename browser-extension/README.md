@@ -61,7 +61,7 @@ overleaf-comments/My Paper/2026-08-12T14-35-27Z/
 
 其中 `Z` 表示 UTC。每次导出都会创建独立时间目录，避免混淆或覆盖上次结果。
 Markdown 和回复信会明确显示每条评论及修订记录的时间；JSON/JSONL 中的评论包含
-`created_at` 和 `last_activity_at`，修订记录包含 `timestamp` 和 `occurred_at`。
+`created_at` 和 `last_activity_at`，修订记录包含 `timestamp`。
 
 ## 权限说明
 
@@ -153,7 +153,7 @@ overleaf-comments/My Paper/2026-08-12T14-35-27Z/
 `Z` denotes UTC. Every run gets a separate timestamped directory. Markdown and
 response letters show the time of each comment and tracked change explicitly.
 In JSON/JSONL, comments contain `created_at` and `last_activity_at`; tracked
-changes contain `timestamp` and the explicit alias `occurred_at`.
+changes contain `timestamp`.
 
 ### Permissions
 

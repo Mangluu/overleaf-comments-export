@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "overleaf-comments-export"
-version = "0.18.0"
+version = "0.18.1"
 description = "Export comment threads and tracked changes from an Overleaf project to Markdown + JSON, optimized for AI-agent consumption."
 readme = "README.md"
 license = { text = "MIT" }
@@ -65,6 +65,10 @@ pdf = [
 test = [
     "pytest>=8.0",
     "pymupdf>=1.24",
+    # Only so the workflow files can be checked for being parseable. A broken
+    # one shows up in the Actions list as a filename with no log, which is
+    # easy to miss and means nothing ran.
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]

@@ -72,19 +72,11 @@ jobs:
         env:
           OCE_GUI_TESTS: "1"
         run: |
-          RUN=""
-          [ "$RUNNER_OS" = "Linux" ] && RUN="xvfb-run -a"
-          $RUN python -c "
-import tkinter as tk
-from overleaf_comments_export.gui import App
-root = tk.Tk()
-App(root)
-root.update_idletasks()
-w, h = root.winfo_reqwidth(), root.winfo_reqheight()
-print(f'window asks for {w} x {h}')
-assert w > 400 and h > 300, 'the window came up empty'
-root.destroy()
-"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a python tests/smoke_window.py
+          else
+            python tests/smoke_window.py
+          fi
 
   build:
     name: Build sdist + wheel

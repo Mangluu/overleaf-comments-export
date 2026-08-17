@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.18.1] — 2026-08-18
+
+### Fixed
+- **The CI workflow I added in 0.18.0 was not valid YAML**, so it never ran.
+  An unparseable workflow does not fail loudly: it shows up in the Actions
+  list under its filename instead of its name, with no log, and everything it
+  was meant to check silently does not happen. The window smoke check is now
+  a file rather than a script inlined into the YAML, which is what broke it,
+  and `tests/test_workflows.py` parses every workflow so this cannot ship
+  again.
+- **The browser extension's own test suite was broken by the 0.18.0 schema
+  work.** `occurred_at` was removed as an unread duplicate of `timestamp`,
+  which it is in the extension's source, but its test asserted it and both
+  READMEs documented it. The test and the docs now say `timestamp`.
+
 ## [0.18.0] — 2026-08-18
 
 Everything here came out of an external code review. All of it was live, and
