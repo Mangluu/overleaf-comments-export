@@ -888,11 +888,6 @@ def _parse_cookie_string(pasted: str) -> dict[str, str]:
     return out or {"overleaf_session2": s}
 
 
-def looks_self_hosted(base_url: str) -> bool:
-    host = urlparse(base_url).hostname or ""
-    return not host.endswith("overleaf.com")
-
-
 def _decode_meta_content(raw: str) -> Any:
     """Best-effort decode of a <meta content="..."> value.
 

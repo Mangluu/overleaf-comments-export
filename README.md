@@ -216,6 +216,17 @@ change.
 
 Run `overleaf-comments-export --help` for the full list.
 
+A cookie passed as `--cookie` goes into your shell history, and on most systems
+it is visible to anyone who can run `ps` while the export is going. It is a live
+session, so prefer the environment variable, which the tool reads on its own:
+
+```bash
+OVERLEAF_SESSION="paste it here" overleaf-comments-export --project-url https://...
+```
+
+The window stores it only if you tick the box, in a file only your account can
+read.
+
 ## Stopping an export
 
 Press Stop in the window, or Ctrl-C on the command line. Nothing is written

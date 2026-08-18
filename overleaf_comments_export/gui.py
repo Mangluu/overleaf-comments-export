@@ -450,13 +450,6 @@ class App:
         body.pack(fill="both", expand=True)
         return body
 
-    def _hint_in(self, parent, text: str):
-        """A quiet line of explanation under whatever it belongs to."""
-        label = ttk.Label(parent, text=text, style="Hint.TLabel",
-                          font=self.font_small, wraplength=380, justify="left")
-        label.pack(anchor="w", pady=(3, 0))
-        return label
-
     def _hint(self, parent, text, row, col=1, span=2):
         lbl = ttk.Label(parent, text=text, style="Hint.TLabel", font=self.font_small,
                         wraplength=380, justify="left")

@@ -80,6 +80,12 @@ def to_ascii(text: str) -> str:
     so nothing beyond ASCII may reach the file. Real reviewer comments contain
     all of these.
     """
+    # Most text is already ASCII, and everything below it is a no-op on such a
+    # string: 52 whole-string replaces of characters that cannot be there, a
+    # normalize, and two passes over every character. This is the hottest
+    # function in an export by some way, so the cheap check earns its line.
+    if text.isascii():
+        return text
     for bad, good in _UNICODE_FOLD.items():
         text = text.replace(bad, good)
     for bad, good in _GREEK.items():

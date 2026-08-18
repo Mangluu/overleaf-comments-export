@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.18.4] — 2026-08-18
+
+From an end-to-end audit of the whole repository.
+
+### Changed
+- **Exports do about half the work they used to.** `to_ascii` runs on every
+  comment and every line of source that goes into the annotated LaTeX, and it
+  did 52 whole-string replaces, a Unicode normalize and two passes over every
+  character before discovering the text was plain ASCII, which almost all of
+  it is. It now returns immediately in that case. On a 500-comment paper an
+  export goes from 0.31s to 0.13s of local work, and from 2.6 million
+  function calls to 314 thousand. Output is byte for byte identical, with a
+  test for both paths.
+
+### Removed
+- Two functions nothing called: `gui._hint_in` and `client.looks_self_hosted`.
+
+### Documentation
+- `OVERLEAF_SESSION` was supported and undocumented. It is the safer way to
+  pass a session, since `--cookie` puts a live credential into your shell
+  history and into the process list. The README now says so and shows it.
+
 ## [0.18.3] — 2026-08-18
 
 ### Removed

@@ -235,3 +235,19 @@ def test_a_whole_annotated_document_is_ascii():
     threads = _t(content="η² was .21？ café \U0001f60a")
     out, _ = annotate_document("The result here", [_c("C001", 0, "The result")], threads)
     assert out.isascii()
+
+
+def test_ascii_text_takes_the_fast_path_and_is_unchanged():
+    """to_ascii is the hottest function in an export. The early return has to
+    give byte-identical output, or it trades correctness for speed."""
+    from overleaf_comments_export.annotate import to_ascii
+    plain = "Break this up. 50% of \\alpha & <b> ~ #1 {x} ^2 _y"
+    assert plain.isascii()
+    assert to_ascii(plain) == plain
+
+
+def test_non_ascii_still_folds():
+    from overleaf_comments_export.annotate import to_ascii
+    out = to_ascii("Prüfen Sie ρ und σ — 请检查")
+    assert out.isascii(), out
+    assert "Prufen" in out and "rho" in out and "sigma" in out
