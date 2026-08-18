@@ -18,15 +18,23 @@ logger = logging.getLogger(__name__)
 def _ensure_ca_bundle() -> None:
     """Give Python a set of root certificates when it has none.
 
-    `requests` carries its own, so our HTTP calls always work. Anything using
-    Python's default settings does not, and on a Mac where Python was installed
-    without running "Install Certificates.command" the default store is empty,
-    so every one of those connections fails to verify. That is what makes the
-    file tree fetch fail, which is why exported files end up named after a
-    document id instead of `main.tex`.
+    `requests` carries its own, so our HTTP calls always work whatever the
+    system store holds. The one that does not is the socket.io connection
+    pyoverleaf opens for the file tree: `websocket.create_connection` goes
+    through Python's `ssl` module and therefore the system store. On a Mac
+    where Python was installed without running "Install Certificates.command"
+    that store is empty, so the connection fails to verify, the file tree
+    never arrives, and exported files end up named after a document id
+    instead of `main.tex`.
 
-    Only done when the store is genuinely empty. A machine behind a corporate
-    proxy has its own roots loaded, and replacing them would break it.
+    This sets an environment variable, which every library in the process
+    reads, and that is deliberate rather than careless. The failing call is
+    inside a dependency and takes no bundle argument, so pointing our own
+    session at certifi would not reach it. It is also only ever done when the
+    store is genuinely empty, which means nothing in the process was verifying
+    successfully in the first place, so this cannot break something that
+    worked. A machine behind a corporate proxy has its own roots loaded and is
+    left alone, as is anyone who set SSL_CERT_FILE themselves.
     """
     if os.environ.get("SSL_CERT_FILE") or os.environ.get("SSL_CERT_DIR"):
         return

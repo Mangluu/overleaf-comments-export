@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from overleaf_comments_export.client import (
@@ -121,3 +123,50 @@ def test_flatten_files_empty_calls_debug_logger():
     captured = []
     OverleafClient().flatten_files({}, debug_logger=lambda *a, **k: captured.append(a))
     assert captured  # should have invoked the logger with a preview
+
+
+# --- the root certificate fallback (issue #10) -----------------------------
+
+def test_the_cert_fallback_leaves_a_working_python_alone(monkeypatch):
+    """A machine behind a corporate proxy has its own roots loaded. Replacing
+    them would break it, so a non-empty store is never touched."""
+    import ssl as ssl_mod
+    from overleaf_comments_export import client as mod
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+
+    class Ctx:
+        def cert_store_stats(self):
+            return {"x509_ca": 140}
+
+    monkeypatch.setattr(ssl_mod, "create_default_context", lambda: Ctx())
+    mod._ensure_ca_bundle()
+    assert "SSL_CERT_FILE" not in os.environ
+
+
+def test_a_cert_file_the_user_already_set_is_never_replaced(monkeypatch):
+    from overleaf_comments_export import client as mod
+
+    monkeypatch.setenv("SSL_CERT_FILE", "/their/own/bundle.pem")
+    mod._ensure_ca_bundle()
+    assert os.environ["SSL_CERT_FILE"] == "/their/own/bundle.pem"
+
+
+def test_an_empty_store_gets_certifi(monkeypatch):
+    """The case that broke real exports: filenames came out as document ids
+    because the file tree connection could not verify anything."""
+    import ssl as ssl_mod
+    from overleaf_comments_export import client as mod
+
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+
+    class Empty:
+        def cert_store_stats(self):
+            return {"x509_ca": 0}
+
+    monkeypatch.setattr(ssl_mod, "create_default_context", lambda: Empty())
+    mod._ensure_ca_bundle()
+    import certifi
+    assert os.environ.get("SSL_CERT_FILE") == certifi.where()
