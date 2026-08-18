@@ -4,6 +4,45 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-08-18
+
+Issues filed from the end-to-end audit, fixed one at a time.
+
+### Fixed
+- **The built PDF is only fetched from the site you signed in to** (#8). The
+  compile reply names the host to download from, and it was used as given.
+  It is the one value in any response that decides where an authenticated
+  request goes. Checked against the site now, with anything else ignored and
+  logged.
+
+  Compared against the site rather than the exact host, because Overleaf's
+  real answer is a sibling of `www` and not a child of it: signed in to
+  `www.overleaf.com`, the build comes back on `clsi-a1b2.overleaf.com`. The
+  first version compared full hosts and would have broken every real PDF
+  download; the test caught it before it shipped.
+- **Settings that cannot be saved say so** (#9). It used to fail in silence,
+  so every box came back empty next time with no explanation and nothing in
+  the log. It still never raises, since an export does not need the settings
+  file, but it now logs the reason and says so once in the window. It also
+  creates the settings folder if it is missing, which it never did.
+- **Closing the window no longer leaves a stray callback.** The queue pump
+  rescheduled itself every 80ms and nothing cancelled it, so shutting the
+  window fired one more callback against widgets that were gone and Tk
+  reported `invalid command name ..._pump_queue`.
+
+### Documented
+- Why the root certificate fallback sets an environment variable (#10). The
+  call that fails is `websocket.create_connection` inside pyoverleaf, which
+  goes through Python's `ssl` module and takes no bundle argument, so
+  nothing set on a requests session reaches it. It also only fires when the
+  store is empty, meaning nothing in that process was verifying anyway.
+  Closed without a code change, with three tests holding the guard.
+
+### Known
+- The short-screen window limit (#11) is still open. A second attempt at a
+  scroller was reverted. The issue records what was measured and where the
+  next attempt should start.
+
 ## [0.18.4] — 2026-08-18
 
 From an end-to-end audit of the whole repository.
