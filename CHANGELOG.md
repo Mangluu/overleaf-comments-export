@@ -4,6 +4,21 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.21.1] — 2026-08-18
+
+### Fixed
+- **The new scenario matrix failed on Windows, and it was the matrix's own
+  fault.** It runs the extension's core in node and read its output with
+  `text=True`, which decodes with the locale encoding, and that is cp1252 on
+  Windows. One scenario deliberately carries Greek and Chinese to catch
+  exactly this class of thing, and the first thing it caught was the test
+  that runs it.
+- A rule now fails the build for any `subprocess` call that decodes with the
+  locale encoding instead of naming one. It immediately found two more, in
+  the theme detection. Neither was reachable on Windows, which reads the
+  theme from the registry rather than a subprocess, so neither was a live
+  bug, but both now name their encoding.
+
 ## [0.21.0] — 2026-08-18
 
 The three worthwhile items from the second review's architecture list.

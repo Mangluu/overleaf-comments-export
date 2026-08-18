@@ -68,8 +68,12 @@ def scenario(request, scenarios) -> dict:
 
 @pytest.fixture()
 def extension_run(scenario) -> dict:
+    # encoding named, not text=True. On Windows text=True decodes with the
+    # locale encoding, which is cp1252, and one scenario deliberately carries
+    # Greek and Chinese. That scenario exists precisely to catch this class of
+    # thing, and the first thing it caught was this test.
     proc = subprocess.run(["node", str(RUNNER), scenario["name"]],
-                          capture_output=True, text=True)
+                          capture_output=True, encoding="utf-8")
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
 

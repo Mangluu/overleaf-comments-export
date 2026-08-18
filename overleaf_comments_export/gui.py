@@ -78,7 +78,7 @@ def detect_system_theme() -> str:
         if sys.platform == "darwin":
             out = subprocess.run(
                 ["defaults", "read", "-g", "AppleInterfaceStyle"],
-                capture_output=True, text=True, timeout=3,
+                capture_output=True, encoding="utf-8", errors="replace", timeout=3,
             )
             # The key only exists in dark mode; reading it fails in light mode.
             return "dark" if "dark" in out.stdout.strip().lower() else "light"
@@ -92,7 +92,7 @@ def detect_system_theme() -> str:
             return "light" if light else "dark"
         out = subprocess.run(
             ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True, encoding="utf-8", errors="replace", timeout=3,
         )
         return "dark" if "dark" in out.stdout.lower() else "light"
     except Exception:

@@ -135,3 +135,29 @@ def test_nothing_reads_or_writes_text_without_naming_an_encoding():
         "these read or write text without naming an encoding, which breaks on "
         f"Windows: {', '.join(offenders)}"
     )
+
+
+def test_no_subprocess_decodes_with_the_locale_encoding():
+    """`text=True` decodes a child process's output with the locale encoding,
+    which is cp1252 on Windows. Every CI failure this project has had on
+    Windows has been some version of that, so it is worth a rule rather than
+    another round trip through CI."""
+    import ast
+
+    offenders = []
+    for path in sorted((Path(__file__).resolve().parent.parent).rglob("*.py")):
+        if ".venv" in path.parts or "node_modules" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", getattr(node.func, "id", ""))
+            if name not in ("run", "check_output", "Popen"):
+                continue
+            kwargs = {k.arg for k in node.keywords}
+            if "text" in kwargs and "encoding" not in kwargs:
+                offenders.append(f"{path.name}:{node.lineno}")
+    assert not offenders, (
+        "these decode a child process with the locale encoding; name "
+        f"encoding='utf-8' instead of text=True: {offenders}")
