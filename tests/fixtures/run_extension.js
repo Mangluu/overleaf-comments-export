@@ -22,4 +22,7 @@ const out = core.assembleExport({
   docTexts: { [f.docId]: f.docText },
   docIdToPath: { [f.docId]: f.pathname },
 });
-process.stdout.write(JSON.stringify(out.payload ?? out, null, 2));
+process.stdout.write(JSON.stringify({
+  payload: out.payload ?? out,
+  jsonl: out.jsonl ?? core.renderJsonLines(out.payload ?? out),
+}, null, 2));

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from typing import Iterable, Literal
@@ -13,6 +14,18 @@ RenderMode = Literal["compact", "detailed"]
 # How aggressively to clip the captured context window when rendering.
 COMPACT_CONTEXT_CHARS = 70
 DETAILED_CONTEXT_CHARS = 160
+
+
+def _yaml_scalar(value: str) -> str:
+    """A string that is safe as a YAML double-quoted scalar.
+
+    A project really can be called `A "quoted" paper`, and dropping that
+    between quotes ends the scalar early and makes the whole front matter
+    unparseable. JSON's string rules are a subset of YAML's, so json.dumps
+    gives exactly the escaping needed. It is what the browser extension has
+    always done.
+    """
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _fmt_ts(ms: int | None) -> str:
@@ -143,7 +156,7 @@ def render_markdown(
     out.append(f"schema_version: {SCHEMA_VERSION}")
     out.append(f"tool_version: {__version__}")
     out.append(f"project_id: {project_id}")
-    out.append(f'project_title: "{project_title}"')
+    out.append(f"project_title: {_yaml_scalar(project_title)}")
     if pulled_at_iso is not None:
         out.append(f"pulled_at: {pulled_at_iso}")
     out.append(f"thread_count: {len(threads)}")

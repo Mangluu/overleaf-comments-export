@@ -4,6 +4,47 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-08-18
+
+A second external review of 0.19.0. Every finding was real.
+
+### Fixed
+- **Releases were published to PyPI without any test having passed on them.**
+  CI runs on pushes to a branch and this publishes on a tag push, which is a
+  different event, so CI never ran on the tagged commit at all. They were two
+  unrelated runs racing: on 0.19.0 the upload finished about 35 seconds before
+  CI did. The tests now run inside the publish workflow and publishing waits
+  for them.
+- **A thread with no anchor was invisible in the JSON counts.** `open_count`
+  and `resolved_count` were worked out from anchored comments while
+  `thread_count` came from threads, so a project whose ranges could not be
+  read reported one thread, none open and none resolved. The Markdown had
+  always counted threads, so the two files from one export disagreed. Both
+  count threads now, which also stops a thread being counted twice if it ever
+  carries two anchors.
+- **Two reviewers could end up sharing one report.** `A B`, `A-B`, `A_B` and
+  `A.B` all become `a-b`, and the second `by-reviewer` file quietly replaced
+  the first. Colliding names get a suffix.
+- **Every per-reviewer report claimed the whole project's totals.** Each was
+  handed all the threads, so a file headed with one person's name said there
+  were 83 threads and four reviewers. Each now sees only its own.
+- **A title with a quote in it broke the Markdown front matter.** A paper
+  called `A "quoted" paper` ended the YAML scalar early and made the whole
+  block unparseable. Escaped properly now, the way the extension always did.
+- **The extension returned an out-of-range offset for a stale anchor.** It
+  computed the bounded value, used it for the line and column, and returned
+  the raw one, so a 16-character document could report offset 10000 beside
+  line 1. This is the same bug Python fixed in 0.18.0; only half of it had
+  been fixed.
+- Extension version said 1.1.0 in two places and 1.0.0 in two others.
+
+### Changed
+- **`comments.jsonl` is derived from `comments.json` rather than built a
+  second time.** The two had drifted: Python's records carried no
+  `schema_version`, no `type`, no `project` and no orphan threads, all of
+  which the extension wrote. The parity test now covers JSONL as well, so
+  they cannot disagree again.
+
 ## [0.19.0] — 2026-08-18
 
 Issues filed from the end-to-end audit, fixed one at a time.

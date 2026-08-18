@@ -343,34 +343,6 @@ def _slug_reviewer(name: str) -> str:
     return s[:60] or "reviewer"
 
 
-def _comment_to_jsonl_record(
-    c: AnchoredComment,
-    thread: Thread | None,
-    user_map: dict[str, dict[str, str]] | None = None,
-) -> dict[str, Any]:
-    """Self-contained JSONL record per comment (with embedded thread, since
-    JSONL records are read independently)."""
-    return {
-        "short_id": c.short_id,
-        "thread_id": c.thread_id,
-        "pathname": c.pathname,
-        "line": c.line_no,
-        "col": c.col,
-        "offset": c.offset,
-        "nearest_heading": c.nearest_heading,
-        "enclosing_float": (
-            {"kind": c.float_ref.kind, "number": c.float_ref.number,
-             "label": c.float_ref.label, "caption": c.float_ref.caption}
-            if c.float_ref else None
-        ),
-        "anchored_text": c.anchored_text,
-        "stale": c.stale,
-        "reply_count": max(0, len(thread.messages) - 1) if thread else 0,
-        "context": _serialize_context(c.context),
-        "thread": _serialize_thread(thread, user_map) if thread is not None else None,
-    }
-
-
 def _iter_doc_ranges(ranges_payload: Any):
     if isinstance(ranges_payload, list):
         docs = ranges_payload
@@ -704,12 +676,6 @@ def run_export(
         )
 
     title = project_title or metadata.get("name") or project_id
-    open_count = sum(
-        1 for c in anchored if not (threads.get(c.thread_id) and threads[c.thread_id].resolved)
-    )
-    resolved_count = sum(
-        1 for c in anchored if threads.get(c.thread_id) and threads[c.thread_id].resolved
-    )
     # Everything downstream of here sees only the threads that survived the
     # filters. It used to get the whole dictionary, so --reviewer and
     # --no-resolved dropped comments from the Markdown while comments.json
@@ -719,6 +685,13 @@ def run_export(
     visible_thread_ids = {c.thread_id for c in anchored} | {t.id for t in orphan_threads}
     visible_threads = {tid: t for tid, t in threads.items() if tid in visible_thread_ids}
     thread_count_after = len(visible_thread_ids)
+    # Over threads, not over anchors. Counting anchors made a thread with no
+    # anchor invisible, so a project whose ranges could not be read reported
+    # thread_count 1 with open_count 0, and it would have counted a thread
+    # twice if one ever carried two anchors. The Markdown has always counted
+    # threads, so the two outputs of one export disagreed.
+    open_count = sum(1 for t in visible_threads.values() if not t.resolved)
+    resolved_count = sum(1 for t in visible_threads.values() if t.resolved)
     stale_count = sum(1 for c in anchored if c.stale)
 
     mode_lit = "detailed" if (render_mode or "").lower() == "detailed" else "compact"
@@ -795,10 +768,24 @@ def run_export(
 
     # JSONL companion (one comment per line, self-contained)
     if write_jsonl:
+        # Derived from the payload that was just built, rather than assembled
+        # a second time from the objects. The two used to be written by
+        # separate code and had drifted into different record shapes: this one
+        # carried no schema_version, no type, no project and no orphan
+        # threads, all of which the browser extension emitted. Deriving it
+        # means they cannot disagree again.
         jsonl_path = out_dir / "comments.jsonl"
+        head = {"schema_version": json_payload["schema_version"],
+                "project": json_payload["project"]}
         with jsonl_path.open("w", encoding="utf-8") as f:
-            for c in anchored:
-                rec = _comment_to_jsonl_record(c, visible_threads.get(c.thread_id), user_map)
+            for c in json_payload["comments"]:
+                rec = {**head, "type": "comment", **c,
+                       "thread": json_payload["threads"].get(c["thread_id"])}
+                f.write(json.dumps(rec, default=str))
+                f.write("\n")
+            for tid in json_payload.get("orphan_thread_ids") or []:
+                rec = {**head, "type": "orphan_thread",
+                       "thread": json_payload["threads"].get(tid)}
                 f.write(json.dumps(rec, default=str))
                 f.write("\n")
         files_written.append(jsonl_path.name)
@@ -819,6 +806,15 @@ def run_export(
             name = change.user_name or change.user_email or change.user_id
             if name:
                 reviewers.setdefault(name, _slug_reviewer(name))
+        # "A B", "A-B", "A_B" and "A.B" all slug to "a-b", so two reviewers
+        # produced one file and the second silently replaced the first. Names
+        # that collide get a short suffix rather than losing a report.
+        taken: dict[str, int] = {}
+        for name, slug in list(reviewers.items()):
+            taken[slug] = taken.get(slug, 0) + 1
+            if taken[slug] > 1:
+                reviewers[name] = f"{slug}-{taken[slug]}"
+
         written = 0
         for reviewer_name, slug in reviewers.items():
             sub_anchored = [
@@ -835,10 +831,18 @@ def run_export(
             ]
             if not sub_anchored and not sub_changes and not sub_orphans:
                 continue
+            # Only this reviewer's threads. Handing over all of them made
+            # every one of these files report whole-project totals in its
+            # front matter, so a report headed with one person's name said
+            # there were 83 threads and four reviewers.
+            sub_threads = {
+                tid: t for tid, t in visible_threads.items()
+                if _thread_matches_reviewer(t, [reviewer_name])
+            }
             sub_md = render_markdown(
                 project_title=f"{title} — {reviewer_name}",
                 project_id=project_id,
-                threads=visible_threads,
+                threads=sub_threads,
                 anchored=sub_anchored,
                 orphan_threads=sub_orphans,
                 changes=sub_changes,

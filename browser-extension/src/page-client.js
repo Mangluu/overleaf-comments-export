@@ -1,7 +1,7 @@
 (function attachOverleafPageClient(root) {
   "use strict";
 
-  const VERSION = "1.0.0";
+  const VERSION = "1.1.0";
   if (root.__overleafCommentsExtension?.version === VERSION) return;
 
   const core = root.OverleafCommentsCore;

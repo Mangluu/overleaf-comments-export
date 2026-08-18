@@ -193,3 +193,95 @@ def test_the_settings_file_is_owner_only(tmp_path, monkeypatch):
 
     assert stat.S_IMODE(os.stat(folder / "config.json").st_mode) == 0o600
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
+
+
+# --- second audit round ----------------------------------------------------
+
+def test_counts_are_over_threads_not_anchors(tmp_path, monkeypatch):
+    """A project whose ranges cannot be read has threads and no anchors. It
+    reported thread_count 1 with open_count 0, so the one open thread was
+    invisible, and the Markdown beside it said something different."""
+    import re
+
+    class NoRanges(FakeClient):
+        def get_threads(self, project_id):
+            return {
+                "t1": {"messages": [{"id": "m1", "content": "Open one.",
+                                     "timestamp": 1_700_000_000_000, "user_id": "u1",
+                                     "user": {"name": "R"}}], "resolved": False},
+                "t2": {"messages": [{"id": "m2", "content": "Done one.",
+                                     "timestamp": 1_700_000_000_000, "user_id": "u1",
+                                     "user": {"name": "R"}}], "resolved": True},
+            }
+
+        def get_resolved_thread_ids(self, project_id):
+            return ["t2"]
+
+        def get_project_ranges(self, project_id):
+            return []
+
+    monkeypatch.setattr(export_mod, "OverleafClient", NoRanges)
+    result = export_mod.run_export(project_url=URL, out_dir=tmp_path)
+
+    summary = json.loads(result.json_path.read_text(encoding="utf-8"))["summary"]
+    assert (summary["thread_count"], summary["open_count"],
+            summary["resolved_count"]) == (2, 1, 1)
+
+    # And the Markdown has to agree, since it is the same export.
+    md = result.markdown_path.read_text(encoding="utf-8")
+    for key in ("thread_count", "open_count", "resolved_count"):
+        in_md = int(re.search(rf"^{key}: (\d+)$", md, re.M).group(1))
+        assert in_md == summary[key], f"{key}: json {summary[key]}, markdown {in_md}"
+
+
+def test_two_reviewers_whose_names_slug_the_same_both_get_a_report(tmp_path,
+                                                                   monkeypatch):
+    """"A B" and "A-B" both slug to "a-b", and the second report replaced the
+    first without a word."""
+    class TwoNames(FakeClient):
+        def get_threads(self, project_id):
+            return {
+                "t1": {"messages": [{"id": "m1", "content": "From the first.",
+                                     "timestamp": 1_700_000_000_000, "user_id": "u1",
+                                     "user": {"name": "A B"}}], "resolved": False},
+                "t2": {"messages": [{"id": "m2", "content": "From the second.",
+                                     "timestamp": 1_700_000_000_000, "user_id": "u2",
+                                     "user": {"name": "A-B"}}], "resolved": False},
+            }
+
+        def get_resolved_thread_ids(self, project_id):
+            return []
+
+        def get_project_ranges(self, project_id):
+            return []
+
+    monkeypatch.setattr(export_mod, "OverleafClient", TwoNames)
+    export_mod.run_export(project_url=URL, out_dir=tmp_path, per_reviewer_reports=True)
+
+    written = sorted(p.name for p in (tmp_path / "by-reviewer").glob("*.md"))
+    assert len(written) == 2, f"one report was overwritten: {written}"
+    both = "\n".join((tmp_path / "by-reviewer" / n).read_text(encoding="utf-8")
+                     for n in written)
+    assert "From the first." in both and "From the second." in both
+
+
+def test_a_reviewer_report_counts_only_that_reviewer(tmp_path, two_reviewers):
+    """Every one of these files used to carry whole-project totals in its
+    front matter, so a report headed with one name claimed all the threads."""
+    import re
+
+    export_mod.run_export(project_url=URL, out_dir=tmp_path, per_reviewer_reports=True)
+    for path in (tmp_path / "by-reviewer").glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        assert int(re.search(r"^thread_count: (\d+)$", text, re.M).group(1)) == 1, path.name
+        assert int(re.search(r"^reviewer_count: (\d+)$", text, re.M).group(1)) == 1, path.name
+
+
+def test_a_title_with_quotes_in_it_still_parses(tmp_path, two_reviewers):
+    """A paper really can be called `A "quoted" paper`, and it ended the YAML
+    scalar early and made the whole front matter unreadable."""
+    yaml = pytest.importorskip("yaml")
+    result = export_mod.run_export(project_url=URL, out_dir=tmp_path,
+                                   project_title='A "quoted" paper: it\'s fine')
+    front = result.markdown_path.read_text(encoding="utf-8").split("---")[1]
+    assert yaml.safe_load(front)["project_title"] == 'A "quoted" paper: it\'s fine'

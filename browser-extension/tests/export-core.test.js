@@ -168,3 +168,26 @@ test("renders Chinese Markdown and response-letter headings when selected", () =
   assert.match(exported.responseLetter, /\*\*评论时间：\*\*/);
   assert.match(exported.responseLetter, /\*\*回复：\*\*/);
 });
+
+test("a stale anchor offset stays inside the document", () => {
+  // It computed the bounded offset, used it for line and column, and returned
+  // the raw one. An offset past the end slices to nothing, so the context read
+  // as though there were none, and it contradicted the line beside it.
+  const text = "Short document.\n";
+  const lineStarts = core.buildLineStarts(text);
+
+  for (const raw of [10000, -5]) {
+    const got = core.resolveAnchor(text, lineStarts, raw, "text that is gone");
+    assert.equal(got.stale, true);
+    assert.ok(got.offset >= 0 && got.offset < text.length,
+      `offset ${got.offset} is outside a ${text.length} character document`);
+    assert.ok(text.slice(got.offset, got.offset + 1).length > 0);
+  }
+});
+
+test("a good anchor is left exactly where it is", () => {
+  const text = "alpha beta gamma\n";
+  const got = core.resolveAnchor(text, core.buildLineStarts(text), text.indexOf("beta"), "beta");
+  assert.equal(got.stale, false);
+  assert.equal(got.offset, text.indexOf("beta"));
+});

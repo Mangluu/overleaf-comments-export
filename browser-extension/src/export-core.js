@@ -232,8 +232,11 @@
       }
     }
 
+    // The bounded one, not the raw one. An offset past the end slices to
+    // nothing, so the context reads as though there were none, and it
+    // contradicts the line and column right beside it, which are bounded.
     const bounded = Math.min(offset, Math.max(0, text.length - 1));
-    return { offset, ...offsetToLineColumn(lineStarts, bounded), stale: true };
+    return { offset: bounded, ...offsetToLineColumn(lineStarts, bounded), stale: true };
   }
 
   function findHeadings(text, lineStarts) {

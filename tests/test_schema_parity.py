@@ -57,14 +57,19 @@ def fixture() -> dict:
 
 
 @pytest.fixture(scope="module")
-def extension_payload(fixture) -> dict:
+def extension_run(fixture) -> dict:
     proc = subprocess.run(["node", str(RUNNER)], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
 
 
 @pytest.fixture(scope="module")
-def python_payload(fixture) -> dict:
+def extension_payload(extension_run) -> dict:
+    return extension_run["payload"]
+
+
+@pytest.fixture(scope="module")
+def python_run(fixture) -> dict:
     f = fixture
     at = f["docText"].index(f["anchor"])
 
@@ -100,9 +105,17 @@ def python_payload(fixture) -> dict:
         result = export_mod.run_export(
             project_url="https://www.overleaf.com/project/" + f["projectId"],
             out_dir=out)
-        return json.loads(result.json_path.read_text(encoding="utf-8"))
+        return {
+            "payload": json.loads(result.json_path.read_text(encoding="utf-8")),
+            "jsonl": result.jsonl_path.read_text(encoding="utf-8"),
+        }
     finally:
         export_mod.OverleafClient = real
+
+
+@pytest.fixture(scope="module")
+def python_payload(python_run) -> dict:
+    return python_run["payload"]
 
 
 def _at(payload: dict, path: str):
@@ -174,3 +187,51 @@ def test_the_agent_brief_does_not_promise_fields_that_are_missing():
     for field in promised:
         assert f"{field}:" in core, (
             f"the brief promises files[].{field} and nothing writes it")
+
+
+# --- the same treatment for JSONL --------------------------------------------
+#
+# The primary JSON was brought into line first and JSONL was left behind, so
+# the two implementations went on writing different records under the same
+# schema version. Python's carried no schema_version, no type, no project and
+# no orphan threads. Both now derive it from the payload rather than building
+# it a second time, which is why these can be compared at all.
+
+def _records(text: str) -> list[dict]:
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def test_both_write_the_same_kinds_of_jsonl_record(python_run, extension_run):
+    py = {r["type"] for r in _records(python_run["jsonl"])}
+    ext = {r["type"] for r in _records(extension_run["jsonl"])}
+    assert py == ext, f"Python writes {sorted(py)}, the extension {sorted(ext)}"
+
+
+def test_a_jsonl_comment_record_has_the_same_shape(python_run, extension_run):
+    py = next(r for r in _records(python_run["jsonl"]) if r["type"] == "comment")
+    ext = next(r for r in _records(extension_run["jsonl"]) if r["type"] == "comment")
+    only_py = set(py) - set(ext) - KNOWN_GAPS.get(("comments[0]", "python"), set())
+    only_ext = set(ext) - set(py)
+    assert not only_py and not only_ext, (
+        f"Both declare schema {py['schema_version']} and write different JSONL.\n"
+        f"  Only in Python:    {sorted(only_py) or 'nothing'}\n"
+        f"  Only in extension: {sorted(only_ext) or 'nothing'}")
+
+
+def test_a_jsonl_record_stands_on_its_own(python_run):
+    """Each line is read independently, so it has to say what it is, what it
+    belongs to, and carry its whole discussion."""
+    rec = next(r for r in _records(python_run["jsonl"]) if r["type"] == "comment")
+    for key in ("schema_version", "type", "project", "short_id", "thread"):
+        assert key in rec, f"a JSONL record with no {key} cannot be read alone"
+    assert rec["thread"]["messages"], "the discussion was not embedded"
+
+
+def test_jsonl_matches_the_json_it_came_from(python_run):
+    """It is derived from the payload now, so it cannot say anything different."""
+    payload, records = python_run["payload"], _records(python_run["jsonl"])
+    comments = [r for r in records if r["type"] == "comment"]
+    assert len(comments) == len(payload["comments"])
+    for rec, canonical in zip(comments, payload["comments"]):
+        for key, value in canonical.items():
+            assert rec[key] == value, f"{key} differs between comments.json and .jsonl"
