@@ -58,31 +58,24 @@ unzip it, and open it. There is nothing else to install, and no Python needed.
 
 | Your computer | Download |
 |---|---|
-| Mac | `OverleafCommentsExport-macOS.zip` |
 | Windows | `OverleafCommentsExport-Windows.zip` |
 | Linux | `OverleafCommentsExport-Linux.zip`, then `chmod +x "Overleaf Comments Export"` |
 
-The first time you open it, macOS or Windows will warn you about an app it has
-not checked. That is because signing an app costs money every year, not because
-anything is wrong.
+On **Windows** the first time you open it you will be warned about an app that
+has not been checked. That is because signing an app costs money every year,
+not because anything is wrong. Click More info, then Run anyway.
 
-On **Windows**, click More info, then Run anyway.
+**There is no Mac download.** There was, and it did not work. macOS blocks apps
+it has not checked, signing one costs money every year, and the way people used
+to get past the warning, right-clicking and choosing Open, was removed in macOS
+15. Everybody who downloaded it hit a wall. Shipping something that does not
+open is worse than not shipping it.
 
-On **macOS 15 and newer** the old advice of right-clicking and choosing Open no
-longer works, and the warning gives you no way through. Do this instead. Double
-click the app, click Done on the warning, then open System Settings, go to
-Privacy & Security, scroll down to Security, and click **Open Anyway** next to
-the message about the app. Confirm, then open the app again.
+On a Mac, use either of these instead. Both work, and neither is gated.
 
-If you would rather use the Terminal, this does the same thing in one line, and
-you can drag the app into the window instead of typing its path:
-
-```bash
-xattr -dr com.apple.quarantine "/path/to/Overleaf Comments Export.app"
-```
-
-None of this applies to the Python install or the browser extension, which
-macOS does not gate.
+- The browser extension below, if you would rather not touch a terminal.
+- `pip install "overleaf-comments-export[gui,pdf]"`, then run
+  `overleaf-comments-export --gui` for the same window.
 
 **If you prefer a browser extension**, Chrome, Edge, and other Chromium
 browsers can run the exporter inside the Overleaf project you already have

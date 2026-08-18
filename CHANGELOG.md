@@ -4,6 +4,22 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.18.3] — 2026-08-18
+
+### Removed
+- **The Mac download is gone.** It did not work. macOS blocks apps it has not
+  checked, signing one needs a certificate that costs money every year, and
+  the way people used to get past the warning, right-clicking and choosing
+  Open, was removed in macOS 15. Everybody who downloaded it hit the same
+  wall. Shipping something that does not open is worse than not shipping it.
+
+  It has also been taken off the 19 earlier releases that still carried it,
+  since every copy was equally broken.
+
+  On a Mac, `pip install "overleaf-comments-export[gui,pdf]"` gives the same
+  window, and the browser extension needs nothing installed. Neither is
+  gated. Windows and Linux downloads are unchanged.
+
 ## [0.18.2] — 2026-08-18
 
 ### Fixed

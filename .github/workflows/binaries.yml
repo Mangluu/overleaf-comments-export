@@ -24,9 +24,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            label: macOS
-            asset: OverleafCommentsExport-macOS.zip
+          # No macOS build. The app cannot be signed without a certificate
+          # that costs money every year, so macOS blocks it, and the way round
+          # that used to be a right-click was removed in macOS 15. Everybody
+          # who downloaded it hit the same wall. Shipping something that does
+          # not open is worse than not shipping it: macOS users get pip or the
+          # browser extension, both of which work.
           - os: windows-latest
             label: Windows
             asset: OverleafCommentsExport-Windows.zip
@@ -60,7 +63,6 @@ jobs:
             --collect-all sv_ttk \
             --collect-submodules browser_cookie3 \
             --collect-all pymupdf \
-            --osx-bundle-identifier com.mangluu.overleaf-comments-export \
             packaging/app_entry.py
 
       - name: Add a readme people will actually see
@@ -68,31 +70,6 @@ jobs:
         run: |
           cat > dist/"How to open this.txt" <<'TXT'
           Overleaf Comments Export
-
-          macOS
-            macOS blocks apps it has not checked, and this one is not signed
-            because a certificate costs money every year. Nothing is wrong with
-            it. Right-clicking and choosing Open used to work and no longer
-            does, on macOS 15 and newer.
-
-            Either of these gets you in.
-
-            Without the Terminal:
-              1. Double-click the app. You will be told it cannot be opened.
-                 Click Done.
-              2. Open System Settings, go to Privacy & Security, and scroll
-                 down to Security. There is a line about the app being blocked,
-                 with an Open Anyway button. Click it and confirm.
-              3. Open the app again. It opens from then on.
-
-            With the Terminal, which is quicker and always works. Drag the app
-            into the Terminal window after typing the first part, so the path
-            is right:
-              xattr -dr com.apple.quarantine "/path/to/Overleaf Comments Export.app"
-
-            If neither appeals, none of this applies to the Python install:
-              pip install "overleaf-comments-export[gui,pdf]"
-              overleaf-comments-export
 
           Windows
             The first time only: Windows may say "Windows protected your PC".
@@ -111,14 +88,6 @@ jobs:
         run: |
           cd dist
           case "${{ runner.os }}" in
-            macOS)
-              # A .app is full of symlinks. zip -y stores them as symlinks; any
-              # tool that follows them instead produces a bundle that looks
-              # complete and refuses to start.
-              rm -rf "Overleaf Comments Export"
-              zip -r -q -y "../${{ matrix.asset }}" \
-                "Overleaf Comments Export.app" "How to open this.txt"
-              ;;
             Linux)
               zip -r -q -y "../${{ matrix.asset }}" .
               ;;

@@ -3,6 +3,13 @@
 This file is a runbook for going beyond `pip install` to **packaged GUI
 binaries** for macOS, Windows, and Linux, distributed via GitHub Releases.
 
+> The macOS build was shipped and then withdrawn. Unsigned apps are blocked,
+> signing needs an Apple Developer ID at about 99 USD a year, and the
+> right-click workaround this document describes below stopped working in
+> macOS 15. Everybody who downloaded it hit a wall. The macOS sections here
+> are kept because they are still accurate about what signing would involve,
+> not because a Mac build is being produced.
+
 Phase 0 (PyPI library, CI, tests, license, README) is already done — see the
 repo root.
 

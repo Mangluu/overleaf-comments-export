@@ -23,7 +23,7 @@ place to start if you would like to contribute.
 - A checklist of what is left to address, ticked from Overleaf's own resolved flag
 - `--doctor`, which says what is wrong with a setup in plain words
 - Figure and table detection, so a comment on a caption says which figure
-- Downloadable apps for macOS, Windows and Linux, so Python is not needed
+- Downloadable apps for Windows and Linux, so Python is not needed
 - A window written for people who do not use a terminal, with dark mode
 - A read-only Chrome/Edge extension that exports the project in the current tab
   without reading or storing browser cookies
@@ -52,6 +52,10 @@ Things I think are worth doing, roughly in order.
 
 Saying no is part of a roadmap.
 
+- **A downloadable Mac app.** There was one. macOS blocks apps it has not
+  checked, signing costs money every year, and the right-click workaround was
+  removed in macOS 15, so everybody who downloaded it hit a wall. On a Mac,
+  `pip install` or the browser extension both work and neither is gated.
 - **Writing back to Overleaf** — posting replies, marking threads resolved, or
   applying edits. This tool reads. Writing needs endpoints this project does
   not use, and it turns a safe utility into something that can damage your
