@@ -202,3 +202,25 @@ def test_the_window_never_grows_past_the_screen(app):
     app._toggle_details()
     app.root.update_idletasks()
     assert app.root.winfo_height() <= app.root.winfo_screenheight()
+
+
+def test_settings_that_cannot_be_saved_say_so(tmp_path, monkeypatch):
+    """It used to fail in total silence, so everything you typed came back
+    empty next time with nothing said and nothing logged."""
+    from overleaf_comments_export import gui
+
+    # A file where the folder should be, so writing into it cannot work.
+    blocked = tmp_path / "wall"
+    blocked.write_text("not a folder", encoding="utf-8")
+    monkeypatch.setattr(gui, "CONFIG_PATH", blocked / "config.json")
+
+    why = gui._save_config({"project_url": "https://www.overleaf.com/project/x"})
+    assert why, "a failed save reported nothing"
+    assert isinstance(why, str)
+
+
+def test_a_save_that_works_reports_nothing(tmp_path, monkeypatch):
+    from overleaf_comments_export import gui
+    monkeypatch.setattr(gui, "CONFIG_PATH", tmp_path / "sub" / "config.json")
+    assert gui._save_config({"a": 1}) is None
+    assert (tmp_path / "sub" / "config.json").exists(), "it did not make the folder"

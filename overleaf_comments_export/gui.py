@@ -8,6 +8,7 @@ folded away until it is needed.
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import subprocess
 import sys
@@ -19,6 +20,8 @@ from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from .client import UserFacingError, parse_project_id
 from .export import ExportCancelled, ExportResult, run_export
+
+logger = logging.getLogger(__name__)
 
 
 # Paper and ink. This is a tool for people working on a manuscript, so the
@@ -213,8 +216,17 @@ def _load_config() -> dict:
     return {}
 
 
-def _save_config(data: dict) -> None:
+def _save_config(data: dict) -> str | None:
+    """Save the settings. Returns why it could not, or None when it did.
+
+    Never raises. A settings file that cannot be written must not stop an
+    export, since the export does not need it. But it used to fail in total
+    silence, so everything you typed came back empty next time with nothing
+    said and nothing logged. A full disk, a read-only home directory, or a
+    config file owned by another account all land here.
+    """
     try:
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
         # This file holds an Overleaf session cookie when "remember" is ticked,
         # and it was being written world-readable. Owner only, and the folder
@@ -222,8 +234,13 @@ def _save_config(data: dict) -> None:
         # supported on Windows, where the call is a no-op.
         _owner_only(CONFIG_PATH, 0o600)
         _owner_only(CONFIG_PATH.parent, 0o700)
-    except Exception:
-        pass
+        return None
+    except OSError as e:
+        logger.warning("Could not save settings to %s: %s", CONFIG_PATH, e)
+        return e.strerror or str(e)
+    except Exception as e:                        # json, or something stranger
+        logger.warning("Could not save settings: %s", e)
+        return str(e)
 
 
 def _owner_only(path: Path, mode: int) -> None:
@@ -1033,7 +1050,7 @@ class App:
             return
 
         reviewer_text = self.reviewer_filter_var.get().strip()
-        _save_config({
+        why_not_saved = _save_config({
             "theme": self.theme_choice.get(),
             "browser": self.browser_var.get(),
             "show_advanced_browsers": bool(self.show_advanced_var.get()),
@@ -1070,6 +1087,15 @@ class App:
         self.progress.start(12)
         self._set_status("Working… this usually takes a few seconds.")
         self._append_log("-" * 60)
+        # Said once per export rather than shown as an alert. The export does
+        # not need the settings file, so this must not interrupt it, but going
+        # quiet is what made this invisible: the boxes came back empty next
+        # time with no explanation anywhere.
+        if why_not_saved:
+            self._append_log(
+                f"Your settings could not be saved to {CONFIG_PATH}, so the "
+                f"boxes will be empty next time. The export itself is not "
+                f"affected. The system said: {why_not_saved}")
 
         base = self.base_var.get().strip() if self.self_hosted_var.get() else "https://www.overleaf.com"
         cookie_name = (self.cookie_name_var.get().strip()
