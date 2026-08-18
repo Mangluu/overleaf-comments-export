@@ -662,14 +662,48 @@ class OverleafClient:
         gets a 404, which reads exactly like "there is no PDF" and is not.
         """
         if path.startswith("http"):
-            url = path
+            url = path if self._same_site(path) else self.base_url + _path_of(path)
         else:
-            domain = str(compile_response.get("pdfDownloadDomain") or self.base_url)
+            domain = str(compile_response.get("pdfDownloadDomain") or "")
+            if not domain or not self._same_site(domain):
+                if domain:
+                    logger.warning(
+                        "The compile named %s as the download host, which is not "
+                        "part of %s, so it was ignored.", domain, self.base_url)
+                domain = self.base_url
             url = f"{domain.rstrip('/')}{path}"
         server = compile_response.get("clsiServerId")
         if server:
             url += ("&" if "?" in url else "?") + f"clsiserverid={server}"
         return url
+
+    def _same_site(self, url: str) -> bool:
+        """Is this the Overleaf we are signed in to, or somewhere else?
+
+        The compile reply decides which host the built PDF is fetched from,
+        and it is the only value in any response that does. Overleaf really
+        does answer with a different host, since the build stays on the
+        machine that made it, but that host is always part of the same site.
+        Anything else is not followed.
+
+        Compared against the site rather than the exact host, because the real
+        answer is a sibling of www and not a child of it: signed in to
+        www.overleaf.com, the build comes back on clsi-a1b2.overleaf.com. A
+        check against the full host would reject every genuine PDF.
+        """
+        try:
+            here = urlparse(self.base_url).hostname or ""
+            there = urlparse(url if "//" in url else f"//{url}").hostname or ""
+        except ValueError:
+            return False
+        if not there:
+            return False
+        here, there = here.lower().rstrip("."), there.lower().rstrip(".")
+        if here.startswith("www."):
+            here = here[4:]
+        # The suffix always carries its dot. Without it, overleaf.com.evil.example
+        # would pass for being part of overleaf.com.
+        return there == here or there.endswith("." + here)
 
     def _csrf_token(self, project_id: str) -> str | None:
         meta = self.scrape_project_html(project_id)
@@ -859,6 +893,12 @@ class OverleafClient:
                 preview,
             )
         return out
+
+
+def _path_of(url: str) -> str:
+    """The path and query of a URL, for putting back on a host we trust."""
+    parts = urlparse(url)
+    return parts.path + (f"?{parts.query}" if parts.query else "")
 
 
 def _tool_version() -> str:
