@@ -50,6 +50,13 @@ class TwoReviewers(FakeClient):
             "changes": []}}]
 
 
+def _delivered(folder):
+    """What the user actually sees, ignoring the log, which is written live so
+    that a failed export leaves something to read."""
+    return sorted(p.name for p in folder.iterdir()
+                  if p.name != "comments.log" and not p.name.startswith(".oce-"))
+
+
 @pytest.fixture()
 def two_reviewers(monkeypatch):
     monkeypatch.setattr(export_mod, "OverleafClient", TwoReviewers)
@@ -122,35 +129,58 @@ def test_whats_new_cannot_report_a_filtered_thread(tmp_path, two_reviewers,
 
 # --- cancellation says what is actually in the folder ----------------------
 
-def test_stopping_before_any_write_still_promises_an_empty_folder(tmp_path,
-                                                                  two_reviewers):
-    with pytest.raises(export_mod.ExportCancelled) as e:
+def test_stopping_before_any_write_leaves_an_empty_folder(tmp_path, two_reviewers):
+    with pytest.raises(export_mod.ExportCancelled):
         export_mod.run_export(project_url=URL, out_dir=tmp_path,
                               should_cancel=lambda: True)
-    assert e.value.written == []
+    assert _delivered(tmp_path) == [], "something was left behind"
 
 
-def test_stopping_during_the_extras_admits_what_landed(tmp_path, two_reviewers):
-    """The gates inside the annotated-LaTeX and PDF steps fire after the
-    comments are already on disk. Both the window and the command line used to
-    answer "Nothing was written" regardless."""
-    calls = {"n": 0}
+def test_stopping_late_still_leaves_an_empty_folder(tmp_path, two_reviewers):
+    """The gates inside the annotated-LaTeX and PDF steps fire after all the
+    core files have been generated. Output used to go straight to the chosen
+    folder, so those files were already sitting there while both front ends
+    said "Nothing was written". Everything is staged now, so the promise is
+    one the code can keep."""
+    def cancel_once_the_comments_exist():
+        return any(p.name == "comments.json" for p in tmp_path.rglob("*"))
 
-    def cancel_once_the_core_files_exist():
-        calls["n"] += 1
-        return (tmp_path / "comments.json").exists()
-
-    with pytest.raises(export_mod.ExportCancelled) as e:
+    with pytest.raises(export_mod.ExportCancelled):
         export_mod.run_export(project_url=URL, out_dir=tmp_path,
                               annotated_tex=True,
-                              should_cancel=cancel_once_the_core_files_exist)
+                              should_cancel=cancel_once_the_comments_exist)
 
-    assert "comments.json" in e.value.written
-    assert any(f.startswith("comments-") or f == "comments.md"
-               for f in e.value.written)
-    # Whatever it names has to actually be there, or the message is a new lie.
-    for name in e.value.written:
-        assert (tmp_path / name).exists(), f"{name} was claimed but not written"
+    assert _delivered(tmp_path) == [], "a cancelled export left files behind"
+
+
+def test_a_failed_export_leaves_nothing_and_no_litter(tmp_path, monkeypatch):
+    """A crash part-way through used to leave some files from this run beside
+    some from the last one."""
+    class Boom(TwoReviewers):
+        def download_doc_text(self, project_id, doc_id):
+            raise RuntimeError("the network went away")
+
+    monkeypatch.setattr(export_mod, "OverleafClient", Boom)
+    monkeypatch.setattr(export_mod, "_build_structured_json",
+                        lambda **kw: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(Exception):
+        export_mod.run_export(project_url=URL, out_dir=tmp_path)
+
+    assert _delivered(tmp_path) == []
+    assert not list(tmp_path.glob(".oce-writing-*")), "the staging folder was left"
+
+
+def test_a_second_export_replaces_the_first_completely(tmp_path, two_reviewers,
+                                                       monkeypatch):
+    """A folder must never hold some files from this run and some from the
+    last one."""
+    export_mod.run_export(project_url=URL, out_dir=tmp_path, per_reviewer_reports=True)
+    assert (tmp_path / "by-reviewer").is_dir()
+    stale = tmp_path / "by-reviewer" / "someone-who-left.md"
+    stale.write_text("from an older run", encoding="utf-8")
+
+    export_mod.run_export(project_url=URL, out_dir=tmp_path, per_reviewer_reports=True)
+    assert not stale.exists(), "a file from the previous run survived"
 
 
 # --- stale anchors stay inside the file ------------------------------------

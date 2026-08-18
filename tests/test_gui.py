@@ -9,6 +9,7 @@ do hide, and that bad input is caught before anything runs.
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -244,3 +245,32 @@ def test_a_child_being_destroyed_does_not_stop_the_pump(app):
     before = app._pump_id
     app._stop_pumping(ChildEvent())
     assert app._pump_id == before, "a child closing killed the pump"
+
+
+@pytest.mark.skipif(sys.platform.startswith("win"),
+                    reason="POSIX permission bits do not apply on Windows")
+def test_the_settings_file_is_never_briefly_world_readable(tmp_path, monkeypatch):
+    """It used to be written and then chmodded, so a live Overleaf session sat
+    in a 0644 file for as long as that took. Created 0600 from the start now."""
+    import os
+    import stat
+    from overleaf_comments_export import gui
+
+    folder = tmp_path / "settings"
+    monkeypatch.setattr(gui, "CONFIG_PATH", folder / "config.json")
+
+    modes = []
+    real_open = os.open
+
+    def watch(path, flags, mode=0o777, *a, **kw):
+        if str(path).endswith(".new"):
+            modes.append(mode)
+        return real_open(path, flags, mode, *a, **kw)
+
+    monkeypatch.setattr(os, "open", watch)
+    assert gui._save_config({"cookie_value": "a-live-session"}) is None
+
+    assert modes == [0o600], f"created with {[oct(m) for m in modes]}"
+    assert stat.S_IMODE(os.stat(folder / "config.json").st_mode) == 0o600
+    assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
+    assert not list(folder.glob("*.new")), "the temporary file was left behind"

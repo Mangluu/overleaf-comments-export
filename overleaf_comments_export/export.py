@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import shutil
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -67,24 +69,20 @@ CancelCheck = Callable[[], bool]
 class ExportCancelled(Exception):
     """The user asked for the export to stop.
 
-    Not an error. Most of the checks sit before anything is written, but the
-    slow optional extras (the annotated LaTeX, the PDF) are checked while they
-    run, and by then the comments themselves are on disk. `written` carries
-    what landed, so the message can say so instead of promising an empty
-    folder it cannot deliver.
+    Not an error, and nothing is left behind. Every file is written into a
+    staging folder and moved into place in one step at the very end, so
+    stopping at any point leaves the chosen folder exactly as it was. This
+    briefly carried a list of what had already landed, back when output went
+    straight to the destination and the promise of an empty folder was not
+    one the code could keep.
     """
-
-    def __init__(self, written: list[str] | None = None) -> None:
-        super().__init__("the export was stopped")
-        self.written = written or []
 
 
 def _noop_progress(_: str) -> None:
     pass
 
 
-def _stop_if_asked(should_cancel: CancelCheck | None,
-                   written: list[str] | None = None) -> None:
+def _stop_if_asked(should_cancel: CancelCheck | None) -> None:
     """Cooperative cancellation.
 
     A network call already in flight cannot be interrupted from here, and
@@ -94,7 +92,7 @@ def _stop_if_asked(should_cancel: CancelCheck | None,
     document rather than at the very end.
     """
     if should_cancel is not None and should_cancel():
-        raise ExportCancelled(written)
+        raise ExportCancelled()
 
 
 @dataclass
@@ -343,6 +341,26 @@ def _slug_reviewer(name: str) -> str:
     return s[:60] or "reviewer"
 
 
+def _commit(stage: Path, out_dir: Path) -> int:
+    """Move a finished export into the folder the user chose.
+
+    Renames rather than copies, which is why the staging folder lives inside
+    the destination: both are on the same filesystem, so moving a 40 MB
+    annotated PDF costs nothing.
+    """
+    moved = 0
+    for item in sorted(stage.iterdir()):
+        target = out_dir / item.name
+        if item.is_dir():
+            # os.replace refuses a directory that is not empty, so the old one
+            # goes first. A previous annotated/ holding files this run did not
+            # produce would otherwise survive and look current.
+            shutil.rmtree(target, ignore_errors=True)
+        os.replace(item, target)
+        moved += 1
+    return moved
+
+
 def _iter_doc_ranges(ranges_payload: Any):
     if isinstance(ranges_payload, list):
         docs = ranges_payload
@@ -428,558 +446,587 @@ def run_export(
             p = Path(wanted)
             previous_from = str(p if p.is_file() else p / "comments.json")
 
-    log_path = out_dir / "comments.log"
+    # Everything is written into a folder of its own and moved into place at
+    # the very end. Before this, output went straight to the destination one
+    # file at a time, so stopping an export or losing the disk part-way left a
+    # folder holding some files from this run and some from the last one.
+    #
+    # Inside out_dir rather than the system temp folder, so the move at the
+    # end is a rename on the same filesystem and not a copy of a PDF.
+    #
+    # ponytail: files are renamed one by one, so the whole bundle is not
+    # swapped in a single atomic step. It shrinks the window from the length
+    # of an export, which can include a compile taking a minute, to the few
+    # milliseconds it takes to rename them. A single step would mean writing
+    # into a sibling directory and swapping two directories, which changes
+    # where the log lives and what happens to files the user put there.
+    stage = out_dir / f".oce-writing-{os.getpid()}"
+    shutil.rmtree(stage, ignore_errors=True)
+    stage.mkdir(parents=True, exist_ok=True)
 
-    # Drop the handler from any previous export in this process before adding
-    # this one. The window can run several exports, and without this each run
-    # left its handler attached: the file from the first run went on receiving
-    # lines from every later run, and the open handles accumulated.
-    for old in [h for h in logger.handlers if getattr(h, "_oce_export_log", False)]:
-        logger.removeHandler(old)
-        old.close()
-    handler_file = logging.FileHandler(log_path, mode="w", encoding="utf-8")
-    handler_file._oce_export_log = True  # type: ignore[attr-defined]
-    handler_file.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-    )
-    handler_file.setLevel(logging.DEBUG if verbose else logging.INFO)
-    logger.addHandler(handler_file)
-    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+    # Removed however this ends. A cancelled or failed export leaves the
+    # folder the user chose exactly as it was, rather than a hidden folder
+    # holding a half-written PDF.
+    try:
 
-    project_id = parse_project_id(project_url)
-    progress(f"Project id: {project_id}")
-    logger.info("Project id: %s", project_id)
+        log_path = out_dir / "comments.log"
 
-    client = OverleafClient(base_url=base_url, cookie_name=cookie_name)
-    client.should_cancel = should_cancel
-    if cookie_value:
-        progress("Authenticating with the pasted session cookie…")
-    else:
-        progress(f"Authenticating via {browser} browser cookie…")
-    client.connect(browser=browser, cookie_value=cookie_value)
-
-    _stop_if_asked(should_cancel)
-    progress("Fetching threads…")
-    threads_raw = client.get_threads(project_id)
-    progress(f"Got {len(threads_raw)} thread(s).")
-    logger.info("Got %d threads.", len(threads_raw))
-
-    resolved_ids = set(client.get_resolved_thread_ids(project_id))
-    for tid in resolved_ids:
-        if tid in threads_raw and isinstance(threads_raw[tid], dict):
-            threads_raw[tid]["resolved"] = True
-
-    user_map = _build_user_map(threads_raw)
-    threads = _parse_threads(threads_raw)
-
-    _stop_if_asked(should_cancel)
-    progress("Fetching project file tree…")
-    metadata = client.get_project_metadata(project_id)
-    doc_id_to_path: dict[str, str] = {}
-    if metadata.get("files"):
-        for entry in client.flatten_files(metadata["files"], debug_logger=logger.info):
-            doc_id_to_path[entry["doc_id"]] = entry["pathname"]
-    if not doc_id_to_path:
-        progress(
-            "File tree empty — comments will be grouped by section in each "
-            "doc instead of by filename."
+        # Drop the handler from any previous export in this process before adding
+        # this one. The window can run several exports, and without this each run
+        # left its handler attached: the file from the first run went on receiving
+        # lines from every later run, and the open handles accumulated.
+        for old in [h for h in logger.handlers if getattr(h, "_oce_export_log", False)]:
+            logger.removeHandler(old)
+            old.close()
+        handler_file = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+        handler_file._oce_export_log = True  # type: ignore[attr-defined]
+        handler_file.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
         )
-    project_display_name = metadata.get("name") or project_title or project_id
-    progress(f"Mapped {len(doc_id_to_path)} doc(s) to paths. Project: {project_display_name}")
+        handler_file.setLevel(logging.DEBUG if verbose else logging.INFO)
+        logger.addHandler(handler_file)
+        logger.setLevel(logging.DEBUG if verbose else logging.INFO)
 
-    _stop_if_asked(should_cancel)
-    progress("Fetching project ranges (anchors + tracked changes)…")
-    ranges_payload = client.get_project_ranges(project_id)
-    if ranges_payload is not None:
-        logger.info(
-            "ranges payload type=%s len=%s",
-            type(ranges_payload).__name__,
-            (len(ranges_payload) if hasattr(ranges_payload, "__len__") else "?"),
-        )
+        project_id = parse_project_id(project_url)
+        progress(f"Project id: {project_id}")
+        logger.info("Project id: %s", project_id)
 
-    anchored: list[AnchoredComment] = []
-    changes: list[TrackedChange] = []
-    referenced_thread_ids: set[str] = set()
-    doc_texts: dict[str, DocText] = {}
+        client = OverleafClient(base_url=base_url, cookie_name=cookie_name)
+        client.should_cancel = should_cancel
+        if cookie_value:
+            progress("Authenticating with the pasted session cookie…")
+        else:
+            progress(f"Authenticating via {browser} browser cookie…")
+        client.connect(browser=browser, cookie_value=cookie_value)
 
-    if ranges_payload:
-        docs_with_anchors = list(_iter_doc_ranges(ranges_payload))
-        anchor_doc_count = sum(1 for _, c, ch in docs_with_anchors if c or ch)
-        progress(f"Downloading text for {anchor_doc_count} doc(s) with anchors…")
-        # Fetched only if the file tree came up short, and only once. See
-        # filenames.py for why the zip is the route that works for everyone.
-        zip_index: dict[str, list[str]] | None = None
+        _stop_if_asked(should_cancel)
+        progress("Fetching threads…")
+        threads_raw = client.get_threads(project_id)
+        progress(f"Got {len(threads_raw)} thread(s).")
+        logger.info("Got %d threads.", len(threads_raw))
 
-        for doc_id, comments_list, changes_list in docs_with_anchors:
-            _stop_if_asked(should_cancel)
-            if not comments_list and not changes_list:
-                continue
-            pathname = doc_id_to_path.get(doc_id)
-            try:
-                text = client.download_doc_text(project_id, doc_id)
-            except Exception as e:
-                logger.warning("Could not download doc %s (%s): %s",
-                               doc_id, pathname or doc_id, e)
-                progress(f"  skipped {pathname or doc_id}: {e}")
-                continue
+        resolved_ids = set(client.get_resolved_thread_ids(project_id))
+        for tid in resolved_ids:
+            if tid in threads_raw and isinstance(threads_raw[tid], dict):
+                threads_raw[tid]["resolved"] = True
 
-            if pathname is None:
-                if zip_index is None:
-                    progress("Filenames were not in the file tree, asking for the "
-                             "project zip instead…")
-                    data = client.download_project_zip(project_id)
-                    zip_index = index_zip(data) if data else {}
-                    logger.info("Read %d text file(s) from the project zip.",
-                                len(zip_index))
-                pathname = name_for(zip_index, text)
-                if pathname:
-                    doc_id_to_path[doc_id] = pathname
-                    logger.info("Named %s from the project zip: %s", doc_id, pathname)
-            if pathname is None:
-                pathname = f"<unknown-{doc_id}>"
-            doc = _build_doc_text(doc_id, pathname, text)
-            doc_texts[doc_id] = doc
+        user_map = _build_user_map(threads_raw)
+        threads = _parse_threads(threads_raw)
 
-            for c in comments_list:
-                op = c.get("op") or {}
-                thread_id = op.get("t") or c.get("t")
-                if not thread_id:
+        _stop_if_asked(should_cancel)
+        progress("Fetching project file tree…")
+        metadata = client.get_project_metadata(project_id)
+        doc_id_to_path: dict[str, str] = {}
+        if metadata.get("files"):
+            for entry in client.flatten_files(metadata["files"], debug_logger=logger.info):
+                doc_id_to_path[entry["doc_id"]] = entry["pathname"]
+        if not doc_id_to_path:
+            progress(
+                "File tree empty — comments will be grouped by section in each "
+                "doc instead of by filename."
+            )
+        project_display_name = metadata.get("name") or project_title or project_id
+        progress(f"Mapped {len(doc_id_to_path)} doc(s) to paths. Project: {project_display_name}")
+
+        _stop_if_asked(should_cancel)
+        progress("Fetching project ranges (anchors + tracked changes)…")
+        ranges_payload = client.get_project_ranges(project_id)
+        if ranges_payload is not None:
+            logger.info(
+                "ranges payload type=%s len=%s",
+                type(ranges_payload).__name__,
+                (len(ranges_payload) if hasattr(ranges_payload, "__len__") else "?"),
+            )
+
+        anchored: list[AnchoredComment] = []
+        changes: list[TrackedChange] = []
+        referenced_thread_ids: set[str] = set()
+        doc_texts: dict[str, DocText] = {}
+
+        if ranges_payload:
+            docs_with_anchors = list(_iter_doc_ranges(ranges_payload))
+            anchor_doc_count = sum(1 for _, c, ch in docs_with_anchors if c or ch)
+            progress(f"Downloading text for {anchor_doc_count} doc(s) with anchors…")
+            # Fetched only if the file tree came up short, and only once. See
+            # filenames.py for why the zip is the route that works for everyone.
+            zip_index: dict[str, list[str]] | None = None
+
+            for doc_id, comments_list, changes_list in docs_with_anchors:
+                _stop_if_asked(should_cancel)
+                if not comments_list and not changes_list:
                     continue
-                offset = int(op.get("p", 0))
-                anchored_text = op.get("c") or ""
-                resolved_offset, line, col, stale = resolve_anchor(doc, offset, anchored_text)
-                heading = nearest_heading(doc.headings, line)
-                context = _extract_context(doc, resolved_offset, anchored_text, line)
-                anchored.append(
-                    AnchoredComment(
-                        thread_id=str(thread_id),
-                        short_id="",  # assigned below in stable sort order
-                        doc_id=doc_id,
-                        pathname=pathname,
-                        offset=resolved_offset,
-                        anchored_text=anchored_text,
-                        line_no=line,
-                        col=col,
-                        nearest_heading=heading,
-                        stale=stale,
-                        context=context,
-                        float_ref=enclosing_float(doc.floats, resolved_offset),
-                    )
-                )
-                referenced_thread_ids.add(str(thread_id))
-
-            for ch in changes_list:
-                op = ch.get("op") or {}
-                meta = ch.get("metadata") or {}
-                if "i" in op:
-                    kind, content = "insertion", op.get("i") or ""
-                elif "d" in op:
-                    kind, content = "deletion", op.get("d") or ""
-                else:
+                pathname = doc_id_to_path.get(doc_id)
+                try:
+                    text = client.download_doc_text(project_id, doc_id)
+                except Exception as e:
+                    logger.warning("Could not download doc %s (%s): %s",
+                                   doc_id, pathname or doc_id, e)
+                    progress(f"  skipped {pathname or doc_id}: {e}")
                     continue
-                offset = int(op.get("p", 0))
-                ro, line, col, _ = resolve_anchor(
-                    doc, offset, content if kind == "insertion" else ""
-                )
-                heading = nearest_heading(doc.headings, line)
-                uid = str(meta.get("user_id") or "") or None
-                user = user_map.get(uid or "", {}) if uid else {}
-                if kind == "insertion":
-                    context = _extract_context(doc, ro, content, line)
-                else:
-                    context = _deletion_context(doc, ro, content, line)
-                changes.append(
-                    TrackedChange(
-                        id=str(ch.get("id") or ch.get("_id") or ""),
-                        short_id="",  # assigned below
-                        doc_id=doc_id,
-                        pathname=pathname,
-                        kind=kind,
-                        content=content,
-                        offset=offset,
-                        line_no=line,
-                        col=col,
-                        nearest_heading=heading,
-                        user_id=uid,
-                        user_name=user.get("name"),
-                        user_email=user.get("email"),
-                        timestamp_ms=_to_ms(meta.get("ts")),
-                        context=context,
+
+                if pathname is None:
+                    if zip_index is None:
+                        progress("Filenames were not in the file tree, asking for the "
+                                 "project zip instead…")
+                        data = client.download_project_zip(project_id)
+                        zip_index = index_zip(data) if data else {}
+                        logger.info("Read %d text file(s) from the project zip.",
+                                    len(zip_index))
+                    pathname = name_for(zip_index, text)
+                    if pathname:
+                        doc_id_to_path[doc_id] = pathname
+                        logger.info("Named %s from the project zip: %s", doc_id, pathname)
+                if pathname is None:
+                    pathname = f"<unknown-{doc_id}>"
+                doc = _build_doc_text(doc_id, pathname, text)
+                doc_texts[doc_id] = doc
+
+                for c in comments_list:
+                    op = c.get("op") or {}
+                    thread_id = op.get("t") or c.get("t")
+                    if not thread_id:
+                        continue
+                    offset = int(op.get("p", 0))
+                    anchored_text = op.get("c") or ""
+                    resolved_offset, line, col, stale = resolve_anchor(doc, offset, anchored_text)
+                    heading = nearest_heading(doc.headings, line)
+                    context = _extract_context(doc, resolved_offset, anchored_text, line)
+                    anchored.append(
+                        AnchoredComment(
+                            thread_id=str(thread_id),
+                            short_id="",  # assigned below in stable sort order
+                            doc_id=doc_id,
+                            pathname=pathname,
+                            offset=resolved_offset,
+                            anchored_text=anchored_text,
+                            line_no=line,
+                            col=col,
+                            nearest_heading=heading,
+                            stale=stale,
+                            context=context,
+                            float_ref=enclosing_float(doc.floats, resolved_offset),
+                        )
                     )
-                )
-    else:
-        progress(
-            "Ranges payload unavailable — Markdown will list threads without "
-            "file/line anchors."
-        )
+                    referenced_thread_ids.add(str(thread_id))
 
-    orphan_threads = [
-        thread for tid, thread in threads.items() if tid not in referenced_thread_ids
-    ]
+                for ch in changes_list:
+                    op = ch.get("op") or {}
+                    meta = ch.get("metadata") or {}
+                    if "i" in op:
+                        kind, content = "insertion", op.get("i") or ""
+                    elif "d" in op:
+                        kind, content = "deletion", op.get("d") or ""
+                    else:
+                        continue
+                    offset = int(op.get("p", 0))
+                    ro, line, col, _ = resolve_anchor(
+                        doc, offset, content if kind == "insertion" else ""
+                    )
+                    heading = nearest_heading(doc.headings, line)
+                    uid = str(meta.get("user_id") or "") or None
+                    user = user_map.get(uid or "", {}) if uid else {}
+                    if kind == "insertion":
+                        context = _extract_context(doc, ro, content, line)
+                    else:
+                        context = _deletion_context(doc, ro, content, line)
+                    changes.append(
+                        TrackedChange(
+                            id=str(ch.get("id") or ch.get("_id") or ""),
+                            short_id="",  # assigned below
+                            doc_id=doc_id,
+                            pathname=pathname,
+                            kind=kind,
+                            content=content,
+                            offset=offset,
+                            line_no=line,
+                            col=col,
+                            nearest_heading=heading,
+                            user_id=uid,
+                            user_name=user.get("name"),
+                            user_email=user.get("email"),
+                            timestamp_ms=_to_ms(meta.get("ts")),
+                            context=context,
+                        )
+                    )
+        else:
+            progress(
+                "Ranges payload unavailable — Markdown will list threads without "
+                "file/line anchors."
+            )
 
-    # Stable IDs assigned BEFORE filtering so they're consistent across runs.
-    anchored.sort(key=lambda c: (c.pathname, c.line_no, c.col, c.offset))
-    for i, c in enumerate(anchored, 1):
-        c.short_id = f"C{i:03d}"
-    changes.sort(key=lambda ch: (ch.pathname, ch.line_no, ch.col, ch.offset))
-    for i, ch in enumerate(changes, 1):
-        ch.short_id = f"T{i:03d}"
+        orphan_threads = [
+            thread for tid, thread in threads.items() if tid not in referenced_thread_ids
+        ]
 
-    # ---- Apply filters ----
-    reviewer_filter = reviewer_filter or []
-    pre_filter_anchored = list(anchored)
-    pre_filter_changes = list(changes)
+        # Stable IDs assigned BEFORE filtering so they're consistent across runs.
+        anchored.sort(key=lambda c: (c.pathname, c.line_no, c.col, c.offset))
+        for i, c in enumerate(anchored, 1):
+            c.short_id = f"C{i:03d}"
+        changes.sort(key=lambda ch: (ch.pathname, ch.line_no, ch.col, ch.offset))
+        for i, ch in enumerate(changes, 1):
+            ch.short_id = f"T{i:03d}"
 
-    def keep_comment(c: AnchoredComment) -> bool:
-        t = threads.get(c.thread_id)
-        if t is not None:
+        # ---- Apply filters ----
+        reviewer_filter = reviewer_filter or []
+        pre_filter_anchored = list(anchored)
+        pre_filter_changes = list(changes)
+
+        def keep_comment(c: AnchoredComment) -> bool:
+            t = threads.get(c.thread_id)
+            if t is not None:
+                if t.resolved and not include_resolved:
+                    return False
+                if not t.resolved and not include_open:
+                    return False
+            if reviewer_filter and not _thread_matches_reviewer(t, reviewer_filter):
+                return False
+            return True
+
+        anchored = [c for c in anchored if keep_comment(c)]
+        if not include_changes:
+            changes = []
+        else:
+            changes = [ch for ch in changes if _change_matches_reviewer(ch, reviewer_filter)]
+
+        # Orphan threads: also filter by open/resolved + reviewer
+        def keep_orphan(t: Thread) -> bool:
             if t.resolved and not include_resolved:
                 return False
             if not t.resolved and not include_open:
                 return False
-        if reviewer_filter and not _thread_matches_reviewer(t, reviewer_filter):
-            return False
-        return True
+            if reviewer_filter and not _thread_matches_reviewer(t, reviewer_filter):
+                return False
+            return True
 
-    anchored = [c for c in anchored if keep_comment(c)]
-    if not include_changes:
-        changes = []
-    else:
-        changes = [ch for ch in changes if _change_matches_reviewer(ch, reviewer_filter)]
+        orphan_threads = [t for t in orphan_threads if keep_orphan(t)]
 
-    # Orphan threads: also filter by open/resolved + reviewer
-    def keep_orphan(t: Thread) -> bool:
-        if t.resolved and not include_resolved:
-            return False
-        if not t.resolved and not include_open:
-            return False
-        if reviewer_filter and not _thread_matches_reviewer(t, reviewer_filter):
-            return False
-        return True
-
-    orphan_threads = [t for t in orphan_threads if keep_orphan(t)]
-
-    filtered_msg_bits = []
-    if not include_open:
-        filtered_msg_bits.append("open hidden")
-    if not include_resolved:
-        filtered_msg_bits.append("resolved hidden")
-    if not include_changes:
-        filtered_msg_bits.append("tracked changes hidden")
-    if reviewer_filter:
-        filtered_msg_bits.append(f"reviewer filter: {', '.join(reviewer_filter)}")
-    if filtered_msg_bits:
-        progress(
-            f"Filter applied ({'; '.join(filtered_msg_bits)}): "
-            f"{len(pre_filter_anchored)}→{len(anchored)} comments, "
-            f"{len(pre_filter_changes)}→{len(changes)} tracked changes"
-        )
-
-    title = project_title or metadata.get("name") or project_id
-    # Everything downstream of here sees only the threads that survived the
-    # filters. It used to get the whole dictionary, so --reviewer and
-    # --no-resolved dropped comments from the Markdown while comments.json
-    # still carried the excluded discussions in full, and the summary counted
-    # reviewers nobody had asked to see. The browser extension has always
-    # narrowed the set here; this brings Python into line with it.
-    visible_thread_ids = {c.thread_id for c in anchored} | {t.id for t in orphan_threads}
-    visible_threads = {tid: t for tid, t in threads.items() if tid in visible_thread_ids}
-    thread_count_after = len(visible_thread_ids)
-    # Over threads, not over anchors. Counting anchors made a thread with no
-    # anchor invisible, so a project whose ranges could not be read reported
-    # thread_count 1 with open_count 0, and it would have counted a thread
-    # twice if one ever carried two anchors. The Markdown has always counted
-    # threads, so the two outputs of one export disagreed.
-    open_count = sum(1 for t in visible_threads.values() if not t.resolved)
-    resolved_count = sum(1 for t in visible_threads.values() if t.resolved)
-    stale_count = sum(1 for c in anchored if c.stale)
-
-    mode_lit = "detailed" if (render_mode or "").lower() == "detailed" else "compact"
-    markdown = render_markdown(
-        project_title=title,
-        project_id=project_id,
-        threads=visible_threads,
-        anchored=anchored,
-        orphan_threads=orphan_threads,
-        changes=changes,
-        mode=mode_lit,
-        stable=stable,
-    )
-
-    # A dated filename makes every run a new file, so git shows additions
-    # instead of a diff. In stable mode there is one file that gets updated.
-    # The last chance to stop before anything is written. After this the files
-    # start appearing, and a half-written export folder is worse than none.
-    _stop_if_asked(should_cancel)
-    md_path = out_dir / ("comments.md" if stable else f"comments-{date.today().isoformat()}.md")
-    md_path.write_text(markdown, encoding="utf-8")
-    files_written: list[str] = [md_path.name]
-    progress(f"Wrote {md_path.name}")
-
-    json_payload = _build_structured_json(
-        project_id=project_id,
-        project_title=title,
-        threads=visible_threads,
-        anchored=anchored,
-        changes=changes,
-        orphan_threads=orphan_threads,
-        doc_id_to_path=doc_id_to_path,
-        open_count=open_count,
-        resolved_count=resolved_count,
-        stale_count=stale_count,
-        threads_raw=threads_raw,
-        ranges_payload=ranges_payload,
-        include_raw=include_raw,
-        user_map=user_map,
-        stable=stable,
-    )
-    json_payload["filters_applied"] = {
-        "include_open": include_open,
-        "include_resolved": include_resolved,
-        "include_changes": include_changes,
-        "reviewer_filter": reviewer_filter,
-        "render_mode": mode_lit,
-    }
-    since_path: Path | None = None
-    since_summary: str | None = None
-    if previous is not None:
-        changed = compare(previous, json_payload)
-        since_summary = changed.summary()
-        progress(since_summary)
-        if changed.comparable:
-            json_payload["since"] = {"compared_with": previous_from,
-                                     **short_ids(changed)}
-        since_path = out_dir / SINCE_FILENAME
-        since_path.write_text(
-            render_since(changed, project_title=title,
-                         previous_path=(
-                             "the previous export in this folder"
-                             if Path(previous_from).parent == out_dir
-                             else previous_from),
-                         stable=stable),
-            encoding="utf-8")
-        files_written.append(since_path.name)
-        progress(f"Wrote {since_path.name}")
-
-    json_path = out_dir / "comments.json"
-    json_path.write_text(json.dumps(json_payload, indent=2, default=str), encoding="utf-8")
-    files_written.append(json_path.name)
-    progress(f"Wrote {json_path.name}")
-
-    # JSONL companion (one comment per line, self-contained)
-    if write_jsonl:
-        # Derived from the payload that was just built, rather than assembled
-        # a second time from the objects. The two used to be written by
-        # separate code and had drifted into different record shapes: this one
-        # carried no schema_version, no type, no project and no orphan
-        # threads, all of which the browser extension emitted. Deriving it
-        # means they cannot disagree again.
-        jsonl_path = out_dir / "comments.jsonl"
-        head = {"schema_version": json_payload["schema_version"],
-                "project": json_payload["project"]}
-        with jsonl_path.open("w", encoding="utf-8") as f:
-            for c in json_payload["comments"]:
-                rec = {**head, "type": "comment", **c,
-                       "thread": json_payload["threads"].get(c["thread_id"])}
-                f.write(json.dumps(rec, default=str))
-                f.write("\n")
-            for tid in json_payload.get("orphan_thread_ids") or []:
-                rec = {**head, "type": "orphan_thread",
-                       "thread": json_payload["threads"].get(tid)}
-                f.write(json.dumps(rec, default=str))
-                f.write("\n")
-        files_written.append(jsonl_path.name)
-        progress(f"Wrote {jsonl_path.name} ({len(anchored)} record(s))")
-
-    # Per-reviewer sub-reports
-    if per_reviewer_reports:
-        by_reviewer_dir = out_dir / "by-reviewer"
-        by_reviewer_dir.mkdir(exist_ok=True)
-        reviewers: dict[str, str] = {}  # display name -> slug
-        for t in visible_threads.values():
-            for m in t.messages:
-                name = m.user_name or m.user_email or m.user_id
-                if not name:
-                    continue
-                reviewers.setdefault(name, _slug_reviewer(name))
-        for change in changes:
-            name = change.user_name or change.user_email or change.user_id
-            if name:
-                reviewers.setdefault(name, _slug_reviewer(name))
-        # "A B", "A-B", "A_B" and "A.B" all slug to "a-b", so two reviewers
-        # produced one file and the second silently replaced the first. Names
-        # that collide get a short suffix rather than losing a report.
-        taken: dict[str, int] = {}
-        for name, slug in list(reviewers.items()):
-            taken[slug] = taken.get(slug, 0) + 1
-            if taken[slug] > 1:
-                reviewers[name] = f"{slug}-{taken[slug]}"
-
-        written = 0
-        for reviewer_name, slug in reviewers.items():
-            sub_anchored = [
-                c for c in anchored
-                if _thread_matches_reviewer(visible_threads.get(c.thread_id), [reviewer_name])
-            ]
-            sub_changes = [
-                ch for ch in changes
-                if _change_matches_reviewer(ch, [reviewer_name])
-            ]
-            sub_orphans = [
-                t for t in orphan_threads
-                if _thread_matches_reviewer(t, [reviewer_name])
-            ]
-            if not sub_anchored and not sub_changes and not sub_orphans:
-                continue
-            # Only this reviewer's threads. Handing over all of them made
-            # every one of these files report whole-project totals in its
-            # front matter, so a report headed with one person's name said
-            # there were 83 threads and four reviewers.
-            sub_threads = {
-                tid: t for tid, t in visible_threads.items()
-                if _thread_matches_reviewer(t, [reviewer_name])
-            }
-            sub_md = render_markdown(
-                project_title=f"{title} — {reviewer_name}",
-                project_id=project_id,
-                threads=sub_threads,
-                anchored=sub_anchored,
-                orphan_threads=sub_orphans,
-                changes=sub_changes,
-                mode=mode_lit,
-                stable=stable,
-            )
-            (by_reviewer_dir / f"{slug}.md").write_text(sub_md, encoding="utf-8")
-            written += 1
-        progress(f"Wrote {written} per-reviewer report(s) into by-reviewer/")
-
-    letter_path: Path | None = None
-    if response_letter:
-        letter_path = out_dir / "response-letter.md"
-        letter_path.write_text(
-            render_response_letter(title, project_id, visible_threads, anchored, stable=stable),
-            encoding="utf-8",
-        )
-        progress(f"Wrote {letter_path.name}")
-
-    annotated_dir: Path | None = None
-    if annotated_tex:
-        annotated_dir = out_dir / "annotated"
-        by_doc: dict[str, list[AnchoredComment]] = {}
-        for c in anchored:
-            by_doc.setdefault(c.doc_id, []).append(c)
-        written = 0
-        for doc_id, doc_comments in sorted(by_doc.items()):
-            _stop_if_asked(should_cancel, files_written)
-            doc = doc_texts.get(doc_id)
-            if doc is None:
-                continue
-            annotated, n = annotate_document(
-                doc.text, doc_comments, visible_threads,
-                style=annotate_style if annotate_style in ANNOTATE_STYLES else "highlight",
-            )
-            # Mirror the project layout so \input paths still resolve.
-            rel = safe_relative(doc.pathname, doc_id)
-            target = annotated_dir / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(annotated, encoding="utf-8")
-            written += 1
-            progress(f"  annotated {rel} with {n} comment(s)")
-        progress(
-            f"Wrote {written} annotated source file(s) into annotated/ "
-            f"— compile one to get a PDF carrying the comments"
-        )
-
-    annotated_pdf_path: Path | None = None
-    if annotated_pdf:
-        _stop_if_asked(should_cancel, files_written)
-        progress("Fetching the PDF Overleaf built…")
-        try:
-            pdf = client.download_compiled_pdf(project_id, metadata.get("rootDocId"))
-        except UserFacingError:
-            raise
-        except Exception as e:
-            logger.warning("Could not get the compiled PDF: %s", e)
-            pdf = None
-        if pdf is None:
+        filtered_msg_bits = []
+        if not include_open:
+            filtered_msg_bits.append("open hidden")
+        if not include_resolved:
+            filtered_msg_bits.append("resolved hidden")
+        if not include_changes:
+            filtered_msg_bits.append("tracked changes hidden")
+        if reviewer_filter:
+            filtered_msg_bits.append(f"reviewer filter: {', '.join(reviewer_filter)}")
+        if filtered_msg_bits:
             progress(
-                "Overleaf had no PDF to give. Open the project and press "
-                "Recompile once, then run this again."
+                f"Filter applied ({'; '.join(filtered_msg_bits)}): "
+                f"{len(pre_filter_anchored)}→{len(anchored)} comments, "
+                f"{len(pre_filter_changes)}→{len(changes)} tracked changes"
             )
-        else:
-            # The comments belong to whichever document holds most of them;
-            # the PDF is one file however many sources it was built from.
-            from .pdfannotate import PdfAnnotationUnavailable, annotate_pdf
 
-            sources = {doc_id: d.text for doc_id, d in doc_texts.items()}
-            if not sources:
-                progress("No commented source to match against, skipping the PDF.")
-            else:
-                try:
-                    out_bytes, placed = annotate_pdf(pdf, sources, anchored, visible_threads)
-                except PdfAnnotationUnavailable as e:
-                    raise UserFacingError(str(e)) from e
-                annotated_pdf_path = out_dir / "commented.pdf"
-                annotated_pdf_path.write_bytes(out_bytes)
-                marked = sum(1 for p in placed if p.highlighted)
-                progress(
-                    f"Wrote {annotated_pdf_path.name} — {marked} of {len(placed)} "
-                    f"comment(s) marked on the page, all {len(placed)} listed at the end"
-                )
-                if marked < len(placed):
-                    logger.info(
-                        "Not marked: %s",
-                        ", ".join(f"{p.comment.short_id} ({p.reason})"
-                                  for p in placed if not p.highlighted),
-                    )
+        title = project_title or metadata.get("name") or project_id
+        # Everything downstream of here sees only the threads that survived the
+        # filters. It used to get the whole dictionary, so --reviewer and
+        # --no-resolved dropped comments from the Markdown while comments.json
+        # still carried the excluded discussions in full, and the summary counted
+        # reviewers nobody had asked to see. The browser extension has always
+        # narrowed the set here; this brings Python into line with it.
+        visible_thread_ids = {c.thread_id for c in anchored} | {t.id for t in orphan_threads}
+        visible_threads = {tid: t for tid, t in threads.items() if tid in visible_thread_ids}
+        thread_count_after = len(visible_thread_ids)
+        # Over threads, not over anchors. Counting anchors made a thread with no
+        # anchor invisible, so a project whose ranges could not be read reported
+        # thread_count 1 with open_count 0, and it would have counted a thread
+        # twice if one ever carried two anchors. The Markdown has always counted
+        # threads, so the two outputs of one export disagreed.
+        open_count = sum(1 for t in visible_threads.values() if not t.resolved)
+        resolved_count = sum(1 for t in visible_threads.values() if t.resolved)
+        stale_count = sum(1 for c in anchored if c.stale)
 
-    source_dir: Path | None = None
-    if include_source and doc_texts:
-        # Written byte for byte as it was downloaded, because `offset` and
-        # `line` in comments.json index into exactly this text. An assistant
-        # asked to rewrite a paragraph can then read the paragraph, rather than
-        # working from the short window around the anchor.
-        source_dir = out_dir / "source"
-        for doc_id, doc in sorted(doc_texts.items()):
-            target = source_dir / safe_relative(doc.pathname, doc_id)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(doc.text, encoding="utf-8")
-        progress(
-            f"Wrote {len(doc_texts)} commented file(s) into source/ — the "
-            f"offsets in comments.json point into these"
+        mode_lit = "detailed" if (render_mode or "").lower() == "detailed" else "compact"
+        markdown = render_markdown(
+            project_title=title,
+            project_id=project_id,
+            threads=visible_threads,
+            anchored=anchored,
+            orphan_threads=orphan_threads,
+            changes=changes,
+            mode=mode_lit,
+            stable=stable,
         )
 
-    agents_path = out_dir / "agents.md"
-    agents_path.write_text(
-        _build_agents_md(title, project_id, json_path.name, md_path.name,
-                         has_source=source_dir is not None,
-                         since_name=since_path.name if since_path else None),
-        encoding="utf-8")
-    progress(f"Wrote {agents_path.name}")
+        # A dated filename makes every run a new file, so git shows additions
+        # instead of a diff. In stable mode there is one file that gets updated.
+        # The last chance to stop before anything is written. After this the files
+        # start appearing, and a half-written export folder is worse than none.
+        _stop_if_asked(should_cancel)
+        md_path = stage / ("comments.md" if stable else f"comments-{date.today().isoformat()}.md")
+        md_path.write_text(markdown, encoding="utf-8")
+        progress(f"Wrote {md_path.name}")
 
-    if stale_count:
-        progress(f"{stale_count} comment anchor(s) were stale (text moved or removed).")
+        json_payload = _build_structured_json(
+            project_id=project_id,
+            project_title=title,
+            threads=visible_threads,
+            anchored=anchored,
+            changes=changes,
+            orphan_threads=orphan_threads,
+            doc_id_to_path=doc_id_to_path,
+            open_count=open_count,
+            resolved_count=resolved_count,
+            stale_count=stale_count,
+            threads_raw=threads_raw,
+            ranges_payload=ranges_payload,
+            include_raw=include_raw,
+            user_map=user_map,
+            stable=stable,
+        )
+        json_payload["filters_applied"] = {
+            "include_open": include_open,
+            "include_resolved": include_resolved,
+            "include_changes": include_changes,
+            "reviewer_filter": reviewer_filter,
+            "render_mode": mode_lit,
+        }
+        since_path: Path | None = None
+        since_summary: str | None = None
+        if previous is not None:
+            changed = compare(previous, json_payload)
+            since_summary = changed.summary()
+            progress(since_summary)
+            if changed.comparable:
+                json_payload["since"] = {"compared_with": previous_from,
+                                         **short_ids(changed)}
+            since_path = stage / SINCE_FILENAME
+            since_path.write_text(
+                render_since(changed, project_title=title,
+                             previous_path=(
+                                 "the previous export in this folder"
+                                 if Path(previous_from).parent == out_dir
+                                 else previous_from),
+                             stable=stable),
+                encoding="utf-8")
+            progress(f"Wrote {since_path.name}")
 
-    return ExportResult(
-        project_id=project_id,
-        markdown_path=md_path,
-        json_path=json_path,
-        log_path=log_path,
-        thread_count=thread_count_after,
-        open_count=open_count,
-        resolved_count=resolved_count,
-        tracked_change_count=len(changes),
-        stale_anchor_count=stale_count,
-        jsonl_path=(out_dir / "comments.jsonl") if write_jsonl else None,
-        by_reviewer_dir=(out_dir / "by-reviewer") if per_reviewer_reports else None,
-        agents_path=agents_path,
-        response_letter_path=letter_path,
-        annotated_dir=annotated_dir,
-        annotated_pdf_path=annotated_pdf_path,
-        source_dir=source_dir,
-        since_path=since_path,
-        since_summary=since_summary,
-    )
+        json_path = stage / "comments.json"
+        json_path.write_text(json.dumps(json_payload, indent=2, default=str), encoding="utf-8")
+        progress(f"Wrote {json_path.name}")
+
+        # JSONL companion (one comment per line, self-contained)
+        if write_jsonl:
+            # Derived from the payload that was just built, rather than assembled
+            # a second time from the objects. The two used to be written by
+            # separate code and had drifted into different record shapes: this one
+            # carried no schema_version, no type, no project and no orphan
+            # threads, all of which the browser extension emitted. Deriving it
+            # means they cannot disagree again.
+            jsonl_path = stage / "comments.jsonl"
+            head = {"schema_version": json_payload["schema_version"],
+                    "project": json_payload["project"]}
+            with jsonl_path.open("w", encoding="utf-8") as f:
+                for c in json_payload["comments"]:
+                    rec = {**head, "type": "comment", **c,
+                           "thread": json_payload["threads"].get(c["thread_id"])}
+                    f.write(json.dumps(rec, default=str))
+                    f.write("\n")
+                for tid in json_payload.get("orphan_thread_ids") or []:
+                    rec = {**head, "type": "orphan_thread",
+                           "thread": json_payload["threads"].get(tid)}
+                    f.write(json.dumps(rec, default=str))
+                    f.write("\n")
+            progress(f"Wrote {jsonl_path.name} ({len(anchored)} record(s))")
+
+        # Per-reviewer sub-reports
+        if per_reviewer_reports:
+            by_reviewer_dir = stage / "by-reviewer"
+            by_reviewer_dir.mkdir(exist_ok=True)
+            reviewers: dict[str, str] = {}  # display name -> slug
+            for t in visible_threads.values():
+                for m in t.messages:
+                    name = m.user_name or m.user_email or m.user_id
+                    if not name:
+                        continue
+                    reviewers.setdefault(name, _slug_reviewer(name))
+            for change in changes:
+                name = change.user_name or change.user_email or change.user_id
+                if name:
+                    reviewers.setdefault(name, _slug_reviewer(name))
+            # "A B", "A-B", "A_B" and "A.B" all slug to "a-b", so two reviewers
+            # produced one file and the second silently replaced the first. Names
+            # that collide get a short suffix rather than losing a report.
+            taken: dict[str, int] = {}
+            for name, slug in list(reviewers.items()):
+                taken[slug] = taken.get(slug, 0) + 1
+                if taken[slug] > 1:
+                    reviewers[name] = f"{slug}-{taken[slug]}"
+
+            written = 0
+            for reviewer_name, slug in reviewers.items():
+                sub_anchored = [
+                    c for c in anchored
+                    if _thread_matches_reviewer(visible_threads.get(c.thread_id), [reviewer_name])
+                ]
+                sub_changes = [
+                    ch for ch in changes
+                    if _change_matches_reviewer(ch, [reviewer_name])
+                ]
+                sub_orphans = [
+                    t for t in orphan_threads
+                    if _thread_matches_reviewer(t, [reviewer_name])
+                ]
+                if not sub_anchored and not sub_changes and not sub_orphans:
+                    continue
+                # Only this reviewer's threads. Handing over all of them made
+                # every one of these files report whole-project totals in its
+                # front matter, so a report headed with one person's name said
+                # there were 83 threads and four reviewers.
+                sub_threads = {
+                    tid: t for tid, t in visible_threads.items()
+                    if _thread_matches_reviewer(t, [reviewer_name])
+                }
+                sub_md = render_markdown(
+                    project_title=f"{title} — {reviewer_name}",
+                    project_id=project_id,
+                    threads=sub_threads,
+                    anchored=sub_anchored,
+                    orphan_threads=sub_orphans,
+                    changes=sub_changes,
+                    mode=mode_lit,
+                    stable=stable,
+                )
+                (by_reviewer_dir / f"{slug}.md").write_text(sub_md, encoding="utf-8")
+                written += 1
+            progress(f"Wrote {written} per-reviewer report(s) into by-reviewer/")
+
+        letter_path: Path | None = None
+        if response_letter:
+            letter_path = stage / "response-letter.md"
+            letter_path.write_text(
+                render_response_letter(title, project_id, visible_threads, anchored, stable=stable),
+                encoding="utf-8",
+            )
+            progress(f"Wrote {letter_path.name}")
+
+        annotated_dir: Path | None = None
+        if annotated_tex:
+            annotated_dir = stage / "annotated"
+            by_doc: dict[str, list[AnchoredComment]] = {}
+            for c in anchored:
+                by_doc.setdefault(c.doc_id, []).append(c)
+            written = 0
+            for doc_id, doc_comments in sorted(by_doc.items()):
+                _stop_if_asked(should_cancel)
+                doc = doc_texts.get(doc_id)
+                if doc is None:
+                    continue
+                annotated, n = annotate_document(
+                    doc.text, doc_comments, visible_threads,
+                    style=annotate_style if annotate_style in ANNOTATE_STYLES else "highlight",
+                )
+                # Mirror the project layout so \input paths still resolve.
+                rel = safe_relative(doc.pathname, doc_id)
+                target = annotated_dir / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(annotated, encoding="utf-8")
+                written += 1
+                progress(f"  annotated {rel} with {n} comment(s)")
+            progress(
+                f"Wrote {written} annotated source file(s) into annotated/ "
+                f"— compile one to get a PDF carrying the comments"
+            )
+
+        annotated_pdf_path: Path | None = None
+        if annotated_pdf:
+            _stop_if_asked(should_cancel)
+            progress("Fetching the PDF Overleaf built…")
+            try:
+                pdf = client.download_compiled_pdf(project_id, metadata.get("rootDocId"))
+            except UserFacingError:
+                raise
+            except Exception as e:
+                logger.warning("Could not get the compiled PDF: %s", e)
+                pdf = None
+            if pdf is None:
+                progress(
+                    "Overleaf had no PDF to give. Open the project and press "
+                    "Recompile once, then run this again."
+                )
+            else:
+                # The comments belong to whichever document holds most of them;
+                # the PDF is one file however many sources it was built from.
+                from .pdfannotate import PdfAnnotationUnavailable, annotate_pdf
+
+                sources = {doc_id: d.text for doc_id, d in doc_texts.items()}
+                if not sources:
+                    progress("No commented source to match against, skipping the PDF.")
+                else:
+                    try:
+                        out_bytes, placed = annotate_pdf(pdf, sources, anchored, visible_threads)
+                    except PdfAnnotationUnavailable as e:
+                        raise UserFacingError(str(e)) from e
+                    annotated_pdf_path = stage / "commented.pdf"
+                    annotated_pdf_path.write_bytes(out_bytes)
+                    marked = sum(1 for p in placed if p.highlighted)
+                    progress(
+                        f"Wrote {annotated_pdf_path.name} — {marked} of {len(placed)} "
+                        f"comment(s) marked on the page, all {len(placed)} listed at the end"
+                    )
+                    if marked < len(placed):
+                        logger.info(
+                            "Not marked: %s",
+                            ", ".join(f"{p.comment.short_id} ({p.reason})"
+                                      for p in placed if not p.highlighted),
+                        )
+
+        source_dir: Path | None = None
+        if include_source and doc_texts:
+            # Written byte for byte as it was downloaded, because `offset` and
+            # `line` in comments.json index into exactly this text. An assistant
+            # asked to rewrite a paragraph can then read the paragraph, rather than
+            # working from the short window around the anchor.
+            source_dir = stage / "source"
+            for doc_id, doc in sorted(doc_texts.items()):
+                target = source_dir / safe_relative(doc.pathname, doc_id)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(doc.text, encoding="utf-8")
+            progress(
+                f"Wrote {len(doc_texts)} commented file(s) into source/ — the "
+                f"offsets in comments.json point into these"
+            )
+
+        agents_path = stage / "agents.md"
+        agents_path.write_text(
+            _build_agents_md(title, project_id, json_path.name, md_path.name,
+                             has_source=source_dir is not None,
+                             since_name=since_path.name if since_path else None),
+            encoding="utf-8")
+        progress(f"Wrote {agents_path.name}")
+
+        if stale_count:
+            progress(f"{stale_count} comment anchor(s) were stale (text moved or removed).")
+
+        # Nothing above this line touched the folder the user chose. Everything
+        # appears at once, or not at all.
+        moved = _commit(stage, out_dir)
+        progress(f"Put {moved} file(s) and folder(s) into {out_dir}")
+
+        def final(path: Path | None) -> Path | None:
+            return out_dir / path.relative_to(stage) if path is not None else None
+
+        return ExportResult(
+            project_id=project_id,
+            markdown_path=final(md_path),
+            json_path=final(json_path),
+            log_path=log_path,
+            thread_count=thread_count_after,
+            open_count=open_count,
+            resolved_count=resolved_count,
+            tracked_change_count=len(changes),
+            stale_anchor_count=stale_count,
+            jsonl_path=(out_dir / "comments.jsonl") if write_jsonl else None,
+            by_reviewer_dir=(out_dir / "by-reviewer") if per_reviewer_reports else None,
+            agents_path=final(agents_path),
+            response_letter_path=final(letter_path),
+            annotated_dir=final(annotated_dir),
+            annotated_pdf_path=final(annotated_pdf_path),
+            source_dir=final(source_dir),
+            since_path=final(since_path),
+            since_summary=since_summary,
+        )
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
 
 
 def _iso(ms: int | None) -> str | None:

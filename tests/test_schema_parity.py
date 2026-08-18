@@ -25,7 +25,7 @@ from overleaf_comments_export import export as export_mod
 from tests.test_export_wiring import FakeClient
 
 HERE = Path(__file__).parent
-FIXTURE = HERE / "fixtures" / "schema_fixture.json"
+FIXTURE = HERE / "fixtures" / "schema_scenarios.json"
 RUNNER = HERE / "fixtures" / "run_extension.js"
 
 pytestmark = pytest.mark.skipif(
@@ -51,34 +51,46 @@ KNOWN_GAPS = {
 }
 
 
+SCENARIOS = sorted(json.loads(FIXTURE.read_text(encoding="utf-8")))
+
+
 @pytest.fixture(scope="module")
-def fixture() -> dict:
+def scenarios() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
-@pytest.fixture(scope="module")
-def extension_run(fixture) -> dict:
-    proc = subprocess.run(["node", str(RUNNER)], capture_output=True, text=True)
+@pytest.fixture(params=SCENARIOS, ids=SCENARIOS)
+def scenario(request, scenarios) -> dict:
+    """One case from the matrix. A single happy path is how the JSONL
+    contract drifted apart without any test noticing."""
+    return scenarios[request.param]
+
+
+@pytest.fixture()
+def extension_run(scenario) -> dict:
+    proc = subprocess.run(["node", str(RUNNER), scenario["name"]],
+                          capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     return json.loads(proc.stdout)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def extension_payload(extension_run) -> dict:
     return extension_run["payload"]
 
 
-@pytest.fixture(scope="module")
-def python_run(fixture) -> dict:
-    f = fixture
-    at = f["docText"].index(f["anchor"])
+@pytest.fixture()
+def python_run(scenario) -> dict:
+    f = scenario
 
     class Fixture(FakeClient):
         def get_threads(self, project_id):
-            return f["threads"]
+            return {tid: {"messages": t["messages"], "resolved": t["resolved"]}
+                    for tid, t in (f.get("threads") or {}).items()}
 
         def get_resolved_thread_ids(self, project_id):
-            return []
+            return [tid for tid, t in (f.get("threads") or {}).items()
+                    if t["resolved"]]
 
         def get_project_metadata(self, project_id):
             return {"files": {"docs": []}, "name": f["projectTitle"],
@@ -92,8 +104,8 @@ def python_run(fixture) -> dict:
 
         def get_project_ranges(self, project_id):
             return [{"id": f["docId"], "ranges": {
-                "comments": [{"op": {"p": at, "c": f["anchor"], "t": "t1"}}],
-                "changes": [f["trackedChange"]]}}]
+                "comments": f.get("comments") or [],
+                "changes": [f["trackedChange"]] if f.get("trackedChange") else []}}]
 
         def download_doc_text(self, project_id, doc_id):
             return f["docText"]
@@ -113,20 +125,31 @@ def python_run(fixture) -> dict:
         export_mod.OverleafClient = real
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def python_payload(python_run) -> dict:
     return python_run["payload"]
 
 
+_MISSING = object()
+
+
 def _at(payload: dict, path: str):
-    """'files[0]' and 'threads.t1' and so on, so failures name a real place."""
+    """'files[0]' and 'threads.t1' and so on, so failures name a real place.
+
+    Returns _MISSING when the scenario has nothing there, since a matrix that
+    covers orphan-only and changes-only projects has cases with no comments
+    and cases with no tracked changes.
+    """
     node = payload
     for part in path.split("."):
-        if part.endswith("]"):
-            part, _, index = part[:-1].partition("[")
-            node = node[part][int(index)]
-        else:
-            node = node[part]
+        try:
+            if part.endswith("]"):
+                part, _, index = part[:-1].partition("[")
+                node = node[part][int(index)]
+            else:
+                node = node[part]
+        except (KeyError, IndexError):
+            return _MISSING
     return node
 
 
@@ -140,8 +163,13 @@ PLACES = [
 def test_the_two_exports_have_the_same_shape(place, python_payload,
                                              extension_payload):
     path = "" if place == "top level" else place
-    py = set(python_payload if not path else _at(python_payload, path))
-    ext = set(extension_payload if not path else _at(extension_payload, path))
+    py_at = python_payload if not path else _at(python_payload, path)
+    ext_at = extension_payload if not path else _at(extension_payload, path)
+    if py_at is _MISSING and ext_at is _MISSING:
+        pytest.skip(f"this scenario has no {place}")
+    assert py_at is not _MISSING, f"the extension has {place} and Python does not"
+    assert ext_at is not _MISSING, f"Python has {place} and the extension does not"
+    py, ext = set(py_at), set(ext_at)
 
     only_py = (py - ext) - KNOWN_GAPS.get((place, "python"), set())
     only_ext = (ext - py) - KNOWN_GAPS.get((place, "extension"), set())
@@ -167,6 +195,8 @@ def test_the_shared_fields_agree_on_values_too(place, python_payload,
                                                extension_payload):
     """Same keys with different meanings would be worse than different keys."""
     py, ext = _at(python_payload, place), _at(extension_payload, place)
+    if py is _MISSING and ext is _MISSING:
+        pytest.skip(f"this scenario has no {place}")
     for key in ("short_id", "pathname", "line", "col", "offset",
                 "anchored_text", "kind", "content", "nearest_heading"):
         if key in py and key in ext:
@@ -208,8 +238,11 @@ def test_both_write_the_same_kinds_of_jsonl_record(python_run, extension_run):
 
 
 def test_a_jsonl_comment_record_has_the_same_shape(python_run, extension_run):
-    py = next(r for r in _records(python_run["jsonl"]) if r["type"] == "comment")
-    ext = next(r for r in _records(extension_run["jsonl"]) if r["type"] == "comment")
+    py = next((r for r in _records(python_run["jsonl"]) if r["type"] == "comment"), None)
+    ext = next((r for r in _records(extension_run["jsonl"]) if r["type"] == "comment"), None)
+    if py is None and ext is None:
+        pytest.skip("this scenario has no comments")
+    assert py is not None and ext is not None, "only one of them wrote a comment record"
     only_py = set(py) - set(ext) - KNOWN_GAPS.get(("comments[0]", "python"), set())
     only_ext = set(ext) - set(py)
     assert not only_py and not only_ext, (
@@ -221,7 +254,9 @@ def test_a_jsonl_comment_record_has_the_same_shape(python_run, extension_run):
 def test_a_jsonl_record_stands_on_its_own(python_run):
     """Each line is read independently, so it has to say what it is, what it
     belongs to, and carry its whole discussion."""
-    rec = next(r for r in _records(python_run["jsonl"]) if r["type"] == "comment")
+    rec = next((r for r in _records(python_run["jsonl"]) if r["type"] == "comment"), None)
+    if rec is None:
+        pytest.skip("this scenario has no comments")
     for key in ("schema_version", "type", "project", "short_id", "thread"):
         assert key in rec, f"a JSONL record with no {key} cannot be read alone"
     assert rec["thread"]["messages"], "the discussion was not embedded"

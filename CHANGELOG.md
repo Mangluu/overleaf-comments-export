@@ -4,6 +4,42 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-08-18
+
+The three worthwhile items from the second review's architecture list.
+
+### Changed
+- **An export appears all at once, or not at all.** Every file is now written
+  into a staging folder inside the destination and moved into place in one
+  step at the end. Before this, output went straight to the chosen folder one
+  file at a time, so stopping an export, losing the disk, or a crash part-way
+  left a folder holding some files from this run and some from the last one.
+
+  Because of it, "Stopped. Nothing was written." is a promise the code can
+  keep. The plumbing added in 0.18.0 to admit which files had already landed
+  is gone, along with the case that made it necessary. A folder that had a
+  `by-reviewer/` file from an earlier run also no longer keeps it.
+
+  The log is the exception and is still written live, since it is what you
+  read when an export fails and never reaches the end.
+
+- **The settings file is created owner-only rather than made owner-only.** It
+  was written and then chmodded, so a live Overleaf session sat in a
+  world-readable file for as long as that took. It is now created 0600 with
+  `os.open`, written beside the real file and moved into place, so a crash
+  part-way cannot leave a truncated one either.
+
+- **The cross-implementation parity test runs a matrix, not one happy path.**
+  Seven scenarios now go through both Python and the browser extension and
+  are compared: the baseline, orphan-only threads, a stale offset past the
+  end of the file, a quoted title with Greek and Chinese text in the
+  comments, one thread with two anchors, a long reply chain, and tracked
+  changes with no comments at all.
+
+  A single fixture is how the JSONL contract drifted apart unnoticed. Dropping
+  orphan records from the extension's JSONL is now caught, and only the
+  orphan-only scenario catches it.
+
 ## [0.20.0] — 2026-08-18
 
 A second external review of 0.19.0. Every finding was real.

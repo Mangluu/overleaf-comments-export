@@ -311,18 +311,12 @@ def main(argv: list[str] | None = None) -> int:
             write_since=args.write_since,
             progress=lambda msg: print(msg, file=sys.stderr),
         )
-    except (KeyboardInterrupt, ExportCancelled) as e:
-        # Ctrl-C is how you cancel on the command line. Not a crash, so leave
-        # quietly, but say what is actually in the folder. Stopping during the
-        # slow extras happens after the comments themselves are written, and
-        # claiming an empty folder there would send people looking for files
-        # that are sitting right in front of them.
-        done = getattr(e, "written", [])
-        if done:
-            print(f"\nStopped. {', '.join(done)} had already been written. "
-                  "The rest was not.", file=sys.stderr)
-        else:
-            print("\nStopped. Nothing was written.", file=sys.stderr)
+    except (KeyboardInterrupt, ExportCancelled):
+        # Ctrl-C is how you cancel on the command line. Not a crash, and the
+        # promise is a real one: every file is written into a staging folder
+        # and moved into place in one step at the end, so stopping leaves the
+        # chosen folder as it was.
+        print("\nStopped. Nothing was written.", file=sys.stderr)
         return 130
     except UserFacingError as e:
         # Expected, explainable failures: no traceback, just what to do next.

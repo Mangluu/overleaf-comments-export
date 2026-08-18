@@ -1,0 +1,295 @@
+{
+  "happy_path": {
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "Test paper",
+    "docId": "doc1",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe crossed three sensory environments in a controlled study.\n\\end{document}\n",
+    "pathname": "main.tex",
+    "anchor": "three sensory environments",
+    "threads": {
+      "t1": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m1",
+            "content": "Break this sentence up.",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          },
+          {
+            "id": "m2",
+            "content": "Agreed, will do.",
+            "timestamp": 1700000100000,
+            "user_id": "u2",
+            "user": {
+              "name": "ans.ahmad",
+              "email": "a@example.com"
+            }
+          }
+        ]
+      }
+    },
+    "trackedChange": {
+      "id": "r1",
+      "op": {
+        "p": 60,
+        "i": "very "
+      },
+      "metadata": {
+        "user_id": "u2",
+        "ts": 1700000200000
+      }
+    },
+    "comments": [
+      {
+        "op": {
+          "p": 69,
+          "c": "three sensory environments",
+          "t": "t1"
+        }
+      }
+    ],
+    "name": "happy_path"
+  },
+  "orphans_only": {
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "Test paper",
+    "docId": "doc1",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe crossed three sensory environments in a controlled study.\n\\end{document}\n",
+    "pathname": "main.tex",
+    "anchor": "three sensory environments",
+    "threads": {
+      "t1": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m1",
+            "content": "A general note.",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      },
+      "t2": {
+        "resolved": true,
+        "messages": [
+          {
+            "id": "m2",
+            "content": "Already handled.",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      }
+    },
+    "trackedChange": null,
+    "comments": [],
+    "changes": [],
+    "name": "orphans_only"
+  },
+  "stale_offsets": {
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "Test paper",
+    "docId": "doc1",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe crossed three sensory environments in a controlled study.\n\\end{document}\n",
+    "pathname": "main.tex",
+    "anchor": "three sensory environments",
+    "threads": {
+      "t1": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m1",
+            "content": "This moved.",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      }
+    },
+    "trackedChange": null,
+    "comments": [
+      {
+        "op": {
+          "p": 99999,
+          "c": "text that is not there any more",
+          "t": "t1"
+        }
+      }
+    ],
+    "name": "stale_offsets"
+  },
+  "awkward_text": {
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "A \"quoted\" paper: notes on ρ and σ",
+    "docId": "doc1",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe crossed three sensory environments in a controlled study.\n\\end{document}\n",
+    "pathname": "main.tex",
+    "anchor": "three sensory environments",
+    "threads": {
+      "t1": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m1",
+            "content": "Prüfen Sie ρ — 请检查这一段。 \"quoted\" & <tagged>",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      }
+    },
+    "trackedChange": null,
+    "comments": [
+      {
+        "op": {
+          "p": 69,
+          "c": "three sensory environments",
+          "t": "t1"
+        }
+      }
+    ],
+    "name": "awkward_text"
+  },
+  "multiple_anchors": {
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "Test paper",
+    "docId": "doc1",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe crossed three sensory environments in a controlled study.\n\\end{document}\n",
+    "pathname": "main.tex",
+    "anchor": "three sensory environments",
+    "threads": {
+      "t1": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m1",
+            "content": "Both of these.",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      }
+    },
+    "trackedChange": null,
+    "comments": [
+      {
+        "op": {
+          "p": 69,
+          "c": "three sensory environments",
+          "t": "t1"
+        }
+      },
+      {
+        "op": {
+          "p": 101,
+          "c": "controlled study",
+          "t": "t1"
+        }
+      }
+    ],
+    "name": "multiple_anchors"
+  },
+  "long_discussion": {
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "Test paper",
+    "docId": "doc1",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe crossed three sensory environments in a controlled study.\n\\end{document}\n",
+    "pathname": "main.tex",
+    "anchor": "three sensory environments",
+    "threads": {
+      "t1": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m1",
+            "content": "Break this up.",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          },
+          {
+            "id": "m2",
+            "content": "Agreed.",
+            "timestamp": 1700000100000,
+            "user_id": "u1",
+            "user": {
+              "name": "ans.ahmad",
+              "email": "b@example.com"
+            }
+          },
+          {
+            "id": "m3",
+            "content": "Done in the next draft.",
+            "timestamp": 1700000200000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      }
+    },
+    "trackedChange": null,
+    "comments": [
+      {
+        "op": {
+          "p": 69,
+          "c": "three sensory environments",
+          "t": "t1"
+        }
+      }
+    ],
+    "name": "long_discussion"
+  },
+  "changes_only": {
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "Test paper",
+    "docId": "doc1",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Method}\nWe crossed three sensory environments in a controlled study.\n\\end{document}\n",
+    "pathname": "main.tex",
+    "anchor": "three sensory environments",
+    "threads": {},
+    "trackedChange": {
+      "id": "r1",
+      "op": {
+        "p": 60,
+        "i": "very "
+      },
+      "metadata": {
+        "user_id": "u2",
+        "ts": 1700000200000
+      }
+    },
+    "comments": [],
+    "name": "changes_only"
+  }
+}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import subprocess
 import sys
@@ -227,13 +228,22 @@ def _save_config(data: dict) -> str | None:
     """
     try:
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-        CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        # This file holds an Overleaf session cookie when "remember" is ticked,
-        # and it was being written world-readable. Owner only, and the folder
-        # too, so nobody else with an account on the machine can read it. Not
-        # supported on Windows, where the call is a no-op.
-        _owner_only(CONFIG_PATH, 0o600)
         _owner_only(CONFIG_PATH.parent, 0o700)
+        # Created owner-only from the start, not written and then chmodded.
+        # This file holds a live Overleaf session when "remember" is ticked,
+        # and writing first left a window where anyone on the machine could
+        # read it. Written beside the real file and moved into place, so a
+        # crash part-way cannot leave a truncated one either.
+        tmp = CONFIG_PATH.with_name(CONFIG_PATH.name + ".new")
+        fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except BaseException:
+            tmp.unlink(missing_ok=True)
+            raise
+        _owner_only(tmp, 0o600)          # umask can loosen the mode on creation
+        os.replace(tmp, CONFIG_PATH)
         return None
     except OSError as e:
         logger.warning("Could not save settings to %s: %s", CONFIG_PATH, e)
@@ -1137,8 +1147,8 @@ class App:
             self.queue.put(("done", run_export(
                 progress=progress, should_cancel=lambda: self.cancel_requested,
                 **params)))
-        except ExportCancelled as e:
-            self.queue.put(("cancelled", e.written))
+        except ExportCancelled:
+            self.queue.put(("cancelled", None))
         except Exception as e:
             self.queue.put(("error", (e, traceback.format_exc())))
 
@@ -1177,23 +1187,16 @@ class App:
         self._set_status("Stopping…", "hint")
         self._append_log(
             "Stopping. The step in progress has to finish first, so this can "
-            "take a moment.")
+            "take a moment. Nothing will be written.")
 
-    def _on_cancelled(self, written: list[str] | None = None) -> None:
+    def _on_cancelled(self) -> None:
         self.progress.stop()
         self.progress.pack_forget()
         self.cancel_requested = False
         self.stop_btn.pack_forget()
         self.stop_btn.configure(state="normal")
         self.run_btn.configure(state="normal")
-        # Stopping during the slow extras happens after the comments are
-        # already on disk. Saying "nothing was written" there sends people
-        # looking for files that are sitting in the folder.
-        if written:
-            self._set_status(f"Stopped. {', '.join(written)} had already been "
-                             "written. The rest was not.", "hint")
-        else:
-            self._set_status("Stopped. Nothing was written.", "hint")
+        self._set_status("Stopped. Nothing was written.", "hint")
         self._append_log("Stopped.")
 
     def _pump_queue(self) -> None:
@@ -1205,7 +1208,7 @@ class App:
                 elif kind == "done":
                     self._on_done(payload)  # type: ignore[arg-type]
                 elif kind == "cancelled":
-                    self._on_cancelled(payload or [])
+                    self._on_cancelled()
                 elif kind == "error":
                     err, tb = payload  # type: ignore[misc]
                     self._on_error(err, tb)
