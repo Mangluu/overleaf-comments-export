@@ -321,7 +321,12 @@ class App:
         root.bind("<KP_Enter>", self._on_return)
         self.url_entry.focus_set()
         self._validate_url()
-        self.root.after(80, self._pump_queue)
+        self._pump_id: str | None = None
+        self._pump_id = self.root.after(80, self._pump_queue)
+        # The pump reschedules itself forever. Without this, closing the
+        # window leaves one callback queued against widgets that no longer
+        # exist, and Tk reports it as `invalid command name ..._pump_queue`.
+        self.root.bind("<Destroy>", self._stop_pumping, add="+")
 
     # ---------------- appearance ----------------
 
@@ -1206,7 +1211,18 @@ class App:
                     self._on_error(err, tb)
         except queue.Empty:
             pass
-        self.root.after(80, self._pump_queue)
+        self._pump_id = self.root.after(80, self._pump_queue)
+
+    def _stop_pumping(self, event=None) -> None:
+        """Cancel the pending pump when the window goes away."""
+        if event is not None and event.widget is not self.root:
+            return                      # a child being destroyed, not the window
+        if self._pump_id is not None:
+            try:
+                self.root.after_cancel(self._pump_id)
+            except tk.TclError:
+                pass
+            self._pump_id = None
 
     def _on_done(self, result: ExportResult) -> None:
         self.last_result = result

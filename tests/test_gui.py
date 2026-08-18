@@ -224,3 +224,23 @@ def test_a_save_that_works_reports_nothing(tmp_path, monkeypatch):
     monkeypatch.setattr(gui, "CONFIG_PATH", tmp_path / "sub" / "config.json")
     assert gui._save_config({"a": 1}) is None
     assert (tmp_path / "sub" / "config.json").exists(), "it did not make the folder"
+
+
+def test_closing_the_window_cancels_the_queue_pump(app):
+    """The pump reschedules itself forever. Left running, closing the window
+    fires one more callback against widgets that are gone, and Tk reports
+    `invalid command name ..._pump_queue`. Found while chasing #11: a second
+    window opened in the same process inherited the mess."""
+    assert app._pump_id is not None, "the pump is not running at all"
+    app._stop_pumping()
+    assert app._pump_id is None
+
+
+def test_a_child_being_destroyed_does_not_stop_the_pump(app):
+    """<Destroy> fires for every widget, not just the window."""
+    class ChildEvent:
+        widget = app.url_entry
+
+    before = app._pump_id
+    app._stop_pumping(ChildEvent())
+    assert app._pump_id == before, "a child closing killed the pump"
