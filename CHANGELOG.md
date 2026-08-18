@@ -4,6 +4,27 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.18.2] — 2026-08-18
+
+### Fixed
+- **A window test measured the window manager instead of the window.** It
+  asserted `winfo_height() >= winfo_reqheight()`, and the test window is
+  withdrawn, so that reads back whatever geometry was last applied rather
+  than anything the code decided. It passed on a developer's machine and
+  failed the first time CI ran the window tests headless, which is the new
+  job in 0.18.0 doing its job on its first outing. It now asserts what
+  `_fit_window` actually decides, which holds on any screen.
+
+### Known
+- On a screen shorter than about 890 pixels the window is capped at the
+  screen and the bottom of the taller column cannot be reached, because
+  there is no scrollbar. A 1366x768 laptop loses about 170 pixels. Tracked
+  rather than patched: a canvas-based scroller was tried and removed, since
+  the cards use wrapping labels whose height depends on their width, so
+  sizing the scroller changed the wrapping, which changed the height, and
+  the layout never settled. A hang in the main window is worse than the
+  problem it fixes.
+
 ## [0.18.1] — 2026-08-18
 
 ### Fixed

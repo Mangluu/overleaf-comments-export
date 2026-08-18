@@ -171,22 +171,28 @@ def test_the_progress_bar_is_hidden_until_something_runs(app):
 
 
 def test_optional_rows_do_not_push_anything_out_of_reach(app):
-    """Without a scrollbar, anything that falls off the bottom is unreachable.
-    Ticking the self-hosted box and choosing to paste a cookie both add rows,
-    and the window has to grow to match."""
+    """Ticking the self-hosted box and choosing to paste a cookie both add
+    rows, and the window has to ask for the room.
+
+    This used to assert winfo_height() >= winfo_reqheight(), which measures
+    what the window manager did rather than what the window asked for. On a
+    withdrawn window that is whatever was last applied, so it passed on a
+    developer's machine and failed the moment CI ran it headless. It also
+    could not have held on a screen too short for the content, which is a
+    real gap tracked separately.
+    """
     app.root.update_idletasks()
     app.self_hosted_var.set(True)
     app._toggle_self_hosted()
     app.browser_box.set("I will paste it myself")
     app._on_browser_change()
     app.root.update_idletasks()
-    assert app.root.winfo_height() >= app.root.winfo_reqheight(), (
-        "the window is smaller than its contents and there is nothing to scroll"
-    )
-    # The folder card is last in the left column and the first thing to be lost.
-    assert app.out_var is not None
-    assert app.root.minsize()[1] >= min(
+
+    # The window asks for everything it needs, up to what the screen allows.
+    assert app.root.minsize()[1] == min(
         app.root.winfo_reqheight(), app.root.winfo_screenheight() - 140)
+
+
 
 
 def test_the_window_never_grows_past_the_screen(app):
