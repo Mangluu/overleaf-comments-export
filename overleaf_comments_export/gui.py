@@ -1013,25 +1013,34 @@ class App:
         as a bundled application, so it usually is not. The dialog appears
         behind whatever the person was looking at, the window stops redrawing
         because it is waiting on it, and the whole thing reads as a hang.
-        Measured: without this the app never becomes the frontmost process, and
-        `parent=` on its own does not do it either.
+
+        Lift and focus only. An earlier version toggled `-topmost` around the
+        call and the app died with "cannot run nil sheetWindow": toggling it
+        churns the underlying NSWindow, and a sheet opening on a window in
+        that state throws. Turning a hang into a crash is not an improvement.
         """
         try:
             self.root.lift()
-            self.root.attributes("-topmost", True)
             self.root.focus_force()
-            # Dropped again straight away, or the window would sit above
-            # everything else for the rest of the session.
-            self.root.after_idle(self.root.attributes, "-topmost", False)
+            # Let the window settle before anything modal opens on top of it.
+            self.root.update_idletasks()
         except tk.TclError:
             pass
 
     def _pick_folder(self) -> None:
         self._to_front()
-        chosen = filedialog.askdirectory(
-            parent=self.root,
-            initialdir=self.out_var.get() or str(Path.home()),
-            title="Choose a folder to save the comments into", mustexist=False)
+        try:
+            chosen = filedialog.askdirectory(
+                initialdir=self.out_var.get() or str(Path.home()),
+                title="Choose a folder to save the comments into",
+                mustexist=False)
+        except tk.TclError as e:
+            # The box beside the button is an ordinary text field, so a picker
+            # that will not open is an annoyance rather than a dead end.
+            logger.warning("The folder picker failed: %s", e)
+            self._set_status("The folder picker would not open. Type or paste "
+                             "the folder path into the box instead.", "bad")
+            return
         if chosen:
             self.out_var.set(chosen)
 

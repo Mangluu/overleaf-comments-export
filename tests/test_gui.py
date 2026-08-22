@@ -293,7 +293,11 @@ def test_the_window_comes_forward_before_the_folder_dialog(app, monkeypatch):
 
     def fake_dialog(**kwargs):
         order.append("dialog")
-        assert kwargs.get("parent") is app.root, "the dialog is not attached"
+        # No parent. On macOS that makes the picker a sheet attached to the
+        # window, and a sheet opening on a window whose NSWindow is not in a
+        # good state dies with "cannot run nil sheetWindow". A free-standing
+        # panel cannot fail that way.
+        assert "parent" not in kwargs, "parent= brings back the sheet crash"
         return "/tmp/chosen"
 
     monkeypatch.setattr(gui.filedialog, "askdirectory", fake_dialog)
@@ -316,9 +320,16 @@ def test_every_modal_brings_the_window_forward_first(app):
                 f"this dialog can open behind the window:\n    {line.strip()}")
 
 
-def test_bringing_the_window_forward_does_not_pin_it_there(app):
-    """-topmost has to come off again, or the window sits above everything
-    else for the rest of the session."""
+def test_bringing_the_window_forward_never_touches_topmost(app):
+    """Toggling -topmost around the dialog churns the underlying NSWindow, and
+    the app died with "cannot run nil sheetWindow" because of it. Lifting and
+    focusing is enough and cannot fail that way."""
+    import inspect
+
+    # The call, not the word. The docstring says "topmost" precisely because
+    # it explains why this does not use it.
+    source = inspect.getsource(type(app)._to_front)
+    assert '"-topmost"' not in source, "topmost is back, and so is the crash"
+    assert "'-topmost'" not in source
     app._to_front()
-    app.root.update_idletasks()          # runs the after_idle that drops it
     assert not app.root.attributes("-topmost")

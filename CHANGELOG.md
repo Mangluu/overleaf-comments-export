@@ -4,6 +4,29 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.21.3] — 2026-08-22
+
+### Fixed
+- **0.21.2 crashed the window when you clicked Choose….** I made that. The
+  fix in 0.21.2 attached the picker to the window with `parent=`, which on
+  macOS presents it as a sheet rather than a free-standing panel, and
+  combined it with toggling `-topmost` around the call. The app died with
+
+      NSInternalInconsistencyException: 'cannot run nil sheetWindow'
+
+  which is in `~/Library/Logs/OverleafCommentsExport/launcher.log`. Turning a
+  hang into a crash is not an improvement. Both halves are gone: no sheet, no
+  topmost.
+
+- If the picker will not open at all, the window now says so and points at
+  the box beside the button, which is an ordinary text field you can type or
+  paste a path into. It used to fail silently and leave you stuck.
+
+### Known
+- Whether the picker can open behind the window is still unresolved. The
+  measurements that led to 0.21.2 did not reproduce on a second attempt, so
+  they were not sound enough to act on, and nothing here is based on them.
+
 ## [0.21.2] — 2026-08-18
 
 ### Fixed
