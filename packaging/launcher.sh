@@ -12,7 +12,12 @@
 
 set -u
 
-APP_HOME="$HOME/Library/Application Support/OverleafCommentsExport/overleaf_comments_export"
+# Written in by make_app.sh at build time. Left as the default so the script
+# still works if run directly.
+APP_HOME="${OCE_APP_HOME:-@APP_HOME@}"
+case "$APP_HOME" in
+    "@APP_HOME"*) APP_HOME="$HOME/Library/Application Support/OverleafCommentsExport/overleaf_comments_export" ;;
+esac
 VENV_DIR="$APP_HOME/.venv"
 VENV_PYTHON="$VENV_DIR/bin/python"
 

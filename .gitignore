@@ -36,3 +36,4 @@ config.json
 *.spec
 build/
 dist/
+packaging/AppIcon.iconset/
