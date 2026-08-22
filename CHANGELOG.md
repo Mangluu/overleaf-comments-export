@@ -4,6 +4,24 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.21.2] — 2026-08-18
+
+### Fixed
+- **Choose… looked like it froze the window.** It did not. macOS opens a file
+  dialog without giving it focus when the process is not frontmost, and this
+  app is started by a launcher script rather than as a bundled application,
+  so it usually is not. The dialog opened behind whatever you were looking
+  at, and the window stopped redrawing because it was waiting on it, which
+  reads exactly like a hang.
+
+  Measured on macOS 26: the process never became frontmost when the dialog
+  opened, and it sat blocked at zero percent CPU, which is what waiting on an
+  invisible dialog looks like. Passing `parent=` on its own did not fix it.
+  The window is now brought forward first, and the dialog is attached to it.
+
+  The same applies to every warning and error box, since one of those opening
+  behind the window is a message nobody can act on.
+
 ## [0.21.1] — 2026-08-18
 
 ### Fixed

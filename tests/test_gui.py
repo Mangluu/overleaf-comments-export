@@ -274,3 +274,51 @@ def test_the_settings_file_is_never_briefly_world_readable(tmp_path, monkeypatch
     assert stat.S_IMODE(os.stat(folder / "config.json").st_mode) == 0o600
     assert stat.S_IMODE(os.stat(folder).st_mode) == 0o700
     assert not list(folder.glob("*.new")), "the temporary file was left behind"
+
+
+def test_the_window_comes_forward_before_the_folder_dialog(app, monkeypatch):
+    """macOS opens a file dialog without focus when the process is not
+    frontmost, and this app is started by a launcher script rather than as a
+    bundled application, so it usually is not. The dialog opened behind
+    whatever the person was looking at while the window sat there waiting on
+    it, which reads exactly like the app having hung.
+
+    Measured on macOS 26: without the lift the process never becomes
+    frontmost, and passing `parent=` on its own does not do it either.
+    """
+    from overleaf_comments_export import gui
+
+    order = []
+    monkeypatch.setattr(app, "_to_front", lambda: order.append("front"))
+
+    def fake_dialog(**kwargs):
+        order.append("dialog")
+        assert kwargs.get("parent") is app.root, "the dialog is not attached"
+        return "/tmp/chosen"
+
+    monkeypatch.setattr(gui.filedialog, "askdirectory", fake_dialog)
+    app._pick_folder()
+
+    assert order == ["front", "dialog"], f"got {order}"
+    assert app.out_var.get() == "/tmp/chosen"
+
+
+def test_every_modal_brings_the_window_forward_first(app):
+    """A warning nobody can see is a warning nobody can act on, so the same
+    goes for the message boxes, not just the folder picker."""
+    import inspect
+
+    source = inspect.getsource(type(app))
+    for line_no, line in enumerate(source.splitlines()):
+        if "messagebox.show" in line and "def " not in line:
+            before = source.splitlines()[max(0, line_no - 1)]
+            assert "_to_front()" in before, (
+                f"this dialog can open behind the window:\n    {line.strip()}")
+
+
+def test_bringing_the_window_forward_does_not_pin_it_there(app):
+    """-topmost has to come off again, or the window sits above everything
+    else for the rest of the session."""
+    app._to_front()
+    app.root.update_idletasks()          # runs the after_idle that drops it
+    assert not app.root.attributes("-topmost")

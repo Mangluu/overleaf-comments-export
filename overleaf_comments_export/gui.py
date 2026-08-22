@@ -1005,8 +1005,31 @@ class App:
         self._text_window("What this app touches", PRIVACY_INFO_TEXT,
                           f"\nSettings file on this computer:\n{CONFIG_PATH}\n")
 
+    def _to_front(self) -> None:
+        """Bring the window forward before opening anything modal.
+
+        macOS opens a file dialog without giving it focus when the process was
+        not frontmost, and this app is started by a launcher script rather than
+        as a bundled application, so it usually is not. The dialog appears
+        behind whatever the person was looking at, the window stops redrawing
+        because it is waiting on it, and the whole thing reads as a hang.
+        Measured: without this the app never becomes the frontmost process, and
+        `parent=` on its own does not do it either.
+        """
+        try:
+            self.root.lift()
+            self.root.attributes("-topmost", True)
+            self.root.focus_force()
+            # Dropped again straight away, or the window would sit above
+            # everything else for the rest of the session.
+            self.root.after_idle(self.root.attributes, "-topmost", False)
+        except tk.TclError:
+            pass
+
     def _pick_folder(self) -> None:
+        self._to_front()
         chosen = filedialog.askdirectory(
+            parent=self.root,
             initialdir=self.out_var.get() or str(Path.home()),
             title="Choose a folder to save the comments into", mustexist=False)
         if chosen:
@@ -1036,6 +1059,7 @@ class App:
         url = self.url_var.get().strip()
         out_dir = self.out_var.get().strip()
         if not url:
+            self._to_front()
             messagebox.showwarning("Nearly there",
                                    "Paste the link to your Overleaf paper in step 1.")
             self.url_entry.focus_set()
@@ -1043,6 +1067,7 @@ class App:
         try:
             parse_project_id(url)
         except ValueError:
+            self._to_front()
             messagebox.showwarning(
                 "That link does not look right",
                 "The link should contain /project/ followed by a long code.\n\n"
@@ -1051,12 +1076,14 @@ class App:
             self.url_entry.focus_set()
             return
         if not out_dir:
+            self._to_front()
             messagebox.showwarning("Nearly there",
                                    "Choose a folder to save into, in step 3.")
             return
 
         cookie_value = self.cookie_var.get().strip() or None
         if self.browser_var.get() == "manual" and not cookie_value:
+            self._to_front()
             messagebox.showwarning(
                 "The cookie is missing",
                 "Paste your Overleaf cookie in step 2, or choose a browser to "
@@ -1285,6 +1312,7 @@ class App:
         if isinstance(err, UserFacingError):
             self._set_status("That did not work. See the message.", "bad")
             self._append_log(str(err))
+            self._to_front()
             messagebox.showwarning("It could not finish", str(err))
             return
         self._set_status("Something unexpected went wrong.", "bad")
@@ -1292,6 +1320,7 @@ class App:
         self._append_log(tb)
         self.details_var.set(True)
         self._toggle_details()
+        self._to_front()
         messagebox.showerror(
             "Something went wrong",
             f"{type(err).__name__}: {err}\n\n"
