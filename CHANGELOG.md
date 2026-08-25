@@ -4,6 +4,39 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-08-23
+
+### Fixed
+- **A paper split across files now gets the right figure numbers and the right
+  sections** (#12, and the `\input` item that had been on the roadmap since
+  the start). Both came from the same thing: every file was read on its own,
+  and LaTeX does not read them that way.
+
+  Figure and table numbers restarted in every file, so a comment on Figure 2
+  was reported as Figure 1. That was the worst defect left in the tool,
+  because everything else that is imperfect produces nothing while this
+  produced a confident wrong answer and sent people to the wrong figure.
+
+  A comment in an included file also got no section at all, because
+  `\section{Results}` sits in `main.tex` while the prose it names sits in
+  `results-body.tex`.
+
+  The project is now spliced into the single document LaTeX reads, following
+  `\input`, `\include` and `\subfile` from the root, and headings and float
+  counters are worked out over that. Files carrying no comments are fetched
+  too, since a figure in one decides what number the next one gets.
+
+  Inclusion is handled at the point it happens rather than file by file. A
+  file pulled in halfway through the root inherits only the headings above
+  that point, and its content sits before everything below it. A first
+  attempt treated it as file-level and gave an included file the heading that
+  came *after* it, which the tests caught.
+
+  If any included file cannot be read, no number is claimed at all and the
+  export says so. Missing beats wrong.
+
+  Single-file papers are unaffected and fetch nothing extra.
+
 ## [0.21.3] — 2026-08-22
 
 ### Fixed

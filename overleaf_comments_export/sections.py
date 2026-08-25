@@ -79,10 +79,19 @@ def find_headings(text: str, line_starts: list[int]) -> list[Heading]:
     return headings
 
 
-def nearest_heading(headings: list[Heading], line_no: int) -> str | None:
+def nearest_heading(headings: list[Heading], line_no: int,
+                    inherited: list[Heading] | None = None) -> str | None:
     """Return a path like "§ 3.2 Method overview" for the nearest enclosing
-    heading at-or-above line_no."""
+    heading at-or-above line_no.
+
+    `inherited` is the heading context in force where this file was pulled in.
+    A paper can say `\\section{Results}` in the root and then
+    `\\input{results-body}`, so read on its own the included file has no
+    heading at all and every comment in it came back with nothing.
+    """
     enclosing: dict[int, Heading] = {}
+    for h in inherited or []:
+        enclosing[h.level] = h
     for h in headings:
         if h.line_no > line_no:
             break
@@ -141,15 +150,21 @@ def _balanced_argument(text: str, open_brace: int) -> str:
     return text[open_brace + 1:]
 
 
-def find_floats(text: str, line_starts: list[int]) -> list[Float]:
+def find_floats(text: str, line_starts: list[int],
+                start: dict[str, int] | None = None) -> list[Float]:
     """Every figure and table in the source, numbered as LaTeX would.
 
     Only captioned floats take a number, because LaTeX only steps the counter
     when there is a caption. An uncaptioned float still gets recorded, so a
     comment inside one can say it is in a figure even when it cannot say which.
+
+    `start` carries the counters in from the files LaTeX read before this one.
+    Without it every file starts at one, so in a paper split across files the
+    second file's Figure 2 is reported as Figure 1. `count_floats` produces
+    the value to pass in.
     """
     floats: list[Float] = []
-    counters = {"figure": 0, "table": 0}
+    counters = {"figure": 0, "table": 0} | dict(start or {})
 
     for m in _FLOAT_BEGIN_RE.finditer(text):
         if _commented_out(text, m.start()):
@@ -172,6 +187,15 @@ def find_floats(text: str, line_starts: list[int]) -> list[Float]:
             line_no=bisect_right(line_starts, m.start()),
         ))
     return floats
+
+
+def count_floats(floats: list[Float]) -> dict[str, int]:
+    """The counters after these floats, for handing to the next file."""
+    out = {"figure": 0, "table": 0}
+    for f in floats:
+        if f.number is not None:
+            out[f.kind] = max(out[f.kind], f.number)
+    return out
 
 
 def _matching_end(text: str, after_begin: int) -> int:

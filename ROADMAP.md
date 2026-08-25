@@ -29,15 +29,13 @@ place to start if you would like to contribute.
   without reading or storing browser cookies
 - `whats-new.md`, which says what changed since the previous export into the
   same folder, so a second wave of review does not mean rereading the first
+- `\input` and `\include` resolved, so a paper split across files gets the
+  right section and the right figure number for every comment
 
 ## Next
 
 Things I think are worth doing, roughly in order.
 
-- **Resolving `\input` and `\include`** so a multi-file project gets the right
-  section for every comment. Right now a comment in a file that is included
-  from the main document is anchored correctly but attributed to the nearest
-  heading inside that file alone. **help wanted**
 - **Offline re-render from a saved `comments.json`**, so a folder you already
   exported stays usable when the API changes underneath it, and so you can try
   a different `--render-mode` without hitting Overleaf again.

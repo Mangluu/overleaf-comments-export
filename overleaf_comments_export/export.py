@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shutil
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -24,7 +25,9 @@ from .model import (
     TrackedChange,
 )
 from .render import render_markdown, render_response_letter
-from .sections import enclosing_float, find_floats, find_headings, nearest_heading
+from .docorder import flatten, locate, reachable
+from .sections import (enclosing_float, find_floats, find_headings,
+                       nearest_heading)
 from .since import (SINCE_FILENAME, compare, load_previous, render_since,
                     short_ids)
 
@@ -341,6 +344,98 @@ def _slug_reviewer(name: str) -> str:
     return s[:60] or "reviewer"
 
 
+def _apply_document_order(client, project_id, doc_texts, doc_id_to_path,
+                          root_doc_id, anchored, changes, progress) -> None:
+    """Number floats and name sections across the whole document, not per file.
+
+    Only the files carrying comments were downloaded, and that is not enough:
+    a file with no comments in it still holds figures that decide what number
+    the next one gets. The rest of the chain is fetched here.
+
+    The pieces are then spliced into the single document LaTeX reads, and the
+    headings and float counters are worked out over that. Doing it file by
+    file is not equivalent, because `\\input` happens at a point: a file pulled
+    in halfway through the root inherits only the headings above that point.
+
+    If any part of the chain cannot be read, no number is claimed at all. A
+    missing number sends nobody anywhere. A wrong one sends them to the wrong
+    figure.
+    """
+    by_path = {d.pathname: d for d in doc_texts.values()}
+    root_path = doc_id_to_path.get(root_doc_id or "")
+    if not root_path or root_path not in by_path and root_path not in doc_id_to_path.values():
+        return
+
+    path_to_doc_id = {v: k for k, v in doc_id_to_path.items()}
+    texts = {p: d.text for p, d in by_path.items()}
+
+    if root_path not in texts:
+        doc_id = path_to_doc_id.get(root_path)
+        try:
+            texts[root_path] = client.download_doc_text(project_id, doc_id)
+        except Exception as e:
+            logger.warning("Could not read the root document %s: %s", root_path, e)
+            return
+
+    # Includes nest, so widen the set until nothing new is named.
+    for _ in range(8):
+        wanted = [p for p in reachable(root_path, texts, path_to_doc_id)
+                  if p not in texts]
+        if not wanted:
+            break
+        got = False
+        for path in wanted:
+            doc_id = path_to_doc_id.get(path)
+            if not doc_id:
+                continue
+            try:
+                texts[path] = client.download_doc_text(project_id, doc_id)
+                got = True
+            except Exception as e:
+                logger.warning("Could not read %s for numbering: %s", path, e)
+        if not got:
+            break
+
+    joined, marks, missing = flatten(root_path, texts)
+    if not joined:
+        return
+
+    if missing:
+        progress(f"Could not read {len(missing)} included file(s), so figure and "
+                 f"table numbers are left off rather than guessed.")
+        logger.info("Unresolved includes: %s", ", ".join(sorted(set(missing))[:10]))
+        for doc in doc_texts.values():
+            for f in doc.floats:
+                f.number = None
+        return
+
+    files_read = len({p for p, _, _ in marks})
+    if files_read < 2:
+        return                          # one file: per-file numbering is right
+
+    starts = build_line_starts(joined)
+    floats = find_floats(joined, starts)
+    headings = find_headings(joined, starts)
+
+    def relocate(doc_id: str, offset: int) -> int | None:
+        doc = doc_texts.get(doc_id)
+        return None if doc is None else locate(marks, doc.pathname, offset)
+
+    for c in anchored:
+        at = relocate(c.doc_id, c.offset)
+        if at is None:
+            continue
+        c.float_ref = enclosing_float(floats, at)
+        c.nearest_heading = nearest_heading(headings, bisect_right(starts, at))
+    for ch in changes:
+        at = relocate(ch.doc_id, ch.offset)
+        if at is not None:
+            ch.nearest_heading = nearest_heading(headings, bisect_right(starts, at))
+
+    progress(f"Read {files_read} file(s) in document order, so sections and "
+             f"figure numbers follow the whole paper.")
+
+
 def _commit(stage: Path, out_dir: Path) -> int:
     """Move a finished export into the folder the user chose.
 
@@ -653,6 +748,18 @@ def run_export(
                 "Ranges payload unavailable — Markdown will list threads without "
                 "file/line anchors."
             )
+
+        # ---- Put the files in the order LaTeX reads them ----
+        #
+        # Two things depend on that order and on nothing in any single file:
+        # which section a comment sits under, when the heading is in the root
+        # and the prose is in an included file, and what number a figure
+        # carries, since LaTeX counts straight through the whole document.
+        # Counted per file the numbers restart, so a comment on Figure 2 was
+        # reported as Figure 1.
+        _apply_document_order(
+            client, project_id, doc_texts, doc_id_to_path,
+            metadata.get("rootDocId"), anchored, changes, progress)
 
         orphan_threads = [
             thread for tid, thread in threads.items() if tid not in referenced_thread_ids

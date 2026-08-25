@@ -169,6 +169,22 @@ ids, so renumbering never shows up as change. And if you run with different
 filters than last time, deletions are not reported, because a comment hidden by
 `--no-resolved` has not gone anywhere.
 
+## Papers split across files
+
+Most real papers are. The whole project is read in the order LaTeX reads it,
+following `\input`, `\include` and `\subfile` from the root document, so a
+comment gets the section it is actually under even when the `\section` is in
+`main.tex` and the prose is in `results-body.tex`. Figure and table numbers
+run through the whole paper the way LaTeX numbers them, rather than restarting
+in every file.
+
+Files with no comments in them are read too, because a figure in one still
+decides what number the next one gets.
+
+If any included file cannot be read, figure numbers are left off rather than
+guessed, and the export says so. A missing number sends nobody anywhere. A
+wrong one sends them to the wrong figure.
+
 ## Working through comments with an AI
 
 This is what the export is shaped for. Hand an assistant the folder and it can
