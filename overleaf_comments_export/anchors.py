@@ -35,9 +35,23 @@ def resolve_anchor(
     If text[offset:offset+len(anchored_text)] matches anchored_text, we trust it.
     Otherwise, search +/- search_window characters for the anchored text and
     re-anchor. If still not found, return the original offset's coords and
-    mark stale=True."""
+    mark stale=True.
+
+    A comment can also be attached to a position rather than to a range, and
+    Overleaf sends those with no anchored text at all. Nothing has moved and
+    there is nothing to check, so they are not stale. They used to fall
+    through to the stale branch because both searches need text to look for:
+    on one real paper that flagged 74 of 131 comments as pointing at text
+    that had changed when not one of them did, which buries the few that
+    genuinely have."""
     text = doc.text
     n = len(anchored_text)
+
+    if n == 0:
+        # No text to verify against, and no evidence the position is wrong.
+        safe = min(max(offset, 0), max(0, len(text) - 1))
+        line, col = offset_to_line_col(doc.line_starts, safe)
+        return safe, line, col, False
     if n > 0 and 0 <= offset <= len(text) - n and text[offset : offset + n] == anchored_text:
         line, col = offset_to_line_col(doc.line_starts, offset)
         return offset, line, col, False

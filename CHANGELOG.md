@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.22.1] — 2026-08-31
+
+### Fixed
+- **A comment attached to a position was reported as stale.** Overleaf lets a
+  comment attach to a point rather than to a selection, and sends those with
+  no anchored text. `resolve_anchor` verifies an anchor by looking for its
+  text, and both of its searches need text to look for, so an empty one fell
+  straight through to the stale branch.
+
+  Nothing had moved. There was simply nothing to check.
+
+  On a real paper this flagged **74 of 131 comments** as pointing at text that
+  had changed when not one of them had, and put `stale_anchor_count: 74` in
+  the front matter. The Markdown said `⚠ stale` and `_(empty anchor)_` on the
+  same line, which is the contradiction that gave it away. False alarms at
+  that rate bury the anchors that genuinely did move, which is the entire
+  point of the flag.
+
+  Anchors whose text really has moved are still reported.
+
 ## [0.22.0] — 2026-08-23
 
 ### Fixed

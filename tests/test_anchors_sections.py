@@ -104,3 +104,47 @@ def test_nearest_heading_before_first_returns_none():
     starts = build_line_starts(text)
     hs = find_headings(text, starts)
     assert nearest_heading(hs, 1) is None
+
+
+def test_a_comment_on_a_position_is_not_stale():
+    """Overleaf lets a comment attach to a point rather than a selection, and
+    sends those with no anchored text. Nothing has moved and there is nothing
+    to check against, so calling them stale is a false alarm. One real paper
+    had 74 of 131 comments flagged that way when none of them had moved, which
+    hides the ones that genuinely did."""
+    from overleaf_comments_export.anchors import build_line_starts, resolve_anchor
+    from overleaf_comments_export.model import DocText
+
+    text = "\\section{Method}\nWe crossed three sensory environments.\n"
+    doc = DocText(doc_id="d", pathname="p.tex", text=text,
+                  line_starts=build_line_starts(text), headings=[])
+
+    at = text.index("three")
+    offset, line, col, stale = resolve_anchor(doc, at, "")
+    assert stale is False, "an empty anchor was reported as stale"
+    assert offset == at, "the position was moved even though nothing was wrong"
+    assert line == 2
+
+
+def test_an_empty_anchor_beyond_the_file_is_still_bounded():
+    from overleaf_comments_export.anchors import build_line_starts, resolve_anchor
+    from overleaf_comments_export.model import DocText
+
+    text = "short\n"
+    doc = DocText(doc_id="d", pathname="p.tex", text=text,
+                  line_starts=build_line_starts(text), headings=[])
+    offset, _, _, stale = resolve_anchor(doc, 9999, "")
+    assert 0 <= offset < len(text)
+    assert stale is False
+
+
+def test_text_that_really_moved_is_still_stale():
+    """The fix must not stop reporting the ones that matter."""
+    from overleaf_comments_export.anchors import build_line_starts, resolve_anchor
+    from overleaf_comments_export.model import DocText
+
+    text = "alpha beta gamma\n"
+    doc = DocText(doc_id="d", pathname="p.tex", text=text,
+                  line_starts=build_line_starts(text), headings=[])
+    _, _, _, stale = resolve_anchor(doc, 0, "text that is gone")
+    assert stale is True
