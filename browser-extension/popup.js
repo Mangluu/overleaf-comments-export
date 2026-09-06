@@ -4,31 +4,8 @@ const PROJECT_PATH_RE = /\/project\/([0-9a-f]{24})(?:\/|$)/i;
 const LANGUAGE_STORAGE_KEY = "overleaf-comments-export-language";
 
 const COPY = {
-  zh: {
-    title: "导出项目评论",
-    languageLabel: "语言",
-    checkingPage: "正在检查当前标签页…",
-    includeLegend: "包含内容",
-    resolvedTitle: "已解决评论",
-    resolvedHelp: "同时导出已标记 resolved 的讨论",
-    changesTitle: "修订记录",
-    changesHelp: "包含插入与删除记录",
-    outputLegend: "输出文件",
-    responseLetter: "回复信模板",
-    exportButton: "导出当前项目",
-    exporting: "正在读取评论与源文件…",
-    privacyNote: "数据仅在当前标签页中读取并下载到本机；扩展不会读取、保存或上传登录 Cookie。",
-    invalidPage: "当前标签页不是 Overleaf 项目",
-    invalidPageHelp: "请先打开项目编辑器页面，再点击扩展图标。",
-    ready: "已检测到 Overleaf 项目",
-    initError: "无法检查当前标签页",
-    noFormat: "请至少选择一种输出格式。",
-    injectionError: "扩展页面脚本没有加载成功。请刷新 Overleaf 页面后重试。",
-    invalidResult: "没有收到有效的导出结果。",
-    complete: "导出完成：{threads} 个讨论（{open} 个未解决、{resolved} 个已解决），{changes} 条修订记录。已下载 {files} 个文件。",
-    warnings: "警告：{warnings}",
-  },
   en: {
+    languageName: "English",
     title: "Export project comments",
     languageLabel: "Language",
     checkingPage: "Checking the current tab…",
@@ -52,10 +29,35 @@ const COPY = {
     complete: "Export complete: {threads} discussions ({open} open, {resolved} resolved), {changes} tracked changes. Downloaded {files} files.",
     warnings: "Warnings: {warnings}",
   },
+  zh: {
+    languageName: "中文",
+    title: "导出项目评论",
+    languageLabel: "语言",
+    checkingPage: "正在检查当前标签页…",
+    includeLegend: "包含内容",
+    resolvedTitle: "已解决评论",
+    resolvedHelp: "同时导出已标记 resolved 的讨论",
+    changesTitle: "修订记录",
+    changesHelp: "包含插入与删除记录",
+    outputLegend: "输出文件",
+    responseLetter: "回复信模板",
+    exportButton: "导出当前项目",
+    exporting: "正在读取评论与源文件…",
+    privacyNote: "数据仅在当前标签页中读取并下载到本机；扩展不会读取、保存或上传登录 Cookie。",
+    invalidPage: "当前标签页不是 Overleaf 项目",
+    invalidPageHelp: "请先打开项目编辑器页面，再点击扩展图标。",
+    ready: "已检测到 Overleaf 项目",
+    initError: "无法检查当前标签页",
+    noFormat: "请至少选择一种输出格式。",
+    injectionError: "扩展页面脚本没有加载成功。请刷新 Overleaf 页面后重试。",
+    invalidResult: "没有收到有效的导出结果。",
+    complete: "导出完成：{threads} 个讨论（{open} 个未解决、{resolved} 个已解决），{changes} 条修订记录。已下载 {files} 个文件。",
+    warnings: "警告：{warnings}",
+  },
 };
 
 const ui = {
-  languageInputs: Array.from(document.querySelectorAll('input[name="language"]')),
+  languageSelect: document.getElementById("language-select"),
   pageCard: document.getElementById("page-card"),
   pageState: document.getElementById("page-state"),
   pageDetail: document.getElementById("page-detail"),
@@ -71,8 +73,18 @@ let activeTab = null;
 let busy = false;
 let pageStatus = "checking";
 let pageDetail = "";
-let language = localStorage.getItem(LANGUAGE_STORAGE_KEY)
-  || (navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en");
+const DEFAULT_LANGUAGE = "en";
+
+function resolveLanguage(stored) {
+  return Object.prototype.hasOwnProperty.call(COPY, stored) ? stored : DEFAULT_LANGUAGE;
+}
+
+function languageChoices() {
+  return Object.entries(COPY).map(([code, copy]) => ({ code, label: copy.languageName || code }));
+}
+
+let language = resolveLanguage(
+  typeof localStorage === "undefined" ? null : localStorage.getItem(LANGUAGE_STORAGE_KEY));
 
 function t(key, replacements = {}) {
   let value = COPY[language]?.[key] || COPY.en[key] || key;
@@ -83,11 +95,8 @@ function t(key, replacements = {}) {
 }
 
 function applyLanguage() {
-  document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-  for (const input of ui.languageInputs) {
-    input.checked = input.value === language;
-    input.closest(".language-option")?.classList.toggle("selected", input.checked);
-  }
+  document.documentElement.lang = language === "zh" ? "zh-CN" : language;
+  if (ui.languageSelect) ui.languageSelect.value = language;
   for (const element of document.querySelectorAll("[data-i18n]")) {
     element.textContent = t(element.dataset.i18n);
   }
@@ -151,10 +160,7 @@ function setBusy(nextBusy) {
   ui.exportButton.disabled = busy || !activeTab;
   ui.options.disabled = busy || !activeTab;
   ui.formats.disabled = busy || !activeTab;
-  for (const input of ui.languageInputs) {
-    input.disabled = busy;
-    input.closest(".language-option")?.classList.toggle("disabled", busy);
-  }
+  if (ui.languageSelect) ui.languageSelect.disabled = busy;
   ui.spinner.hidden = !busy;
   ui.buttonLabel.textContent = busy ? t("exporting") : t("exportButton");
 }
@@ -225,15 +231,20 @@ async function downloadOutput(output, folder) {
   }
 }
 
-for (const input of ui.languageInputs) {
-  input.addEventListener("change", () => {
-    if (!input.checked) return;
-    language = input.value === "zh" ? "zh" : "en";
-    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
-    ui.result.hidden = true;
-    applyLanguage();
-  });
+// Built from COPY, so a new language appears here by adding it there.
+for (const { code, label } of languageChoices()) {
+  const option = document.createElement("option");
+  option.value = code;
+  option.textContent = label;
+  ui.languageSelect.append(option);
 }
+
+ui.languageSelect.addEventListener("change", () => {
+  language = resolveLanguage(ui.languageSelect.value);
+  localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  ui.result.hidden = true;
+  applyLanguage();
+});
 
 ui.exportButton.addEventListener("click", async () => {
   const options = readOptions();
@@ -279,3 +290,8 @@ initialize().catch((error) => {
   ui.pageCard.classList.add("error");
   renderPageState();
 });
+
+// Exported for the tests. Harmless in the browser, where module is undefined.
+if (typeof module === "object" && module.exports) {
+  module.exports = { COPY, DEFAULT_LANGUAGE, resolveLanguage, languageChoices };
+}

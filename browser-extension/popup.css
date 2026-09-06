@@ -77,62 +77,41 @@ body {
   gap: 3px;
 }
 
-.language-options {
-  display: flex;
-  gap: 4px;
-  padding: 3px;
+.language-select {
+  /* A native select rather than a custom menu: it handles the keyboard, the
+     screen reader and any number of languages without us writing any of it,
+     and it looks like every other menu on the machine. */
+  appearance: none;
+  padding: 6px 26px 6px 10px;
+  border: 1px solid var(--line);
   border-radius: 9px;
-  background: var(--bg);
-}
-
-.language-option {
-  display: flex;
-  min-width: 84px;
-  height: 28px;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 0 9px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 720;
-  letter-spacing: 0;
+  background-color: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  /* The chevron, drawn rather than shipped as a file. */
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right 12px top 52%, right 8px top 52%;
+  background-size: 4px 4px, 4px 4px;
+  background-repeat: no-repeat;
 }
 
-.language-option:hover {
-  color: var(--text);
+.language-select:hover:not(:disabled) {
+  border-color: var(--green);
 }
 
-.language-option.selected {
-  border-color: color-mix(in srgb, var(--green) 35%, var(--line));
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--green) 10%, transparent);
+.language-select:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 1px;
 }
 
-.language-option.disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.language-option input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.language-option img {
-  width: 19px;
-  height: 13px;
-  border-radius: 2px;
-  object-fit: cover;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.16);
+.language-select:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .mark {

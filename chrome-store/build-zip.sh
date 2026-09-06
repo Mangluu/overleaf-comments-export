@@ -15,7 +15,7 @@ rm -f "$OUT"
 cd "$ROOT/browser-extension"
 zip -r -q -X "$OUT" \
     manifest.json popup.html popup.css popup.js \
-    src icons _locales assets \
+    src icons _locales \
     -x '*.DS_Store' '*/node_modules/*'
 cd "$ROOT"
 echo "Built $OUT ($(du -h "$OUT" | cut -f1))"
