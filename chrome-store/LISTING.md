@@ -17,8 +17,31 @@ extension runs: manifest, popup, `src/`, `icons/`, `_locales/`, `assets/`.
 Tests, `package.json` and the README are deliberately left out — reviewers
 read what you ship, and shipping less means less to explain.
 
-The manifest already carries the 16, 32, 48 and 128 pixel icons, so there is
-no separate icon upload.
+---
+
+## Graphic assets
+
+### Store icon — 128 x 128
+
+Upload `chrome-store/store-icon-128.png`.
+
+Google's image guidelines are specific here and the obvious icon fails them:
+the canvas is 128x128 but **the artwork must be 96x96, with 16 pixels of
+transparent padding on every side**. An icon that fills the canvas edge to
+edge is rejected, because the store adds its own framing around it.
+
+This file is measured to that spec: 96x96 of artwork, 16 pixels of padding on
+each of the four sides, PNG with an alpha channel. Rebuild it with
+
+```bash
+.venv/bin/python packaging/make_store_icon.py
+```
+
+which also refreshes the 128 pixel icon inside the extension, since the same
+rule applies to the one in the ZIP.
+
+The 16, 32 and 48 pixel icons are toolbar icons and keep tighter padding, as
+at those sizes every pixel counts.
 
 ---
 
