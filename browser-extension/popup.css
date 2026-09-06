@@ -136,15 +136,10 @@ body {
 }
 
 .mark {
-  display: grid;
+  display: block;
   width: 43px;
   height: 43px;
-  place-items: center;
   border-radius: 13px;
-  background: var(--green);
-  color: #fff;
-  font-size: 22px;
-  font-weight: 780;
   box-shadow: var(--shadow);
 }
 

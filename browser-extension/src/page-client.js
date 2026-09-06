@@ -191,7 +191,11 @@
     if (formats.jsonl) {
       files.push({
         filename: "comments.jsonl",
-        mimeType: "application/x-ndjson;charset=utf-8",
+        // Not application/x-ndjson: Chrome derives the extension from the
+        // MIME type and renamed this to comments.ndjson, while the Markdown
+        // front matter and agents.md both say comments.jsonl. octet-stream
+        // maps to no extension, so the name we ask for is the name we get.
+        mimeType: "application/octet-stream",
         content: exported.jsonl,
       });
     }
