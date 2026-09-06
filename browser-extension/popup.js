@@ -2,6 +2,55 @@
 
 const PROJECT_PATH_RE = /\/project\/([0-9a-f]{24})(?:\/|$)/i;
 const LANGUAGE_STORAGE_KEY = "overleaf-comments-export-language";
+const CHOICES_STORAGE_KEY = "overleaf-comments-export-choices";
+
+// The boxes people tick, and what they start as. Anyone exporting the same
+// project twice wants the same files twice, so the choices are remembered.
+const CHOICE_DEFAULTS = {
+  "include-resolved": true,
+  "include-changes": true,
+  "format-md": true,
+  "format-json": true,
+  "format-jsonl": false,
+  "format-letter": false,
+};
+
+function readStoredChoices() {
+  if (typeof localStorage === "undefined") return {};
+  try {
+    const raw = JSON.parse(localStorage.getItem(CHOICES_STORAGE_KEY) || "{}");
+    // Only keys we know about, only booleans. Anything else in there is
+    // either from an older version or somebody editing storage by hand.
+    return Object.fromEntries(
+      Object.keys(CHOICE_DEFAULTS)
+        .filter((id) => typeof raw[id] === "boolean")
+        .map((id) => [id, raw[id]]));
+  } catch {
+    return {};
+  }
+}
+
+function applyStoredChoices() {
+  const stored = { ...CHOICE_DEFAULTS, ...readStoredChoices() };
+  for (const [id, checked] of Object.entries(stored)) {
+    const box = document.getElementById(id);
+    if (box) box.checked = checked;
+  }
+}
+
+function rememberChoices() {
+  if (typeof localStorage === "undefined") return;
+  const current = {};
+  for (const id of Object.keys(CHOICE_DEFAULTS)) {
+    const box = document.getElementById(id);
+    if (box) current[id] = box.checked;
+  }
+  try {
+    localStorage.setItem(CHOICES_STORAGE_KEY, JSON.stringify(current));
+  } catch {
+    // A full or disabled storage must not stop an export.
+  }
+}
 
 const COPY = {
   en: {
@@ -239,6 +288,11 @@ for (const { code, label } of languageChoices()) {
   ui.languageSelect.append(option);
 }
 
+applyStoredChoices();
+for (const id of Object.keys(CHOICE_DEFAULTS)) {
+  document.getElementById(id)?.addEventListener("change", rememberChoices);
+}
+
 ui.languageSelect.addEventListener("change", () => {
   language = resolveLanguage(ui.languageSelect.value);
   localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -293,5 +347,8 @@ initialize().catch((error) => {
 
 // Exported for the tests. Harmless in the browser, where module is undefined.
 if (typeof module === "object" && module.exports) {
-  module.exports = { COPY, DEFAULT_LANGUAGE, resolveLanguage, languageChoices };
+  module.exports = {
+    COPY, DEFAULT_LANGUAGE, resolveLanguage, languageChoices,
+    CHOICE_DEFAULTS, readStoredChoices,
+  };
 }

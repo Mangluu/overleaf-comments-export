@@ -8,7 +8,7 @@ const path = require("node:path");
 // popup.js is a plain script that wires itself to the DOM as it loads, so the
 // test gives it just enough of a document to get through. Same approach as
 // page-client.test.js.
-function loadPopup({ stored = null } = {}) {
+function loadPopup({ stored = null, choices = null } = {}) {
   const created = [];
   const element = () => ({
     hidden: false, disabled: false, checked: false, value: "", textContent: "",
@@ -24,7 +24,7 @@ function loadPopup({ stored = null } = {}) {
     addEventListener() {},
   };
   global.localStorage = {
-    getItem: () => stored,
+    getItem: (key) => (key.endsWith("choices") ? choices : stored),
     setItem() {},
   };
   global.chrome = { tabs: { query: () => {} }, scripting: {}, downloads: {} };
@@ -86,4 +86,44 @@ test("the markup is English and declares itself English", () => {
   assert.doesNotMatch(html, /[一-鿿]/, "Chinese text is left in the markup");
   assert.match(html, /id="language-select"/);
   assert.doesNotMatch(html, /flag-/, "the flag images are gone");
+});
+
+test("the boxes you ticked last time come back", () => {
+  const { api } = loadPopup({
+    choices: '{"format-jsonl":true,"format-md":false}',
+  });
+  const stored = api.readStoredChoices();
+  assert.equal(stored["format-jsonl"], true);
+  assert.equal(stored["format-md"], false);
+});
+
+test("a first run uses the defaults", () => {
+  const { api } = loadPopup();
+  assert.deepEqual(api.readStoredChoices(), {});
+  assert.equal(api.CHOICE_DEFAULTS["format-md"], true);
+  assert.equal(api.CHOICE_DEFAULTS["format-json"], true);
+});
+
+test("rubbish in storage is ignored rather than believed", () => {
+  // Storage is editable by hand and survives version changes, so anything
+  // that is not a boolean under a key we know about is dropped.
+  for (const raw of ["not json at all", "[]", '{"format-md":"yes"}',
+                     '{"made-up-key":true}']) {
+    const { api } = loadPopup({ choices: raw });
+    const stored = api.readStoredChoices();
+    for (const [key, value] of Object.entries(stored)) {
+      assert.ok(key in api.CHOICE_DEFAULTS, `kept an unknown key: ${key}`);
+      assert.equal(typeof value, "boolean");
+    }
+  }
+});
+
+test("every remembered box exists in the markup", () => {
+  // A default for a checkbox that is not there would never be applied and
+  // never be noticed.
+  const { api } = loadPopup();
+  const html = fs.readFileSync(path.join(__dirname, "..", "popup.html"), "utf8");
+  for (const id of Object.keys(api.CHOICE_DEFAULTS)) {
+    assert.match(html, new RegExp(`id="${id}"`), `${id} is not in popup.html`);
+  }
 });
