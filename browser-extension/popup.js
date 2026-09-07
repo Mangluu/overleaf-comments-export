@@ -54,6 +54,12 @@ function rememberChoices() {
 
 const COPY = {
   en: {
+    stopButton: "Stop",
+    stopping: "Stopping…",
+    stopped: "Stopped. Nothing was downloaded.",
+    progressFiles: "Reading file {done} of {total}…",
+    progressIncludes: "Reading {total} more file(s) the paper pulls in…",
+    progressBuilding: "Putting the export together…",
     languageName: "English",
     title: "Export project comments",
     languageLabel: "Language",
@@ -79,6 +85,12 @@ const COPY = {
     warnings: "Warnings: {warnings}",
   },
   zh: {
+    stopButton: "停止",
+    stopping: "正在停止…",
+    stopped: "已停止，未下载任何文件。",
+    progressFiles: "正在读取第 {done} / {total} 个文件…",
+    progressIncludes: "正在读取论文引用的另外 {total} 个文件…",
+    progressBuilding: "正在生成导出内容…",
     languageName: "中文",
     title: "导出项目评论",
     languageLabel: "语言",
@@ -115,11 +127,35 @@ const ui = {
   exportButton: document.getElementById("export"),
   buttonLabel: document.getElementById("button-label"),
   spinner: document.getElementById("spinner"),
+  progress: document.getElementById("progress"),
+  stopButton: document.getElementById("stop"),
   result: document.getElementById("result"),
 };
 
 let activeTab = null;
 let busy = false;
+let stopRequested = false;
+
+// The page asks whether to stop, and reports where it has got to. Both
+// arrive here while executeScript is still running, which is the only way
+// the popup learns anything before the export finishes.
+chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+  if (message?.oceStopCheck) {
+    respond({ stop: stopRequested });
+    return true;
+  }
+  if (message?.oceProgress) {
+    showProgress(message.oceProgress);
+  }
+  return undefined;
+});
+
+function showProgress({ stage, done, total }) {
+  if (!busy) return;
+  if (stage === "files") ui.progress.textContent = t("progressFiles", { done, total });
+  else if (stage === "includes") ui.progress.textContent = t("progressIncludes", { total });
+  else ui.progress.textContent = t("progressBuilding");
+}
 let pageStatus = "checking";
 let pageDetail = "";
 const DEFAULT_LANGUAGE = "en";
@@ -211,7 +247,12 @@ function setBusy(nextBusy) {
   ui.formats.disabled = busy || !activeTab;
   if (ui.languageSelect) ui.languageSelect.disabled = busy;
   ui.spinner.hidden = !busy;
+  ui.progress.hidden = !busy;
+  if (!busy) ui.progress.textContent = "";
   ui.buttonLabel.textContent = busy ? t("exporting") : t("exportButton");
+  ui.stopButton.hidden = !busy;
+  ui.stopButton.disabled = stopRequested;
+  ui.stopButton.textContent = stopRequested ? t("stopping") : t("stopButton");
 }
 
 function showResult(message, isError = false) {
@@ -293,6 +334,15 @@ for (const id of Object.keys(CHOICE_DEFAULTS)) {
   document.getElementById(id)?.addEventListener("change", rememberChoices);
 }
 
+ui.stopButton.addEventListener("click", () => {
+  // The page checks this between steps. A request already in flight has to
+  // come back first, so the button says what it is doing rather than
+  // appearing to have done nothing.
+  stopRequested = true;
+  setBusy(true);
+  ui.progress.textContent = t("stopping");
+});
+
 ui.languageSelect.addEventListener("change", () => {
   language = resolveLanguage(ui.languageSelect.value);
   localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
@@ -307,6 +357,7 @@ ui.exportButton.addEventListener("click", async () => {
     return;
   }
 
+  stopRequested = false;
   setBusy(true);
   ui.result.hidden = true;
 

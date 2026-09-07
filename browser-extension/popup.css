@@ -329,3 +329,36 @@ button:disabled {
   line-height: 1.45;
   text-align: center;
 }
+
+.progress {
+  /* Where the export has got to. An export on a large paper used to be a
+     silent spinner, which is indistinguishable from a hang. */
+  margin: 8px 0 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stop {
+  margin-top: 8px;
+  padding: 7px 0;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stop:hover:not(:disabled) {
+  border-color: var(--bad, #a8352a);
+  color: var(--text);
+}
+
+.stop:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

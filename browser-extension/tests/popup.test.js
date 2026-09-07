@@ -27,7 +27,10 @@ function loadPopup({ stored = null, choices = null } = {}) {
     getItem: (key) => (key.endsWith("choices") ? choices : stored),
     setItem() {},
   };
-  global.chrome = { tabs: { query: () => {} }, scripting: {}, downloads: {} };
+  global.chrome = {
+    tabs: { query: () => {} }, scripting: {}, downloads: {},
+    runtime: { onMessage: { addListener() {} }, sendMessage: async () => ({}) },
+  };
   // navigator is deliberately not stubbed: popup.js must not consult it. It
   // used to, and switched itself to Chinese behind the reader's back.
 
@@ -126,4 +129,34 @@ test("every remembered box exists in the markup", () => {
   for (const id of Object.keys(api.CHOICE_DEFAULTS)) {
     assert.match(html, new RegExp(`id="${id}"`), `${id} is not in popup.html`);
   }
+});
+
+test("every new string exists in both languages", () => {
+  // The progress and stop copy is the newest, and a missing key shows up as
+  // an English sentence in the middle of a Chinese interface.
+  const { api } = loadPopup();
+  for (const key of ["stopButton", "stopping", "stopped", "progressFiles",
+                     "progressIncludes", "progressBuilding"]) {
+    for (const [code, copy] of Object.entries(api.COPY)) {
+      assert.ok(copy[key], `${code} is missing ${key}`);
+    }
+  }
+});
+
+test("the progress copy has somewhere to put the numbers", () => {
+  const { api } = loadPopup();
+  for (const [code, copy] of Object.entries(api.COPY)) {
+    assert.match(copy.progressFiles, /\{done\}/, `${code} progressFiles has no {done}`);
+    assert.match(copy.progressFiles, /\{total\}/, `${code} progressFiles has no {total}`);
+    assert.match(copy.progressIncludes, /\{total\}/, `${code} progressIncludes has no {total}`);
+  }
+});
+
+test("the markup has the progress line and the stop button", () => {
+  const html = fs.readFileSync(path.join(__dirname, "..", "popup.html"), "utf8");
+  assert.match(html, /id="progress"/);
+  assert.match(html, /id="stop"/);
+  // Both start hidden: neither means anything before an export runs.
+  assert.match(html, /id="progress"[^>]*hidden/);
+  assert.match(html, /id="stop"[^>]*hidden/);
 });

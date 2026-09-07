@@ -8,7 +8,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "1.3";
-  const TOOL_VERSION = "1.2.0-extension";
+  const TOOL_VERSION = "1.3.0-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 
@@ -288,6 +288,15 @@
       if (hits.length === 1) return hits[0];
     }
     return null;
+  }
+
+  function findIncludes(text) {
+    return Array.from(stripComments(text).matchAll(includeRe()),
+                      (m) => String(m[1] || "").trim()).filter(Boolean);
+  }
+
+  function resolveInclude(ref, available) {
+    return matchInclude(ref, available);
   }
 
   function flattenProject(root, texts) {
@@ -1206,6 +1215,8 @@ Project ID for reference: \`${payload.project.id}\`.
     buildLineStarts,
     documentRanges,
     findHeadings,
+    findIncludes,
+    resolveInclude,
     flattenFiles,
     nearestHeading,
     normalizeWhitespace,

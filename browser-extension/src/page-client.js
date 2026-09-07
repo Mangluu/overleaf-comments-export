@@ -1,7 +1,7 @@
 (function attachOverleafPageClient(root) {
   "use strict";
 
-  const VERSION = "1.1.0";
+  const VERSION = "1.3.0";
   if (root.__overleafCommentsExtension?.version === VERSION) return;
 
   const core = root.OverleafCommentsCore;
@@ -92,15 +92,62 @@
     return null;
   }
 
+
+  // ---- Talking to the popup while the work happens ------------------------
+  //
+  // executeScript hands back one result at the end, so an export on a thesis
+  // was a silent wait with no way out. These two send messages the popup
+  // listens for: one to say where we are, one to ask whether to stop.
+  //
+  // If the popup has gone, sendMessage rejects. That is treated as a stop:
+  // the popup is what writes the files, so work continued after it closes is
+  // work nobody will ever see.
+
+  function canMessage() {
+    return typeof chrome === "object" && chrome?.runtime
+      && typeof chrome.runtime.sendMessage === "function";
+  }
+
+  async function report(stage, done, total) {
+    if (!canMessage()) return;
+    try {
+      await chrome.runtime.sendMessage({ oceProgress: { stage, done, total } });
+    } catch {
+      // The popup closed. Nothing to report to, and the next stop check
+      // will end the export.
+    }
+  }
+
+  async function stopRequested() {
+    // No channel at all is not the same as a popup that has gone. Only an
+    // actual rejection means nobody is listening; if messaging is simply
+    // unavailable, carrying on is right.
+    if (!canMessage()) return false;
+    try {
+      const answer = await chrome.runtime.sendMessage({ oceStopCheck: true });
+      return Boolean(answer && answer.stop);
+    } catch {
+      return true;                 // popup gone: nobody is waiting for this
+    }
+  }
+
+  class ExportStopped extends Error {}
+
+  async function throwIfStopped() {
+    if (await stopRequested()) throw new ExportStopped("stopped");
+  }
+
   function readProjectMetadata(projectId) {
     const project = readMeta("ol-project");
     const titleFromMeta = readMeta("ol-projectName", "ol-project-name", "ol-project_name");
     let title = typeof titleFromMeta === "string" ? titleFromMeta : null;
     let filesRoot = null;
+    let rootDocId = null;
 
     if (project && typeof project === "object") {
       title ||= project.name || project.projectName || null;
       filesRoot = project.rootFolder || project.root_folder || project.files || null;
+      rootDocId = project.rootDocId || project.rootDoc_id || project.root_doc_id || null;
     }
 
     if (!title) {
@@ -113,6 +160,7 @@
     return {
       title: title || projectId,
       filesRoot,
+      rootDocId,
     };
   }
 
@@ -276,7 +324,15 @@
         .filter((entry) => entry.comments.length || (options.includeChanges && entry.changes.length))
         .map((entry) => entry.docId)
     )];
+    // The root as well, even with no comments in it, because it names the
+    // order the rest are read in.
+    if (metadata.rootDocId && !docIds.includes(metadata.rootDocId)) {
+      docIds.push(metadata.rootDocId);
+    }
     const docTexts = {};
+    let fetched = 0;
+    await throwIfStopped();
+    await report("files", 0, docIds.length);
     await mapWithConcurrency(docIds, 4, async (docId) => {
       try {
         docTexts[docId] = await request(`/Project/${projectId}/doc/${encodeURIComponent(docId)}/download`, "text");
@@ -284,7 +340,46 @@
         const label = docIdToPath[docId] || docId;
         warnings.push(tx("sourceWarning", { file: label }));
       }
+      fetched += 1;
+      await report("files", fetched, docIds.length);
     });
+
+    // Files with no comments in them still hold figures, and a figure decides
+    // what number the next one gets. Follow the includes from the root and
+    // fetch whatever is named but not yet read.
+    const pathToDocId = {};
+    for (const [id, path] of Object.entries(docIdToPath)) pathToDocId[path] = id;
+    for (let pass = 0; pass < 8; pass += 1) {
+      await throwIfStopped();
+      const known = {};
+      for (const [id, text] of Object.entries(docTexts)) {
+        if (docIdToPath[id]) known[docIdToPath[id]] = text;
+      }
+      const wanted = [];
+      for (const text of Object.values(known)) {
+        for (const ref of core.findIncludes(text)) {
+          const target = core.resolveInclude(ref, pathToDocId);
+          const id = target ? pathToDocId[target] : null;
+          if (id && !(id in docTexts) && !wanted.includes(id)) wanted.push(id);
+        }
+      }
+      if (!wanted.length) break;
+      await report("includes", 0, wanted.length);
+      let got = 0;
+      await mapWithConcurrency(wanted, 4, async (docId) => {
+        try {
+          docTexts[docId] = await request(`/Project/${projectId}/doc/${encodeURIComponent(docId)}/download`, "text");
+        } catch {
+          // Unreadable: assembleExport then claims no figure numbers rather
+          // than numbers built on a gap.
+        }
+        got += 1;
+        await report("includes", got, wanted.length);
+      });
+    }
+
+    await throwIfStopped();
+    await report("building", 0, 0);
 
     const exported = core.assembleExport({
       projectId,
@@ -295,6 +390,7 @@
       rangesPayload,
       docTexts,
       docIdToPath,
+      rootDocId: metadata.rootDocId,
       includeResolved: options.includeResolved,
       includeChanges: options.includeChanges,
     });

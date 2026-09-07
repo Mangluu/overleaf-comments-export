@@ -191,3 +191,13 @@ test("a good anchor is left exactly where it is", () => {
   assert.equal(got.stale, false);
   assert.equal(got.offset, text.indexOf("beta"));
 });
+
+test("the include chain is readable from outside, for fetching the rest", () => {
+  // The page needs this to fetch files that carry no comments. A figure in
+  // one of those still decides what number the next figure gets.
+  assert.deepEqual(core.findIncludes("\\input{a}\n\\include{b/c}\n"), ["a", "b/c"]);
+  assert.deepEqual(core.findIncludes("% \\input{draft}\n\\input{real}"), ["real"]);
+  assert.equal(core.resolveInclude("intro", { "sections/intro.tex": "x" }),
+               "sections/intro.tex");
+  assert.equal(core.resolveInclude("nope", { "a.tex": "x" }), null);
+});

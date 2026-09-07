@@ -86,3 +86,41 @@ test("collects the current project through same-origin Overleaf endpoints", asyn
     assert.match(markdown, new RegExp(`^${key}:`, "m"), `front matter is missing ${key}`);
   }
 });
+
+test("asking it to stop stops it, and nothing is downloaded", async () => {
+  // Before this the popup could only be closed, which left the page fetching
+  // files nobody would ever see the results of.
+  global.OverleafCommentsCore = require("../src/export-core.js");
+  global.location = { pathname: "/project/0123456789abcdef01234567" };
+  global.document = {
+    title: "Demo - Overleaf",
+    querySelector: () => null,
+  };
+  let asked = 0;
+  global.chrome = {
+    runtime: {
+      sendMessage: async (message) => {
+        if (message?.oceStopCheck) {
+          asked += 1;
+          return { stop: true };        // the reader pressed Stop
+        }
+        return {};
+      },
+    },
+  };
+  global.fetch = async () => ({
+    ok: true, status: 200,
+    headers: { get: () => "application/json" },
+    json: async () => ({}),
+    text: async () => "",
+  });
+
+  delete require.cache[require.resolve("../src/page-client.js")];
+  require("../src/page-client.js");
+  const { collect } = globalThis.__overleafCommentsExtension;
+  const result = await collect({ language: "en", formats: {} })
+    .catch((error) => ({ stopped: error }));
+
+  assert.ok(asked > 0, "it never asked whether to stop");
+  assert.ok(!result?.ok, "it produced a result after being told to stop");
+});
