@@ -187,36 +187,57 @@ https://github.com/Mangluu/overleaf-comments-export/blob/main/PRIVACY.md
 ## Screenshots
 
 At least one is required. Up to five are allowed. Either **1280x800** or
-**640x400**, PNG or JPEG. These have to be taken by hand because they must
-show the extension actually running.
+**640x400**, PNG or JPEG.
 
-Take them on a real project with real comments. A project with a handful of
-threads from more than one person looks far more convincing than an empty one.
-
-1. **The popup open over an Overleaf project.** The Overleaf editor behind,
-   with the review panel visible so the comments are on screen, and the
-   extension popup open in front showing the options. This is the one that
-   sells it, so make it the first.
-2. **The popup after a successful export**, showing the summary line with the
-   counts.
-3. **The exported Markdown open in an editor**, showing comments grouped by
-   section with their `C001` ids. This shows what you actually get.
-4. **Optional: the downloads folder** with the exported files in it.
-5. **Optional: the response letter**, showing the blank slots under each
-   comment.
-
-How to get the size exactly right on a Mac: take the shot with Shift-Command-4,
-then
+Two of them are rendered rather than photographed, because Chrome caps a popup
+at 600 pixels and ours is taller, so a real screenshot always loses an end.
+That is how the first published listing ended up cropped. Both scripts write a
+plain HTML page that any browser opens at full height, and headless Chrome
+turns it into a file that is already exactly 1280x800.
 
 ```bash
-sips -z 800 1280 shot.png --out screenshot-1.png
+python3 chrome-store/make-preview.py light frame
+python3 chrome-store/make-files-shot.py ~/Downloads/overleaf-comments/YOUR-PAPER/2026-...Z
 ```
 
-That forces the dimensions. Crop rather than stretch if the aspect is wrong,
-since a squashed screenshot looks careless.
+Then photograph each one.
 
-Google prefers screenshots without added text overlays, so do not annotate
-them.
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless \
+  --window-size=1280,800 --screenshot="$PWD/chrome-store/screenshots/screenshot-1.png" \
+  "file://$PWD/browser-extension/preview-frame.html"
+```
+
+Swap `preview-frame.html` for `preview-files.html` to get the second one. The
+rendered pages are build output and are gitignored, so they never reach the
+upload zip.
+
+The remaining shots have to be taken by hand, on a real project with real
+comments. A project with threads from more than one person looks far more
+convincing than an empty one.
+
+1. **The popup, whole.** Rendered by `make-preview.py`. This is the one that
+   sells it, so make it the first.
+2. **What an export leaves behind.** Rendered by `make-files-shot.py` from a
+   real export folder, so the names and sizes are true.
+3. **The popup open over an Overleaf project**, with the review panel visible
+   behind it so the comments are on screen. Taken by hand.
+4. **The exported Markdown open in an editor**, showing comments grouped by
+   section with their `C001` ids.
+5. **Optional. The response letter**, showing the blank slots under each
+   comment.
+
+For a shot taken by hand at the wrong size, `make-screenshots.sh` scales it to
+fit inside 1280x800 and pads the rest. It never crops.
+
+```bash
+bash chrome-store/make-screenshots.sh ~/Desktop/shot.png
+```
+
+Google prefers screenshots that show the extension actually working over ones
+that are mostly marketing text. Shot 2 is closer to a designed graphic than a
+photograph, so if a reviewer objects, replace it with a plain screenshot of the
+downloads folder and keep the rest.
 
 ---
 

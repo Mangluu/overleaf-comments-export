@@ -6,7 +6,7 @@ Everything you paste is in `LISTING.md`. This is the order to do it in.
 
 - [ ] Pay the 5 USD at https://chrome.google.com/webstore/devconsole
       signed in as **shivangzephyr@gmail.com**. One-time, per account.
-- [ ] Take the screenshots. See the Screenshots section of `LISTING.md`.
+- [ ] Render shots 1 and 2, then take the rest by hand. See the Screenshots section of `LISTING.md`.
       At least one, 1280x800. This is the only part nobody but you can do,
       so do it first or it will be what holds the submission up.
 
