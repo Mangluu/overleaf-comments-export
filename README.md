@@ -83,9 +83,10 @@ open. It uses that tab's signed-in session without reading or storing the
 session cookie, which makes it the easiest option on Windows, where Chrome
 encrypts its cookie store in a way the other options cannot read.
 
-Load [`browser-extension/`](browser-extension/) as an unpacked extension. The
-[extension guide](browser-extension/README.md) has the installation steps and
-explains its deliberately limited permissions.
+Install it from the [Chrome Web Store](https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc). It works in Chrome, Edge,
+Brave and other Chromium browsers. The
+[extension guide](browser-extension/README.md) explains its deliberately
+limited permissions.
 
 ### Which one to use
 

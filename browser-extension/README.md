@@ -1,5 +1,8 @@
 # Overleaf Comments Export 浏览器扩展
 
+Install from the [Chrome Web Store](https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc).
+
+
 [中文](#中文说明) · [English](#english-guide)
 
 ## 中文说明

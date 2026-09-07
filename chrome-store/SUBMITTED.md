@@ -33,6 +33,10 @@ The three permissions and the one-line reason for each:
 No host permissions are requested at all, there is no remote code, and nothing
 is transmitted anywhere.
 
+## Published
+
+https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc
+
 ## When it is published
 
 - [ ] Put the store URL in README.md, replacing the "load as an unpacked
