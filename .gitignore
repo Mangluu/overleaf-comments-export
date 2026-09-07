@@ -43,4 +43,8 @@ screenshots/
 # Rendered by chrome-store/make-preview.py for screenshots
 browser-extension/preview.html
 browser-extension/preview-frame.html
-chrome-store/screenshots/
+chrome-store/screenshots/*
+# The two uploaded shots are kept. Shot 2 is rendered from a local export
+# folder that is not in the repo, so nobody else could rebuild it.
+!chrome-store/screenshots/screenshot-1.png
+!chrome-store/screenshots/screenshot-2.png

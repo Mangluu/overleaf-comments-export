@@ -1,5 +1,36 @@
 # Submission record
 
+## Update 2, ready to upload
+
+The store is still serving **1.1.0**. Everything from 1.2.0 to 1.7.0 goes up
+in one upload, which is why the jump is large.
+
+| | |
+|---|---|
+| extension version | 1.7.0 |
+| replaces | 1.1.0, live since 2026-09-06 |
+| package | chrome-store/extension.zip |
+| package sha256 | `4d2b8323a4c84e1440ff766d76d14d3fb3ba22e3bee3e729dc606947e0e7a450` |
+| package size | 43K |
+| screenshots | `chrome-store/screenshots/screenshot-1.png`, `screenshot-2.png` |
+
+What a reviewer will see as new since 1.1.0.
+
+- Reads a paper split across several files the way LaTeX reads it, following
+  `\input`, `\include` and `\subfile`
+- Says where the export has got to, and can be stopped part way
+- Writes a spreadsheet, on three sheets
+- Writes one HTML page that can be sent to a co-author
+- Reports what changed since the last export
+- Copies the Markdown to the clipboard
+- Says so plainly when nobody is signed in
+- Filters by reviewer and by the file currently open
+- Language picker, English first
+
+No new permissions. The manifest asks for the same three it always has.
+
+---
+
 Submitted for review: **2026-09-06 13:39 EEST**
 Developer account: shivangzephyr@gmail.com
 

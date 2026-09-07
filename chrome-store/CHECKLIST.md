@@ -21,7 +21,7 @@ Everything you paste is in `LISTING.md`. This is the order to do it in.
 - [ ] Item name, summary, description — from `LISTING.md`
 - [ ] Category: Workflow & Planning
 - [ ] Language: English (United States)
-- [ ] Upload the screenshots, best one first
+- [ ] Upload `chrome-store/screenshots/screenshot-1.png` then `screenshot-2.png`
 
 ## Privacy tab
 
