@@ -35,10 +35,6 @@ pytestmark = pytest.mark.skipif(
 
 # Every difference that is deliberate. Anything else fails the test.
 KNOWN_GAPS = {
-    ("comments[0]", "python"): {
-        # Needs float detection in JS, which the extension does not have yet.
-        "enclosing_float",
-    },
     ("top level", "python"): {
         # The extension exposes fewer filters, and does not record them.
         "filters_applied",
@@ -87,6 +83,10 @@ def extension_payload(extension_run) -> dict:
 def python_run(scenario) -> dict:
     f = scenario
 
+    docs = f.get("docs") or [{"docId": f["docId"], "pathname": f["pathname"],
+                              "text": f["docText"], "comments": f.get("comments") or []}]
+    root_doc = f.get("rootDocId") or f["docId"]
+
     class Fixture(FakeClient):
         def get_threads(self, project_id):
             return {tid: {"messages": t["messages"], "resolved": t["resolved"]}
@@ -98,21 +98,23 @@ def python_run(scenario) -> dict:
 
         def get_project_metadata(self, project_id):
             return {"files": {"docs": []}, "name": f["projectTitle"],
-                    "rootDocId": f["docId"], "raw_meta": {}}
+                    "rootDocId": root_doc, "raw_meta": {}}
 
         def flatten_files(self, files_root, debug_logger=None):
             # The extension is handed docIdToPath directly, so Python needs
             # the same mapping or the two disagree on pathname for a reason
             # that has nothing to do with either contract.
-            return [{"doc_id": f["docId"], "pathname": f["pathname"]}]
+            return [{"doc_id": d["docId"], "pathname": d["pathname"]} for d in docs]
 
         def get_project_ranges(self, project_id):
-            return [{"id": f["docId"], "ranges": {
-                "comments": f.get("comments") or [],
-                "changes": [f["trackedChange"]] if f.get("trackedChange") else []}}]
+            return [{"id": d["docId"], "ranges": {
+                "comments": d.get("comments") or [],
+                "changes": ([f["trackedChange"]]
+                            if f.get("trackedChange") and d["docId"] == root_doc
+                            else [])}} for d in docs]
 
         def download_doc_text(self, project_id, doc_id):
-            return f["docText"]
+            return next(d["text"] for d in docs if d["docId"] == doc_id)
 
     real = export_mod.OverleafClient
     export_mod.OverleafClient = Fixture
@@ -201,8 +203,12 @@ def test_the_shared_fields_agree_on_values_too(place, python_payload,
     py, ext = _at(python_payload, place), _at(extension_payload, place)
     if py is _MISSING and ext is _MISSING:
         pytest.skip(f"this scenario has no {place}")
+    # enclosing_float is compared whole. Emptying the float list on one side
+    # was not caught while only its presence was checked, which is the kind of
+    # test that looks like cover and is not.
     for key in ("short_id", "pathname", "line", "col", "offset",
-                "anchored_text", "kind", "content", "nearest_heading"):
+                "anchored_text", "kind", "content", "nearest_heading",
+                "enclosing_float"):
         if key in py and key in ext:
             assert py[key] == ext[key], (
                 f"{place}.{key} differs: Python {py[key]!r}, "

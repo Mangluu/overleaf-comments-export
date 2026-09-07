@@ -23,20 +23,28 @@ for (const [id, t] of Object.entries(f.threads || {})) {
 const resolvedIds = Object.entries(f.threads || {})
   .filter(([, t]) => t.resolved).map(([id]) => id);
 
+// A scenario is either one file, or a list of them with a named root.
+const docs = f.docs || [{ docId: f.docId, pathname: f.pathname,
+                          text: f.docText, comments: f.comments || [] }];
+const rangesPayload = docs.map((d) => ({
+  id: d.docId,
+  ranges: {
+    comments: d.comments || [],
+    changes: d.docId === (f.rootDocId || f.docId) && f.trackedChange ? [f.trackedChange] : [],
+  },
+}));
+const docTexts = Object.fromEntries(docs.map((d) => [d.docId, d.text]));
+const docIdToPath = Object.fromEntries(docs.map((d) => [d.docId, d.pathname]));
+
 const out = core.assembleExport({
   projectId: f.projectId,
   projectTitle: f.projectTitle,
   rawThreads,
   resolvedIds,
-  rangesPayload: [{
-    id: f.docId,
-    ranges: {
-      comments: f.comments || [],
-      changes: f.trackedChange ? [f.trackedChange] : [],
-    },
-  }],
-  docTexts: { [f.docId]: f.docText },
-  docIdToPath: { [f.docId]: f.pathname },
+  rangesPayload,
+  docTexts,
+  docIdToPath,
+  rootDocId: f.rootDocId || f.docId,
 });
 const payload = out.payload ?? out;
 process.stdout.write(JSON.stringify({

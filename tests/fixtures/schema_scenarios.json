@@ -291,5 +291,114 @@
     },
     "comments": [],
     "name": "changes_only"
+  },
+  "multi_file": {
+    "name": "multi_file",
+    "projectId": "aaaaaaaaaaaaaaaaaaaaaaaa",
+    "projectTitle": "A paper in several files",
+    "rootDocId": "d_main",
+    "docs": [
+      {
+        "docId": "d_main",
+        "pathname": "main.tex",
+        "text": "\\documentclass{article}\n\\begin{document}\n\\section{Results}\n\\input{results-body}\n\\begin{figure}\\caption{First figure}\\label{fig:a}\\end{figure}\n\\input{extra-figures}\n\\section{Discussion}\n\\input{discussion-body}\n\\end{document}\n",
+        "comments": [
+          {
+            "op": {
+              "p": 103,
+              "c": "First figure",
+              "t": "t3"
+            }
+          }
+        ]
+      },
+      {
+        "docId": "d_results",
+        "pathname": "results-body.tex",
+        "text": "Task time fell by twelve percent across all three conditions.\n",
+        "comments": [
+          {
+            "op": {
+              "p": 18,
+              "c": "twelve percent",
+              "t": "t1"
+            }
+          }
+        ]
+      },
+      {
+        "docId": "d_extra",
+        "pathname": "extra-figures.tex",
+        "text": "\\begin{figure}\\caption{Nobody commented on me}\\end{figure}\n",
+        "comments": []
+      },
+      {
+        "docId": "d_disc",
+        "pathname": "discussion-body.tex",
+        "text": "\\begin{figure}\\caption{Fourth figure}\\label{fig:d}\\end{figure}\nThe effect is smaller than we expected from the pilot.\n",
+        "comments": [
+          {
+            "op": {
+              "p": 23,
+              "c": "Fourth figure",
+              "t": "t2"
+            }
+          }
+        ]
+      }
+    ],
+    "threads": {
+      "t1": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m1",
+            "content": "Is that across all three?",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      },
+      "t2": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m2",
+            "content": "Smaller than the pilot?",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      },
+      "t3": {
+        "resolved": false,
+        "messages": [
+          {
+            "id": "m3",
+            "content": "Axis label is unreadable.",
+            "timestamp": 1700000000000,
+            "user_id": "u1",
+            "user": {
+              "name": "Bakhtawar Khan",
+              "email": "b@example.com"
+            }
+          }
+        ]
+      }
+    },
+    "trackedChange": null,
+    "docId": "d_main",
+    "pathname": "main.tex",
+    "docText": "\\documentclass{article}\n\\begin{document}\n\\section{Results}\n\\input{results-body}\n\\begin{figure}\\caption{First figure}\\label{fig:a}\\end{figure}\n\\input{extra-figures}\n\\section{Discussion}\n\\input{discussion-body}\n\\end{document}\n",
+    "anchor": "First figure",
+    "comments": []
   }
 }

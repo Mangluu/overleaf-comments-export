@@ -8,7 +8,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "1.3";
-  const TOOL_VERSION = "1.1.0-extension";
+  const TOOL_VERSION = "1.2.0-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 
@@ -237,6 +237,244 @@
     // contradicts the line and column right beside it, which are bounded.
     const bounded = Math.min(offset, Math.max(0, text.length - 1));
     return { offset: bounded, ...offsetToLineColumn(lineStarts, bounded), stale: true };
+  }
+
+
+  // ---- Reading a paper the way LaTeX reads it -----------------------------
+  //
+  // A paper split across files is read in the order the root document pulls
+  // the pieces in, and two things depend on that order rather than on any one
+  // file. Section headings, because main.tex can say \section{Results} and
+  // then \input{results-body}, so read on its own the included file has no
+  // heading at all. And figure and table numbers, because LaTeX counts them
+  // straight through: counted per file they restart, and a comment on
+  // Figure 2 gets reported as Figure 1, which is worse than saying nothing.
+  //
+  // This mirrors overleaf_comments_export/docorder.py and the float half of
+  // sections.py. The two are compared against each other by a shared fixture
+  // in tests/test_schema_parity.py, which is what keeps them honest.
+
+  const includeRe = () => /\\(?:input|include|subfile)\s*\{([^}]*)\}/g;
+
+  function stripComments(text) {
+    // Blank out commented-out text, keeping offsets so nothing shifts. A
+    // commented \input is not read by LaTeX and must not be read here.
+    return text.split("\n").map((line) => {
+      for (let i = 0; i < line.length; i += 1) {
+        if (line[i] === "%" && (i === 0 || line[i - 1] !== "\\")) {
+          return line.slice(0, i) + " ".repeat(line.length - i);
+        }
+      }
+      return line;
+    }).join("\n");
+  }
+
+  function candidates(ref) {
+    let name = String(ref || "").replace(/\\/g, "/").trim();
+    while (name.startsWith("./")) name = name.slice(2);
+    if (!name) return [];
+    return name.endsWith(".tex") ? [name] : [`${name}.tex`, name];
+  }
+
+  function matchInclude(ref, available) {
+    for (const name of candidates(ref)) {
+      if (Object.prototype.hasOwnProperty.call(available, name)) return name;
+    }
+    // A project can say \input{intro} for a file the tree calls
+    // sections/intro.tex. Match on the tail, but only when unambiguous.
+    for (const name of candidates(ref)) {
+      const hits = Object.keys(available).filter(
+        (p) => p === name || p.endsWith(`/${name}`));
+      if (hits.length === 1) return hits[0];
+    }
+    return null;
+  }
+
+  function flattenProject(root, texts) {
+    // Splice the whole project into the single document LaTeX reads, and
+    // record where each piece landed. Whole files are not enough: \input
+    // happens at a point, so a file pulled in halfway through the root
+    // inherits only the headings above that point.
+    const parts = [];
+    const marks = [];
+    const missing = [];
+    const depth = new Set();
+    let total = 0;
+
+    function emit(path, text, lo, hi) {
+      marks.push({ path, lo, at: total });
+      const chunk = text.slice(lo, hi);
+      parts.push(chunk);
+      total += chunk.length;
+    }
+
+    function walk(path) {
+      if (depth.has(path)) return;      // a ring of includes; LaTeX fails too
+      depth.add(path);
+      const text = texts[path];
+      const stripped = stripComments(text);
+      let cursor = 0;
+      // Collected before recursing: walk() calls itself from inside this
+      // loop, and a shared /g regex would have its lastIndex moved underneath.
+      for (const m of [...stripped.matchAll(includeRe())]) {
+        const ref = String(m[1] || "").trim();
+        if (!ref) continue;
+        emit(path, text, cursor, m.index);
+        cursor = m.index + m[0].length;
+        const target = matchInclude(ref, texts);
+        if (target === null) missing.push(ref);
+        else walk(target);
+      }
+      emit(path, text, cursor, text.length);
+      depth.delete(path);
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(texts, root)) {
+      return { joined: "", marks: [], missing: [root] };
+    }
+    walk(root);
+    return { joined: parts.join(""), marks, missing };
+  }
+
+  function locateInJoined(marks, path, offset) {
+    let best = null;
+    for (const mark of marks) {
+      if (mark.path === path && mark.lo <= offset) {
+        if (best === null || mark.lo > best.lo) best = mark;
+      }
+    }
+    return best === null ? null : best.at + (offset - best.lo);
+  }
+
+
+  // ---- Figures and tables -------------------------------------------------
+  //
+  // So a comment on a caption can say "Figure 3" rather than a line number.
+  // figure* and table* share their counter with the unstarred form, which is
+  // why the star is stripped rather than treated as a separate kind. Mirrors
+  // the float half of sections.py.
+
+  // Built fresh on every use. A /g regex carries lastIndex, so sharing one
+  // between a loop and anything that loop calls corrupts both: captionAndLabel
+  // iterating the nested-float pattern while matchingEnd reset it meant the
+  // loop never advanced and the process ran out of memory.
+  const floatBeginRe = () => /\\begin\{(figure|table)\*?\}/g;
+  // Nested floats do exist: subfigure inside figure, a table inside a figure.
+  const anyBeginRe = () => /\\begin\{(?:figure|table|subfigure|subtable)\*?\}/g;
+  const anyEndRe = () => /\\end\{(?:figure|table|subfigure|subtable)\*?\}/g;
+  const captionRe = () => /\\caption\*?\s*(?:\[[^\]]*\])?\s*\{/g;
+  const labelRe = () => /\\label\s*\{([^}]*)\}/g;
+
+  function isCommentedOut(text, pos) {
+    // Walk back to the start of the line: a % before this position, not
+    // itself escaped, means LaTeX never sees any of it.
+    const lineStart = text.lastIndexOf("\n", pos - 1) + 1;
+    for (let i = lineStart; i < pos; i += 1) {
+      if (text[i] === "%" && (i === lineStart || text[i - 1] !== "\\")) return true;
+    }
+    return false;
+  }
+
+  function balancedArgument(text, openBrace) {
+    let depth = 0;
+    for (let i = openBrace; i < text.length; i += 1) {
+      const ch = text[i];
+      if (ch === "\\") { i += 1; continue; }
+      if (ch === "{") depth += 1;
+      else if (ch === "}") {
+        depth -= 1;
+        if (depth === 0) return text.slice(openBrace + 1, i);
+      }
+    }
+    return text.slice(openBrace + 1);
+  }
+
+  function matchingEnd(text, afterBegin) {
+    // Where this float closes, counting nested floats on the way.
+    let depth = 1;
+    let i = afterBegin;
+    const begin = anyBeginRe();
+    const end = anyEndRe();
+    while (i < text.length && depth > 0) {
+      begin.lastIndex = i;
+      end.lastIndex = i;
+      const nextBegin = begin.exec(text);
+      const nextEnd = end.exec(text);
+      if (!nextEnd) return text.length;
+      if (nextBegin && nextBegin.index < nextEnd.index) {
+        depth += 1;
+        i = nextBegin.index + nextBegin[0].length;
+      } else {
+        depth -= 1;
+        i = nextEnd.index + nextEnd[0].length;
+      }
+    }
+    return i;
+  }
+
+  function captionAndLabel(body) {
+    // The float's own caption and label, ignoring any belonging to something
+    // nested inside it. A subfigure has its own caption, and that is not the
+    // caption of the float being named.
+    const nested = [];
+    for (const m of body.matchAll(anyBeginRe())) {
+      nested.push([m.index, matchingEnd(body, m.index + m[0].length)]);
+    }
+    const outside = (pos) => !nested.some(([a, b]) => a < pos && pos < b);
+
+    let caption = null;
+    for (const m of body.matchAll(captionRe())) {
+      if (outside(m.index) && !isCommentedOut(body, m.index)) {
+        caption = balancedArgument(body, m.index + m[0].length - 1)
+          .split(/\s+/).filter(Boolean).join(" ");
+        break;
+      }
+    }
+    let label = null;
+    for (const m of body.matchAll(labelRe())) {
+      if (outside(m.index) && !isCommentedOut(body, m.index)) {
+        label = String(m[1] || "").trim();
+        break;
+      }
+    }
+    return { caption, label };
+  }
+
+  function findFloats(text, lineStarts) {
+    // Only captioned floats take a number, because LaTeX only steps the
+    // counter when there is a caption. An uncaptioned one is still recorded,
+    // so a comment inside it can say it is in a figure without saying which.
+    const floats = [];
+    const counters = { figure: 0, table: 0 };
+    for (const m of text.matchAll(floatBeginRe())) {
+      if (isCommentedOut(text, m.index)) continue;
+      if (floats.some((f) => f.start < m.index && m.index < f.end)) continue;
+      const kind = m[1];
+      const end = matchingEnd(text, m.index + m[0].length);
+      const { caption, label } = captionAndLabel(text.slice(m.index + m[0].length, end));
+      if (caption !== null) counters[kind] += 1;
+      floats.push({
+        kind,
+        number: caption === null ? null : counters[kind],
+        caption,
+        label,
+        start: m.index,
+        end,
+        line: offsetToLineColumn(lineStarts, m.index).line,
+      });
+    }
+    return floats;
+  }
+
+  function enclosingFloat(floats, offset) {
+    // The float containing this position. findFloats never records a float
+    // inside another, so there is only ever one, and taking the first keeps
+    // this identical to enclosing_float in sections.py rather than merely
+    // equivalent to it.
+    for (const f of floats) {
+      if (f.start <= offset && offset < f.end) return f;
+    }
+    return null;
   }
 
   function findHeadings(text, lineStarts) {
@@ -677,6 +915,50 @@ Project ID for reference: \`${payload.project.id}\`.
     return `${lines.join("\n").trimEnd()}\n`;
   }
 
+  function applyDocumentOrder({ anchored, trackedChanges, docTexts, docIdToPath, rootDocId }) {
+    const rootPath = docIdToPath[rootDocId];
+    if (!rootPath) return;
+
+    const texts = {};
+    for (const [docId, text] of Object.entries(docTexts)) {
+      const path = docIdToPath[docId];
+      if (path && typeof text === "string") texts[path] = text;
+    }
+    if (!Object.prototype.hasOwnProperty.call(texts, rootPath)) return;
+
+    const { joined, marks, missing } = flattenProject(rootPath, texts);
+    if (!joined) return;
+
+    if (missing.length) {
+      for (const item of anchored) {
+        if (item.enclosingFloat) item.enclosingFloat.number = null;
+      }
+      return;
+    }
+    if (new Set(marks.map((m) => m.path)).size < 2) return;  // one file: already right
+
+    const lineStarts = buildLineStarts(joined);
+    const floats = findFloats(joined, lineStarts);
+    const headings = findHeadings(joined, lineStarts);
+
+    const relocate = (item) => {
+      const path = docIdToPath[item.docId];
+      return path ? locateInJoined(marks, path, item.offset) : null;
+    };
+    for (const item of anchored) {
+      const at = relocate(item);
+      if (at === null) continue;
+      item.enclosingFloat = enclosingFloat(floats, at);
+      item.nearestHeading = nearestHeading(headings, offsetToLineColumn(lineStarts, at).line);
+    }
+    for (const change of trackedChanges) {
+      const at = relocate(change);
+      if (at !== null) {
+        change.nearestHeading = nearestHeading(headings, offsetToLineColumn(lineStarts, at).line);
+      }
+    }
+  }
+
   function assembleExport({
     projectId,
     projectTitle,
@@ -686,6 +968,7 @@ Project ID for reference: \`${payload.project.id}\`.
     rangesPayload = null,
     docTexts = {},
     docIdToPath = {},
+    rootDocId = null,
     includeResolved = true,
     includeChanges = true,
   }) {
@@ -718,6 +1001,7 @@ Project ID for reference: \`${payload.project.id}\`.
           line: resolved.line,
           column: resolved.column,
           nearestHeading: nearestHeading(headings, resolved.line),
+          enclosingFloat: enclosingFloat(findFloats(text, lineStarts), resolved.offset),
           stale: resolved.stale,
           context: extractContext(text, resolved.offset, anchoredText, resolved.line),
         });
@@ -771,6 +1055,18 @@ Project ID for reference: \`${payload.project.id}\`.
     );
     trackedChanges.forEach((change, index) => { change.shortId = `T${String(index + 1).padStart(3, "0")}`; });
 
+    // ---- Read the whole paper in document order ----
+    //
+    // Everything above worked file by file, which is not how LaTeX reads a
+    // project. Redo the headings and the float numbers over the spliced
+    // document, so a comment in an included file gets the section it is
+    // actually under and figures are numbered straight through.
+    //
+    // If any included file is missing, no number is claimed at all: a missing
+    // number sends nobody anywhere, a wrong one sends them to the wrong
+    // figure. Same rule as _apply_document_order in export.py.
+    applyDocumentOrder({ anchored, trackedChanges, docTexts, docIdToPath, rootDocId });
+
     const visibleComments = anchored.filter((comment) => {
       const thread = allThreads[comment.threadId];
       return includeResolved || !thread?.resolved;
@@ -817,6 +1113,14 @@ Project ID for reference: \`${payload.project.id}\`.
         col: comment.column,
         offset: comment.offset,
         nearest_heading: comment.nearestHeading,
+        enclosing_float: comment.enclosingFloat
+          ? {
+            kind: comment.enclosingFloat.kind,
+            number: comment.enclosingFloat.number,
+            label: comment.enclosingFloat.label,
+            caption: comment.enclosingFloat.caption,
+          }
+          : null,
         anchored_text: comment.anchoredText,
         stale: comment.stale,
         created_at: messages[0]?.timestamp || null,
