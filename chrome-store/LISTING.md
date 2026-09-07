@@ -64,24 +64,33 @@ Export the review comments and tracked changes from your Overleaf project to Mar
 ### Description
 
 ```
-Overleaf keeps review comments inside the editor. They are not in the source download and they are not in the Git sync, so the only way to work through feedback from co-authors and supervisors is to scroll the document and handle them one at a time.
+Open your paper in Overleaf. Click this extension's icon in the toolbar. Tick the files you want, then press Export current project. Everything is saved straight to your Downloads folder. That is the whole thing: no account, no setup, no copying and pasting.
 
-This exports them.
+Overleaf keeps review comments inside the editor. They are not in the source download and they are not in the Git sync, so the only way to work through feedback from co-authors and supervisors has been to scroll the document and handle them one at a time.
 
-Open your project in Overleaf, click the extension, and it writes:
+WHAT YOU GET
 
 • Markdown, grouped by file and section, with every thread and its replies, and a short stable id on each comment
+• A spreadsheet, with the comments, their replies and the tracked changes on three sheets, so you can sort by file, filter to one reviewer and tick things off
 • JSON and JSONL, the same data structured, for anything else you want to do with it
-• agents.md, a brief that tells an AI assistant how to read the other two, so you can say "draft a reply to C014" and it knows which passage that is
 • A response letter, pre-filled with every open comment and a blank space under each for your answer
+• agents.md, a brief that tells an AI assistant how to read the rest, so you can say "draft a reply to C014" and it knows which passage that is
 
 Tracked changes come through as well, as insertions and deletions with the surrounding text.
 
+WHAT CHANGED SINCE LAST TIME
+
+Reviews arrive in waves. Export the same paper again and you also get whats-new.md, listing only what moved: comments that are new, threads that picked up replies, comments somebody edited after you read them, what was resolved, what was reopened, and what is gone.
+
+PAPERS SPLIT ACROSS FILES
+
+Most real papers are. The project is read in the order LaTeX reads it, following \input and \include from the root document, so a comment gets the section it is actually under even when the \section is in main.tex and the prose is somewhere else. Figure and table numbers run through the whole paper rather than restarting in every file.
+
 NOTHING LEAVES YOUR COMPUTER
 
-There is no backend, no account, no analytics and no telemetry. The extension works inside the Overleaf tab you already have open and writes the files straight to your downloads folder.
+There is no backend, no account, no analytics and no telemetry. It works inside the Overleaf tab you already have open and writes the files straight to your downloads folder.
 
-It never reads or stores your session cookie. It uses the session already present in the tab, which is why it needs no password and no permanent access to any site.
+It never reads or stores your session cookie. It uses the session already in the tab, which is why it needs no password and no permanent access to any site.
 
 WHAT IT ASKS FOR, AND WHY
 
@@ -93,9 +102,7 @@ It requests no permanent host permissions at all.
 
 THERE IS ALSO A COMMAND LINE VERSION
 
-The same project ships a Python tool that does more, including writing the comments into your compiled PDF as highlights, resolving \input and \include so a paper split across files gets the right section and figure numbers, and telling you what changed since your last export. It signs in by reading your browser's cookie store, which cannot be done on Windows with recent Chrome and needs Full Disk Access on macOS.
-
-This extension exists because that is a poor experience on Windows. It reads the tab instead.
+The same project ships a Python tool that does more, including writing the comments into your compiled PDF as highlights and producing a single self-contained web page you can email to a co-author.
 
     pip install "overleaf-comments-export[gui,pdf]"
 
