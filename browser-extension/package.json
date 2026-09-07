@@ -1,6 +1,6 @@
 {
   "name": "overleaf-comments-export-extension",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "Manifest V3 browser extension for exporting comments from the current Overleaf project.",
   "scripts": {

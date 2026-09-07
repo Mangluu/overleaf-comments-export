@@ -47,9 +47,37 @@ const out = core.assembleExport({
   rootDocId: f.rootDocId || f.docId,
 });
 const payload = out.payload ?? out;
+// A second export of the same paper, with one thread resolved, one reply
+// added and one comment edited, so the diff has something to find.
+function mutate(payload) {
+  const next = JSON.parse(JSON.stringify(payload));
+  const ids = Object.keys(next.threads || {});
+  if (ids[0]) {
+    next.threads[ids[0]].messages.push({
+      id: "m-new-reply", role: "reply", content: "Any progress on this?",
+      timestamp: "2026-09-01T10:00:00+00:00", user: { name: "ans.ahmad" },
+    });
+    next.threads[ids[0]].reply_count = (next.threads[ids[0]].reply_count || 0) + 1;
+  }
+  if (ids[1]) {
+    next.threads[ids[1]].resolved = true;
+    next.threads[ids[1]].resolved_by = { name: "Shivang Gupta" };
+  }
+  if (ids[2] && next.threads[ids[2]].messages[0]) {
+    next.threads[ids[2]].messages[0].content += " (and check the units)";
+  }
+  return next;
+}
+
+const mutated = mutate(payload);
+const since = core.compareExports(core.sinceSnapshot(payload),
+                                  core.sinceSnapshot(mutated));
+
 process.stdout.write(JSON.stringify({
   payload,
   jsonl: out.jsonl ?? core.renderJsonLines(payload),
   sheets: core.buildSheetRows(payload),
+  mutated,
+  since: { shortIds: core.sinceShortIds(since), summary: core.sinceSummary(since) },
   markdown: out.markdown ?? "",
 }, null, 2));

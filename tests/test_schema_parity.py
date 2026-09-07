@@ -320,3 +320,24 @@ def test_both_build_the_same_rows(python_run, extension_run):
             # written either way, so compare as text.
             assert [str(x) for x in a] == [str(x) for x in b], (
                 f"{name} row {i + 1} differs:\n  python    {a}\n  extension {b}")
+
+
+# --- what changed since last time --------------------------------------------
+#
+# Python reads the previous comments.json out of the folder; the extension
+# keeps a snapshot in extension storage. Different plumbing, and the answer has
+# to be the same, so both diff the same pair here.
+
+def test_both_find_the_same_changes(python_run, extension_run):
+    from overleaf_comments_export.since import compare, short_ids
+
+    got = compare(python_run["payload"], extension_run["mutated"])
+    assert short_ids(got) == extension_run["since"]["shortIds"], (
+        "the two disagree about what changed")
+
+
+def test_both_summarise_the_changes_the_same_way(python_run, extension_run):
+    from overleaf_comments_export.since import compare
+
+    got = compare(python_run["payload"], extension_run["mutated"])
+    assert got.summary() == extension_run["since"]["summary"]

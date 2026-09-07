@@ -23,10 +23,13 @@ function loadPopup({ stored = null, choices = null } = {}) {
     createElement: () => { const el = element(); created.push(el); return el; },
     addEventListener() {},
   };
-  global.localStorage = {
-    getItem: (key) => (key.endsWith("choices") ? choices : stored),
-    setItem() {},
-  };
+  const store = {};
+  global.localStorage = Object.assign(store, {
+    getItem: (key) => (key.endsWith("choices") ? choices
+      : key.startsWith("oce-snapshot-") ? (store[key] || null) : stored),
+    setItem(key, value) { store[key] = value; },
+    removeItem(key) { delete store[key]; },
+  });
   global.chrome = {
     tabs: { query: () => {} }, scripting: {}, downloads: {},
     runtime: { onMessage: { addListener() {} }, sendMessage: async () => ({}) },
@@ -159,4 +162,17 @@ test("the markup has the progress line and the stop button", () => {
   // Both start hidden: neither means anything before an export runs.
   assert.match(html, /id="progress"[^>]*hidden/);
   assert.match(html, /id="stop"[^>]*hidden/);
+});
+
+test("a snapshot of the last export is kept, and read back", () => {
+  const { api } = loadPopup();
+  assert.equal(typeof api.loadSnapshot, "function");
+  assert.equal(typeof api.saveSnapshot, "function");
+});
+
+test("a missing or unreadable snapshot is no snapshot, not a crash", () => {
+  // Storage is hand-editable and outlives version changes, so anything in it
+  // has to be treated as untrusted. A failed diff must never fail an export.
+  const { api } = loadPopup();
+  assert.equal(api.loadSnapshot("nothing-stored-here"), null);
 });

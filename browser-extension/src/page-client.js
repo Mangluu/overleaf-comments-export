@@ -1,7 +1,7 @@
 (function attachOverleafPageClient(root) {
   "use strict";
 
-  const VERSION = "1.4.0";
+  const VERSION = "1.5.0";
   if (root.__overleafCommentsExtension?.version === VERSION) return;
 
   const core = root.OverleafCommentsCore;
@@ -218,7 +218,7 @@
     return [];
   }
 
-  function outputFiles(exported, formats) {
+  function outputFiles(exported, formats, previousSnapshot) {
     const date = new Date().toISOString().slice(0, 10);
     const markdownName = `comments-${date}.md`;
     const files = [];
@@ -234,6 +234,16 @@
         filename: "comments.json",
         mimeType: "application/json;charset=utf-8",
         content: `${JSON.stringify(exported.payload, null, 2)}\n`,
+      });
+    }
+    // What changed since the last export of this paper. The previous
+    // snapshot is passed in by the popup, which is what keeps it.
+    if (previousSnapshot) {
+      const since = core.compareExports(previousSnapshot, exported.payload);
+      files.push({
+        filename: "whats-new.md",
+        mimeType: "text/markdown;charset=utf-8",
+        content: core.renderSinceMarkdown(since, exported.payload.project.title),
       });
     }
     if (formats.xlsx && typeof OverleafCommentsXlsx !== "undefined") {
@@ -420,7 +430,9 @@
         staleAnchorCount: summary.stale_anchor_count,
       },
       warnings: [...new Set(warnings)],
-      outputs: outputFiles(exported, options.formats),
+      // Handed back so the popup can store it for next time.
+      snapshot: core.sinceSnapshot(exported.payload),
+      outputs: outputFiles(exported, options.formats, options.previousSnapshot),
     };
   }
 

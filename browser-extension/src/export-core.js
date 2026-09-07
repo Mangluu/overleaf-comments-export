@@ -8,7 +8,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "1.3";
-  const TOOL_VERSION = "1.4.0-extension";
+  const TOOL_VERSION = "1.5.0-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 
@@ -1068,6 +1068,329 @@ Project ID for reference: \`${payload.project.id}\`.
     return { Comments: comments, Replies: replies, "Tracked changes": changes };
   }
 
+
+  // ---- What changed since the last export ---------------------------------
+  //
+  // Reviews arrive in waves, and the second export of a paper is mostly
+  // comments you read last week. Mirrors since.py, which does this by reading
+  // the previous comments.json out of the folder. There is no folder to read
+  // here, so the popup keeps a small snapshot of the last export in extension
+  // storage and hands it back on the next run.
+  //
+  // Identity is the thread id, never the short id. Short ids go in file then
+  // line order, so one comment added near the top renumbers everything below
+  // it and a diff keyed on them would report the whole paper as new.
+
+  function sinceSnapshot(payload) {
+    // Only what the comparison reads. Storing the whole payload would put a
+    // quarter of a megabyte per project into a quota shared with everything
+    // else the extension keeps.
+    return {
+      project: payload.project,
+      pulled_at: payload.pulled_at,
+      filters_applied: payload.filters_applied || {},
+      threads: Object.fromEntries(Object.entries(payload.threads || {}).map(
+        ([id, t]) => [id, {
+          resolved: Boolean(t.resolved),
+          resolved_by: t.resolved_by || null,
+          reply_count: t.reply_count || 0,
+          messages: (t.messages || []).map((m) => ({
+            id: m.id, content: m.content, timestamp: m.timestamp, user: m.user,
+          })),
+        }])),
+      comments: (payload.comments || []).map((c) => ({
+        short_id: c.short_id, thread_id: c.thread_id, pathname: c.pathname,
+        line: c.line, nearest_heading: c.nearest_heading,
+        enclosing_float: c.enclosing_float, anchored_text: c.anchored_text,
+      })),
+      tracked_changes: (payload.tracked_changes || []).map((ch) => ({
+        id: ch.id, short_id: ch.short_id, kind: ch.kind, content: ch.content,
+        pathname: ch.pathname, line: ch.line,
+        nearest_heading: ch.nearest_heading, user: ch.user,
+      })),
+      orphan_thread_ids: payload.orphan_thread_ids || [],
+    };
+  }
+
+  function anchorByThread(payload) {
+    const out = {};
+    for (const c of payload.comments || []) {
+      if (c && c.thread_id && !(c.thread_id in out)) out[c.thread_id] = c;
+    }
+    return out;
+  }
+
+  function messagesOf(thread) {
+    if (!thread || typeof thread !== "object") return [];
+    return (thread.messages || []).filter((m) => m && typeof m === "object");
+  }
+
+  function whoWrote(message) {
+    const user = (message || {}).user || {};
+    return String(user.name || user.email || (user.id || "someone").slice(0, 8));
+  }
+
+  const HEADING_CHARS = 55;
+
+  function whereIs(anchor) {
+    if (!anchor) return "not anchored to any text";
+    const bits = [anchor.pathname || "?"];
+    if (anchor.line) bits.push(`line ${anchor.line}`);
+    const fl = anchor.enclosing_float;
+    if (fl && fl.kind) {
+      const name = fl.kind[0].toUpperCase() + fl.kind.slice(1);
+      bits.push(fl.number ? `${name} ${fl.number}` : `an unnumbered ${fl.kind}`);
+    } else if (anchor.nearest_heading) {
+      let head = String(anchor.nearest_heading).split(/\s+/).filter(Boolean).join(" ");
+      if (head.length > HEADING_CHARS) head = `${head.slice(0, HEADING_CHARS).trimEnd()}…`;
+      bits.push(`§ ${head}`);
+    }
+    return bits.join(", ");
+  }
+
+  function compareExports(oldPayload, newPayload) {
+    const oldProject = (oldPayload.project || {}).id;
+    const newProject = (newPayload.project || {}).id;
+    if (oldProject && newProject && oldProject !== newProject) {
+      return {
+        comparable: false,
+        reason: `The previous export was a different paper (${oldProject}), so there is nothing to compare.`,
+        newComments: [], newReplies: [], edited: [], resolved: [],
+        reopened: [], gone: [], newChanges: [], filtersDiffer: false,
+      };
+    }
+
+    const out = {
+      comparable: true, reason: "",
+      previousPulledAt: oldPayload.pulled_at || null,
+      filtersDiffer: JSON.stringify(oldPayload.filters_applied || {})
+        !== JSON.stringify(newPayload.filters_applied || {}),
+      newComments: [], newReplies: [], edited: [], resolved: [],
+      reopened: [], gone: [], newChanges: [],
+    };
+
+    const oldThreads = oldPayload.threads || {};
+    const newThreads = newPayload.threads || {};
+    const oldAnchors = anchorByThread(oldPayload);
+    const newAnchors = anchorByThread(newPayload);
+
+    for (const [tid, thread] of Object.entries(newThreads)) {
+      const anchor = newAnchors[tid];
+      const msgs = messagesOf(thread);
+      const first = msgs[0] || {};
+      const before = oldThreads[tid];
+
+      if (!before) {
+        out.newComments.push({
+          threadId: tid, shortId: (anchor || {}).short_id || null,
+          where: whereIs(anchor), who: whoWrote(first),
+          when: first.timestamp || null, text: first.content || "",
+          anchoredText: (anchor || {}).anchored_text || "",
+          replyCount: thread.reply_count || 0,
+        });
+        continue;
+      }
+
+      const seen = new Set(messagesOf(before).map((m) => m.id));
+      const fresh = msgs.filter((m) => !seen.has(m.id));
+      if (fresh.length) {
+        out.newReplies.push({
+          threadId: tid, shortId: (anchor || {}).short_id || null,
+          where: whereIs(anchor), openedBy: whoWrote(first),
+          openingText: first.content || "",
+          replies: fresh.map((m) => ({
+            who: whoWrote(m), when: m.timestamp || null, text: m.content || "",
+          })),
+        });
+      }
+
+      // An edited comment changes what you have to answer without ever
+      // showing up as new, which is the quietest way to miss something.
+      const was = new Map(messagesOf(before).map((m) => [m.id, m.content]));
+      for (const m of msgs) {
+        if (was.has(m.id) && was.get(m.id) !== m.content) {
+          out.edited.push({
+            threadId: tid, shortId: (anchor || {}).short_id || null,
+            where: whereIs(anchor), who: whoWrote(m),
+            was: was.get(m.id) || "", now: m.content || "",
+          });
+        }
+      }
+
+      if (Boolean(thread.resolved) && !Boolean(before.resolved)) {
+        const by = thread.resolved_by || {};
+        out.resolved.push({
+          threadId: tid, shortId: (anchor || {}).short_id || null,
+          where: whereIs(anchor), by: by.name || by.email || "",
+          text: first.content || "",
+        });
+      } else if (Boolean(before.resolved) && !Boolean(thread.resolved)) {
+        out.reopened.push({
+          threadId: tid, shortId: (anchor || {}).short_id || null,
+          where: whereIs(anchor), text: first.content || "",
+        });
+      }
+    }
+
+    // Filters decide what reaches the export at all. A thread hidden this
+    // time has not gone anywhere, and saying so would be a lie.
+    if (!out.filtersDiffer) {
+      for (const [tid, thread] of Object.entries(oldThreads)) {
+        if (tid in newThreads) continue;
+        const first = messagesOf(thread)[0] || {};
+        out.gone.push({
+          threadId: tid, where: whereIs(oldAnchors[tid]),
+          who: whoWrote(first), text: first.content || "",
+        });
+      }
+    }
+
+    const seenChanges = new Set((oldPayload.tracked_changes || []).map((c) => c.id));
+    for (const ch of newPayload.tracked_changes || []) {
+      if (!seenChanges.has(ch.id)) {
+        out.newChanges.push({
+          shortId: ch.short_id || null, kind: ch.kind, content: ch.content || "",
+          where: whereIs(ch), who: (ch.user || {}).name || (ch.user || {}).email || "",
+        });
+      }
+    }
+
+    return out;
+  }
+
+  function sinceShortIds(since) {
+    const ids = (rows) => rows.map((r) => r.shortId).filter(Boolean);
+    return {
+      new_comments: ids(since.newComments),
+      new_replies: ids(since.newReplies),
+      edited: ids(since.edited),
+      resolved: ids(since.resolved),
+      reopened: ids(since.reopened),
+      new_tracked_changes: ids(since.newChanges),
+      gone_thread_ids: since.gone.map((r) => r.threadId),
+    };
+  }
+
+  function sinceSummary(since) {
+    if (!since.comparable) return since.reason;
+    const bits = [
+      [since.newComments.length, "new comment"],
+      [since.newReplies.length, "thread with new replies"],
+      [since.edited.length, "edited comment"],
+      [since.resolved.length, "newly resolved"],
+      [since.reopened.length, "reopened"],
+      [since.gone.length, "gone"],
+      [since.newChanges.length, "new tracked change"],
+    ];
+    const said = bits.filter(([n]) => n).map(([n, word]) => `${n} ${word}${n === 1 ? "" : "s"}`);
+    if (!said.length) return "Nothing has changed since the previous export.";
+    return `Since the previous export: ${said.join(", ")}.`;
+  }
+
+
+  function renderSinceMarkdown(since, projectTitle) {
+    // Deliberately the same document since.py writes, so the two exports read
+    // alike whichever produced them.
+    const out = [`# What is new — ${projectTitle}`, ""];
+    if (!since.comparable) {
+      out.push(since.reason, "");
+      return out.join("\n");
+    }
+    out.push("Compared with the previous export of this paper.", "",
+             sinceSummary(since), "");
+    const anything = since.newComments.length || since.newReplies.length
+      || since.edited.length || since.resolved.length || since.reopened.length
+      || since.gone.length || since.newChanges.length;
+    const caveat = "Deletions are not listed. This export used different "
+      + "filters from the previous one, so a comment missing from it may only "
+      + "be filtered out rather than gone.";
+    if (!anything) {
+      out.push("Every comment in the export is one you have already seen.", "");
+      if (since.filtersDiffer) out.push(caveat, "");
+      return out.join("\n");
+    }
+
+    out.push("Short ids like `C012` are the ones in the Markdown from this run. "
+      + "They shift when comments are added above them, so an id here will not "
+      + "match the same comment in an older export.", "");
+
+    const quote = (text, limit = 400) => {
+      const t = String(text || "").trim();
+      if (!t) return "> _(empty)_";
+      const clipped = t.length > limit ? `${t.slice(0, limit).trimEnd()} …` : t;
+      return clipped.split("\n").map((l) => (l.trim() ? `> ${l}` : ">")).join("\n");
+    };
+    const oneLine = (text, limit = 160) => {
+      const t = String(text || "").split(/\s+/).filter(Boolean).join(" ");
+      if (!t) return "_(empty)_";
+      return t.length > limit ? `${t.slice(0, limit).trimEnd()} …` : t;
+    };
+    const head = (n, one, many) => `## ${n} ${n === 1 ? one : many}`;
+    const title = (row) => (row.shortId ? `### ${row.shortId} — ${row.where}` : `### ${row.where}`);
+
+    if (since.newComments.length) {
+      out.push(head(since.newComments.length, "new comment", "new comments"), "");
+      for (const c of since.newComments) {
+        out.push(title(c), "", c.who + (c.when ? `, ${c.when}` : ""), "");
+        if (c.anchoredText) out.push(`On: **${c.anchoredText.trim()}**`, "");
+        out.push(quote(c.text), "");
+      }
+    }
+    if (since.newReplies.length) {
+      out.push(head(since.newReplies.length, "thread with new replies",
+                    "threads with new replies"), "");
+      for (const t of since.newReplies) {
+        out.push(title(t), "", `${t.openedBy} originally wrote:`, "",
+                 quote(t.openingText, 200), "");
+        for (const r of t.replies) {
+          out.push(`**${r.who}${r.when ? `, ${r.when}` : ""}**`, "", quote(r.text), "");
+        }
+      }
+    }
+    if (since.edited.length) {
+      out.push(head(since.edited.length, "comment was edited", "comments were edited"), "");
+      for (const e of since.edited) {
+        out.push(title(e), "", `${e.who} changed it.`, "", "It said:", "",
+                 quote(e.was, 200), "", "It now says:", "", quote(e.now, 200), "");
+      }
+    }
+    if (since.resolved.length) {
+      out.push(head(since.resolved.length, "comment was marked resolved",
+                    "comments were marked resolved"), "");
+      for (const r of since.resolved) {
+        out.push(`- ${r.shortId ? `\`${r.shortId}\` ` : ""}${r.where}`
+          + `${r.by ? `, resolved by ${r.by}` : ""} — ${oneLine(r.text)}`);
+      }
+      out.push("");
+    }
+    if (since.reopened.length) {
+      out.push(head(since.reopened.length, "comment was reopened", "comments were reopened"), "");
+      for (const r of since.reopened) {
+        out.push(`- ${r.shortId ? `\`${r.shortId}\` ` : ""}${r.where} — ${oneLine(r.text)}`);
+      }
+      out.push("");
+    }
+    if (since.gone.length) {
+      out.push(head(since.gone.length, "comment is gone", "comments are gone"), "",
+        "These were in the previous export and are not in this one. Usually that "
+        + "means somebody deleted the thread, or deleted the text it was attached to.", "");
+      for (const g of since.gone) {
+        out.push(`- ${g.where}, from ${g.who} — ${oneLine(g.text)}`);
+      }
+      out.push("");
+    }
+    if (since.newChanges.length) {
+      out.push(head(since.newChanges.length, "new tracked change", "new tracked changes"), "");
+      for (const ch of since.newChanges) {
+        out.push(`- ${ch.shortId ? `\`${ch.shortId}\` ` : ""}${ch.kind}`
+          + `${ch.who ? `, ${ch.who}` : ""}, ${ch.where} — ${oneLine(ch.content, 120)}`);
+      }
+      out.push("");
+    }
+    if (since.filtersDiffer) out.push(caveat, "");
+    return out.join("\n");
+  }
+
   function assembleExport({
     projectId,
     projectTitle,
@@ -1324,6 +1647,11 @@ Project ID for reference: \`${payload.project.id}\`.
     parseThreads,
     renderJsonLines,
     buildSheetRows,
+    sinceSnapshot,
+    compareExports,
+    sinceShortIds,
+    sinceSummary,
+    renderSinceMarkdown,
     COMMENT_COLUMNS,
     REPLY_COLUMNS,
     CHANGE_COLUMNS,
