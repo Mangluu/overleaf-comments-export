@@ -124,3 +124,31 @@ test("asking it to stop stops it, and nothing is downloaded", async () => {
   assert.ok(asked > 0, "it never asked whether to stop");
   assert.ok(!result?.ok, "it produced a result after being told to stop");
 });
+
+test("a signed-out tab is told so, not told Overleaf refused it", async () => {
+  // 401 means nobody is signed in; 403 means signed in without access to this
+  // project. Reporting both as "Overleaf rejected the request" sent people
+  // looking for a permissions problem that was not there.
+  global.OverleafCommentsCore = require("../src/export-core.js");
+  global.location = { pathname: "/project/0123456789abcdef01234567" };
+  global.document = { title: "Demo - Overleaf", querySelector: () => null };
+  global.chrome = { runtime: { sendMessage: async () => ({ stop: false }) } };
+  global.fetch = async () => ({
+    ok: false, status: 401,
+    headers: { get: () => "application/json" },
+    json: async () => ({}), text: async () => "",
+  });
+
+  delete global.__overleafCommentsExtension;
+  delete require.cache[require.resolve("../src/page-client.js")];
+  require("../src/page-client.js");
+  // collect throws; the popup's wrapper is what turns that into a result.
+  const error = await global.__overleafCommentsExtension
+    .collect({ language: "en", formats: {} })
+    .then(() => null, (e) => e);
+
+  assert.ok(error, "a signed-out tab exported anyway");
+  assert.equal(error.status, 401);
+  assert.match(error.message, /not signed in/i, `got: ${error.message}`);
+  assert.doesNotMatch(error.message, /rejected the request/i);
+});

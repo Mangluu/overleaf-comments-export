@@ -58,6 +58,7 @@ const CHOICE_DEFAULTS = {
   "format-json": true,
   "format-jsonl": false,
   "format-xlsx": false,
+  "scope-current": false,
   "format-letter": false,
 };
 
@@ -100,6 +101,15 @@ function rememberChoices() {
 
 const COPY = {
   en: {
+    scopeLegend: "Narrow it down",
+    currentFileTitle: "This file only",
+    currentFileHelp: "Just the document open in the editor",
+    reviewerTitle: "One person",
+    reviewerHelp: "Only threads this person took part in",
+    reviewerPlaceholder: "Leave empty for everyone",
+    copyButton: "Copy the Markdown",
+    copied: "Copied. Paste it into anything.",
+    copyFailed: "Could not copy. The file is in your Downloads folder.",
     savedTo: "Saved to your Downloads folder, under {folder}",
     formatXlsx: "Spreadsheet",
     repoLink: "Free and open source. Star it on GitHub ★",
@@ -134,6 +144,15 @@ const COPY = {
     warnings: "Warnings: {warnings}",
   },
   zh: {
+    scopeLegend: "缩小范围",
+    currentFileTitle: "仅当前文件",
+    currentFileHelp: "只导出编辑器中打开的文档",
+    reviewerTitle: "指定某个人",
+    reviewerHelp: "只导出此人参与过的讨论",
+    reviewerPlaceholder: "留空表示所有人",
+    copyButton: "复制 Markdown",
+    copied: "已复制，可直接粘贴。",
+    copyFailed: "复制失败，文件已保存在下载文件夹中。",
     savedTo: "已保存到下载文件夹的 {folder} 中",
     formatXlsx: "电子表格",
     repoLink: "免费开源，欢迎在 GitHub 点亮星标 ★",
@@ -181,6 +200,7 @@ const ui = {
   spinner: document.getElementById("spinner"),
   progress: document.getElementById("progress"),
   stopButton: document.getElementById("stop"),
+  copyButton: document.getElementById("copy"),
   result: document.getElementById("result"),
 };
 
@@ -237,6 +257,9 @@ function applyLanguage() {
   for (const element of document.querySelectorAll("[data-i18n]")) {
     element.textContent = t(element.dataset.i18n);
   }
+  for (const element of document.querySelectorAll("[data-i18n-placeholder]")) {
+    element.placeholder = t(element.dataset.i18nPlaceholder);
+  }
   renderPageState();
   setBusy(busy);
 }
@@ -283,6 +306,8 @@ function readOptions() {
     language,
     includeResolved: document.getElementById("include-resolved").checked,
     includeChanges: document.getElementById("include-changes").checked,
+    currentFileOnly: document.getElementById("scope-current").checked,
+    reviewer: document.getElementById("scope-reviewer").value.trim(),
     formats: {
       markdown: document.getElementById("format-md").checked,
       json: document.getElementById("format-json").checked,
@@ -308,10 +333,18 @@ function setBusy(nextBusy) {
   ui.stopButton.textContent = stopRequested ? t("stopping") : t("stopButton");
 }
 
+// The Markdown of the last export, held so it can be copied without running
+// the whole thing again. Pasting it into an assistant is the most common
+// thing anyone does next, and downloading a file to open it and copy it is
+// three steps where one will do.
+let lastMarkdown = "";
+
 function showResult(message, isError = false) {
   ui.result.hidden = false;
   ui.result.classList.toggle("error", isError);
   ui.result.textContent = message;
+  ui.copyButton.hidden = isError || !lastMarkdown;
+  ui.copyButton.textContent = t("copyButton");
 }
 
 async function initialize() {
@@ -390,6 +423,17 @@ for (const id of Object.keys(CHOICE_DEFAULTS)) {
   document.getElementById(id)?.addEventListener("change", rememberChoices);
 }
 
+ui.copyButton.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(lastMarkdown);
+    ui.copyButton.textContent = t("copied");
+  } catch {
+    // Clipboard access can be refused. The file is on disk either way, so
+    // say where rather than leaving a button that appears to do nothing.
+    ui.copyButton.textContent = t("copyFailed");
+  }
+});
+
 ui.stopButton.addEventListener("click", () => {
   // The page checks this between steps. A request already in flight has to
   // come back first, so the button says what it is doing rather than
@@ -414,6 +458,8 @@ ui.exportButton.addEventListener("click", async () => {
   }
 
   stopRequested = false;
+  lastMarkdown = "";
+  ui.copyButton.hidden = true;
   setBusy(true);
   ui.result.hidden = true;
 
@@ -438,6 +484,10 @@ ui.exportButton.addEventListener("click", async () => {
       changes: summary.trackedChangeCount,
       files: result.outputs.length,
     });
+    const markdownFile = result.outputs.find((o) => o.filename.endsWith(".md")
+      && !o.filename.startsWith("agents") && !o.filename.startsWith("whats-new"));
+    lastMarkdown = markdownFile ? markdownFile.content || "" : "";
+
     message += ` ${t("savedTo", { folder })}`;
     if (result.warnings?.length) {
       const separator = language === "zh" ? "；" : "; ";

@@ -221,3 +221,40 @@ test("timestamps are written the way Python writes them", () => {
   assert.match(stamp, /\+00:00$/, `got ${stamp}`);
   assert.doesNotMatch(stamp, /Z$/);
 });
+
+test("the reviewer filter keeps threads that person took part in", () => {
+  // A reply is theirs too, so a thread somebody else started but they
+  // answered still counts. Matches what --reviewer does in the Python tool.
+  const threads = {
+    t1: { messages: [
+      { id: "m1", content: "started by one", user: { name: "Bakhtawar Khan" } },
+      { id: "m2", content: "answered by another", user: { name: "ans.ahmad" } },
+    ] },
+    t2: { messages: [{ id: "m3", content: "only one", user: { name: "ans.ahmad" } }] },
+  };
+  const run = (reviewer) => core.assembleExport({
+    projectId: "0123456789abcdef01234567", projectTitle: "P",
+    rawThreads: threads, resolvedIds: [], rangesPayload: [],
+    docTexts: {}, docIdToPath: {}, reviewer,
+  }).payload.summary.thread_count;
+
+  assert.equal(run(""), 2);
+  assert.equal(run("Bakhtawar"), 1, "the thread they replied in was dropped");
+  assert.equal(run("ans.ahmad"), 2, "they took part in both");
+  assert.equal(run("nobody at all"), 0);
+});
+
+test("the reviewer filter ignores case and matches an email", () => {
+  const threads = {
+    t1: { messages: [{ id: "m1", content: "x",
+                       user: { name: "Someone", email: "SOMEONE@example.com" } }] },
+  };
+  const run = (reviewer) => core.assembleExport({
+    projectId: "0123456789abcdef01234567", projectTitle: "P",
+    rawThreads: threads, resolvedIds: [], rangesPayload: [],
+    docTexts: {}, docIdToPath: {}, reviewer,
+  }).payload.summary.thread_count;
+
+  assert.equal(run("someone@example.com"), 1);
+  assert.equal(run("SOMEONE"), 1);
+});

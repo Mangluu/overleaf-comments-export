@@ -1,7 +1,7 @@
 (function attachOverleafPageClient(root) {
   "use strict";
 
-  const VERSION = "1.5.0";
+  const VERSION = "1.6.0";
   if (root.__overleafCommentsExtension?.version === VERSION) return;
 
   const core = root.OverleafCommentsCore;
@@ -9,6 +9,7 @@
 
   const TEXT = {
     zh: {
+      notSignedIn: "当前标签页尚未登录 Overleaf。请登录并重新加载项目后再试。",
       network: "无法连接 Overleaf：{detail}",
       forbidden: "Overleaf 拒绝了请求。请确认当前标签页已经登录且有权访问这个项目。",
       http: "Overleaf 接口 {path} 返回 HTTP {status}。",
@@ -21,6 +22,7 @@
       sourceWarning: "无法下载源文件 {file}，相关评论将作为未定位讨论导出",
     },
     en: {
+      notSignedIn: "This tab is not signed in to Overleaf. Sign in, reload the project, then try again.",
       network: "Could not connect to Overleaf: {detail}",
       forbidden: "Overleaf rejected the request. Make sure this tab is signed in and the account can access the project.",
       http: "The Overleaf endpoint {path} returned HTTP {status}.",
@@ -137,6 +139,22 @@
     if (await stopRequested()) throw new ExportStopped("stopped");
   }
 
+  function signedIn() {
+    // Overleaf puts the current user in the page for its own use. Reading it
+    // is how we can say "you are not signed in" up front, instead of letting
+    // the first request come back 401 and reporting that Overleaf "rejected"
+    // it, which sounds like a permissions problem with the project.
+    const user = readMeta("ol-user", "ol-currentUser", "ol-current-user");
+    if (user && typeof user === "object") {
+      return Boolean(user.id || user._id || user.email);
+    }
+    // No tag is not proof of anything. Overleaf renames these, and guessing
+    // from the DOM would turn a working export into a false refusal, so
+    // anything other than an explicit user means carry on and let the
+    // response decide.
+    return true;
+  }
+
   function readProjectMetadata(projectId) {
     const project = readMeta("ol-project");
     const titleFromMeta = readMeta("ol-projectName", "ol-project-name", "ol-project_name");
@@ -178,7 +196,10 @@
       throw new RequestError(tx("network", { detail: error?.message || String(error) }));
     }
 
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401) {
+      throw new RequestError(tx("notSignedIn"), 401);
+    }
+    if (response.status === 403) {
       throw new RequestError(tx("forbidden"), response.status);
     }
     if (!response.ok) {
@@ -307,6 +328,10 @@
     }
 
     const warnings = [];
+    // Said before the first request rather than after it fails, when the
+    // page itself already knows the answer.
+    if (!signedIn()) throw new RequestError(tx("notSignedIn"), 401);
+
     const metadata = readProjectMetadata(projectId);
 
     const rawThreadsPayload = await request(`/project/${projectId}/threads`);
@@ -341,8 +366,16 @@
     }
 
     const rangeEntries = core.documentRanges(rangesPayload);
+    // "This file only" narrows to the document open in the editor. Overleaf
+    // puts it in the address; on a thesis it is the difference between one
+    // chapter and the whole book.
+    const openDocId = options.currentFileOnly
+      ? (location.pathname.match(/\/doc\/([0-9a-f]{24})/i) || [])[1]
+        || readMeta("ol-openDocId") || null
+      : null;
     const docIds = [...new Set(
       rangeEntries
+        .filter((entry) => !openDocId || entry.docId === openDocId)
         .filter((entry) => entry.comments.length || (options.includeChanges && entry.changes.length))
         .map((entry) => entry.docId)
     )];
@@ -409,11 +442,15 @@
       language: options.language,
       rawThreads,
       resolvedIds,
-      rangesPayload,
+      rangesPayload: openDocId
+        ? rangeEntries.filter((e) => e.docId === openDocId)
+          .map((e) => ({ id: e.docId, ranges: { comments: e.comments, changes: e.changes } }))
+        : rangesPayload,
       docTexts,
       docIdToPath,
       rootDocId: metadata.rootDocId,
       includeResolved: options.includeResolved,
+      reviewer: options.reviewer || "",
       includeChanges: options.includeChanges,
     });
 

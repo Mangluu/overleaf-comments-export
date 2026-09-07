@@ -8,7 +8,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "1.3";
-  const TOOL_VERSION = "1.5.0-extension";
+  const TOOL_VERSION = "1.6.0-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 
@@ -1403,6 +1403,7 @@ Project ID for reference: \`${payload.project.id}\`.
     rootDocId = null,
     includeResolved = true,
     includeChanges = true,
+    reviewer = "",
   }) {
     const allThreads = parseThreads(rawThreads, resolvedIds);
     const userMap = buildUserMap(rawThreads);
@@ -1499,12 +1500,26 @@ Project ID for reference: \`${payload.project.id}\`.
     // figure. Same rule as _apply_document_order in export.py.
     applyDocumentOrder({ anchored, trackedChanges, docTexts, docIdToPath, rootDocId });
 
+    // Case-insensitive substring against a name or an email, matching what
+    // --reviewer does in the Python tool. A thread counts if this person said
+    // anything in it, not only if they started it: a reply is theirs too.
+    const needle = String(reviewer || "").trim().toLowerCase();
+    const byThisPerson = (thread) => {
+      if (!needle) return true;
+      return (thread?.messages || []).some((m) => {
+        const user = m.user || {};
+        return `${user.name || ""} ${user.email || ""} ${user.id || ""}`
+          .toLowerCase().includes(needle);
+      });
+    };
+
     const visibleComments = anchored.filter((comment) => {
       const thread = allThreads[comment.threadId];
-      return includeResolved || !thread?.resolved;
+      return (includeResolved || !thread?.resolved) && byThisPerson(thread);
     });
     const orphanThreads = Object.values(allThreads).filter((thread) =>
       !referencedThreadIds.has(thread.id) && (includeResolved || !thread.resolved)
+      && byThisPerson(thread)
     );
     const visibleThreadIds = new Set([
       ...visibleComments.map((comment) => comment.threadId),

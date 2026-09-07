@@ -50,6 +50,26 @@
         </label>
       </fieldset>
 
+      <fieldset id="scope" class="card">
+        <legend data-i18n="scopeLegend">Narrow it down</legend>
+        <label class="row">
+          <span>
+            <strong data-i18n="currentFileTitle">This file only</strong>
+            <small data-i18n="currentFileHelp">Just the document open in the editor</small>
+          </span>
+          <input type="checkbox" id="scope-current">
+        </label>
+        <label class="row">
+          <span>
+            <strong data-i18n="reviewerTitle">One person</strong>
+            <small data-i18n="reviewerHelp">Only threads this person took part in</small>
+          </span>
+        </label>
+        <input type="search" id="scope-reviewer" class="reviewer"
+               data-i18n-placeholder="reviewerPlaceholder"
+               placeholder="Leave empty for everyone">
+      </fieldset>
+
       <fieldset id="formats" disabled>
         <legend data-i18n="outputLegend">Output files</legend>
         <div class="format-grid">
@@ -70,6 +90,7 @@
       <button id="stop" type="button" class="stop" hidden>Stop</button>
 
       <section id="result" class="result" hidden aria-live="polite"></section>
+      <button id="copy" type="button" class="copy" hidden>Copy the Markdown</button>
 
       <p class="repo-note">
         <a id="repo-link" href="https://github.com/Mangluu/overleaf-comments-export" target="_blank" rel="noreferrer"

@@ -380,3 +380,33 @@ button:disabled {
 .repo-note a:hover {
   text-decoration: underline;
 }
+
+.copy {
+  margin-top: 8px;
+  padding: 8px 0;
+  width: 100%;
+  border: 1px solid var(--green);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--green);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.copy:hover {
+  background: var(--soft, rgba(46, 125, 79, 0.12));
+}
+
+.reviewer {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
