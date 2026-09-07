@@ -28,6 +28,7 @@ from .render import render_markdown, render_response_letter
 from .docorder import flatten, locate, reachable
 from .sections import (enclosing_float, find_floats, find_headings,
                        nearest_heading)
+from .sheets import write_xlsx
 from .since import (SINCE_FILENAME, compare, load_previous, render_since,
                     short_ids)
 
@@ -116,6 +117,7 @@ class ExportResult:
     annotated_dir: Path | None = None
     annotated_pdf_path: Path | None = None
     source_dir: Path | None = None
+    xlsx_path: Path | None = None
     since_path: Path | None = None
     since_summary: str | None = None
     # Overleaf's own name for the project. The window remembers it so a paper
@@ -497,6 +499,7 @@ def run_export(
     reviewer_filter: list[str] | None = None,
     render_mode: str = "compact",
     write_jsonl: bool = True,
+    write_xlsx_sheet: bool = False,
     per_reviewer_reports: bool = False,
     response_letter: bool = False,
     annotated_tex: bool = False,
@@ -938,6 +941,18 @@ def run_export(
                     f.write("\n")
             progress(f"Wrote {jsonl_path.name} ({len(anchored)} record(s))")
 
+        xlsx_path: Path | None = None
+        if write_xlsx_sheet:
+            xlsx_path = stage / "comments.xlsx"
+            try:
+                write_xlsx(json_payload, xlsx_path)
+                progress(f"Wrote {xlsx_path.name}")
+            except RuntimeError as err:
+                # openpyxl is optional, so a missing one is a message rather
+                # than a failed export. Everything else is already written.
+                xlsx_path = None
+                progress(str(err))
+
         # Per-reviewer sub-reports
         if per_reviewer_reports:
             by_reviewer_dir = stage / "by-reviewer"
@@ -1133,6 +1148,7 @@ def run_export(
             annotated_dir=final(annotated_dir),
             annotated_pdf_path=final(annotated_pdf_path),
             source_dir=final(source_dir),
+            xlsx_path=final(xlsx_path),
             since_path=final(since_path),
             since_summary=since_summary,
         )

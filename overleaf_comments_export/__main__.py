@@ -104,6 +104,14 @@ def main(argv: list[str] | None = None) -> int:
         "else entirely.",
     )
     parser.add_argument(
+        "--xlsx",
+        dest="write_xlsx_sheet",
+        action="store_true",
+        help="Also write comments.xlsx: a spreadsheet with the comments, "
+        "their replies and the tracked changes on three sheets. Needs "
+        'openpyxl: pip install "overleaf-comments-export[xlsx]"',
+    )
+    parser.add_argument(
         "--since",
         metavar="PATH",
         help="Compare against a specific earlier export and write "
@@ -300,6 +308,7 @@ def main(argv: list[str] | None = None) -> int:
             reviewer_filter=args.reviewer,
             render_mode=args.render_mode,
             write_jsonl=args.write_jsonl,
+            write_xlsx_sheet=args.write_xlsx_sheet,
             per_reviewer_reports=args.per_reviewer,
             response_letter=args.response_letter,
             annotated_tex=args.annotated_tex,

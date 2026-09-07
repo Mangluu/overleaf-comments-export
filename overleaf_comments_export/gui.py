@@ -815,6 +815,7 @@ class App:
         self.stable_var = tk.BooleanVar(value=bool(cfg.get("stable", False)))
         self.detailed_var = tk.BooleanVar(value=cfg.get("render_mode", "compact") == "detailed")
         self.write_jsonl_var = tk.BooleanVar(value=bool(cfg.get("write_jsonl", True)))
+        self.write_xlsx_var = tk.BooleanVar(value=bool(cfg.get("write_xlsx", False)))
         self.include_raw_var = tk.BooleanVar(value=bool(cfg.get("include_raw", False)))
 
         # Three named groups rather than twelve boxes in a grid. The old list
@@ -837,6 +838,10 @@ class App:
                  "about, coloured by who wrote it. Nothing to install and "
                  "nothing to compile. Open it in a web browser: Preview on a "
                  "Mac shows the highlights but not the comments."),
+                (self.write_xlsx_var, "A spreadsheet",
+                 "comments.xlsx, with the comments, their replies and the "
+                 "tracked changes on three sheets. Sort by file, filter to "
+                 "one reviewer, tick things off as you answer them."),
                 (self.response_letter_var, "A reply letter to fill in",
                  "response-letter.md, a point-by-point document with a blank "
                  "space under each comment for your answer."),
@@ -1200,6 +1205,7 @@ class App:
             "reviewer_filter": reviewer_text,
             "render_mode": "detailed" if self.detailed_var.get() else "compact",
             "write_jsonl": bool(self.write_jsonl_var.get()),
+            "write_xlsx": bool(self.write_xlsx_var.get()),
             "per_reviewer_reports": bool(self.per_reviewer_var.get()),
             "response_letter": bool(self.response_letter_var.get()),
             "annotated_tex": bool(self.annotated_var.get()),
@@ -1246,6 +1252,7 @@ class App:
             reviewer_filter=[r.strip() for r in reviewer_text.split(",") if r.strip()],
             render_mode="detailed" if self.detailed_var.get() else "compact",
             write_jsonl=bool(self.write_jsonl_var.get()),
+            write_xlsx_sheet=bool(self.write_xlsx_var.get()),
             per_reviewer_reports=bool(self.per_reviewer_var.get()),
             response_letter=bool(self.response_letter_var.get()),
             annotated_tex=bool(self.annotated_var.get()),
@@ -1377,6 +1384,7 @@ class App:
         self._append_log(f"Comments: {result.markdown_path}")
         for label, path in (
             ("Data", result.json_path), ("Lines", result.jsonl_path),
+            ("Spreadsheet", result.xlsx_path),
             ("Letter", result.response_letter_path),
             ("Commented PDF", result.annotated_pdf_path),
             ("Source", result.source_dir),

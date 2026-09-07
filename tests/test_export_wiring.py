@@ -309,3 +309,38 @@ def test_a_project_path_cannot_escape_the_export_folder(tmp_path, monkeypatch):
     for hostile in ("/etc/passwd", "../../etc/passwd", "C:/Windows/evil.tex",
                     "\\\\server\\share\\evil.tex", "....//....//etc", ""):
         assert not safe_relative(hostile, "d").is_absolute(), hostile
+
+
+def test_the_spreadsheet_is_written_when_asked(tmp_path, fake_overleaf):
+    """The window and the command line both pass this through, and a flag that
+    is read but never acted on is exactly the bug this file exists for."""
+    openpyxl = pytest.importorskip("openpyxl")
+    result = _run(tmp_path, write_xlsx_sheet=True)
+    assert result.xlsx_path is not None and result.xlsx_path.exists()
+
+    book = openpyxl.load_workbook(result.xlsx_path)
+    assert book.sheetnames == ["Comments", "Replies", "Tracked changes"]
+    comments = book["Comments"]
+    assert comments.max_row >= 2, "no comment rows"
+    assert comments["A1"].value == "Comment"
+    assert comments["A2"].value == "C001"
+    # A header that scrolls away, or no filters, defeats the point of a sheet.
+    assert comments.freeze_panes == "A2"
+    assert comments.auto_filter.ref
+
+
+def test_no_spreadsheet_unless_asked(tmp_path, fake_overleaf):
+    result = _run(tmp_path)
+    assert result.xlsx_path is None
+    assert not (tmp_path / "comments.xlsx").exists()
+
+
+def test_the_window_can_ask_for_one(tmp_path, fake_overleaf):
+    """The window builds run_export's arguments by hand, so a new option can
+    be added to the export and never reach it."""
+    import inspect
+    from overleaf_comments_export import gui
+
+    source = inspect.getsource(gui.App._start_export if hasattr(gui.App, "_start_export")
+                               else gui.App)
+    assert "write_xlsx_sheet=" in source, "the window never passes it on"
