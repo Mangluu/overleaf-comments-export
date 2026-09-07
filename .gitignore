@@ -48,3 +48,6 @@ chrome-store/screenshots/*
 # folder that is not in the repo, so nobody else could rebuild it.
 !chrome-store/screenshots/screenshot-1.png
 !chrome-store/screenshots/screenshot-2.png
+
+# The Chrome Web Store refresh token lives in ~/.config, never here.
+cws.json
