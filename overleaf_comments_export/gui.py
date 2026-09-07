@@ -205,6 +205,41 @@ About the cookie
 """
 
 
+# How many papers to keep in the Recent list. Enough for everything somebody
+# has in review at once, short enough to stay a menu rather than a filing
+# cabinet.
+MAX_RECENT = 8
+
+
+def remember_project(recent: list, url: str, title: str, out_dir: str) -> list:
+    """Put this paper at the top of the recent list.
+
+    Keyed on the project id rather than the whole URL, because the same paper
+    reached through /project/<id> and /project/<id>/edit is the same paper and
+    should not appear twice.
+    """
+    from .client import parse_project_id
+
+    try:
+        key = parse_project_id(url)
+    except Exception:
+        return list(recent)[:MAX_RECENT]
+
+    kept = []
+    for item in recent:
+        if not isinstance(item, dict) or not item.get("url"):
+            continue
+        try:
+            if parse_project_id(item["url"]) == key:
+                continue                      # this paper, about to be re-added
+        except Exception:
+            continue
+        kept.append(item)
+
+    entry = {"url": url, "title": title or key, "out_dir": out_dir}
+    return [entry] + kept[:MAX_RECENT - 1]
+
+
 def _load_config() -> dict:
     if CONFIG_PATH.exists():
         try:
@@ -569,8 +604,11 @@ class App:
         self._field_label(box, "Link to your paper", 0)
         self.url_var = tk.StringVar(value=self.config.get("project_url", ""))
         self.url_var.trace_add("write", lambda *_: self._validate_url())
-        self.url_entry = ttk.Entry(box, textvariable=self.url_var, width=44)
-        self.url_entry.grid(row=0, column=1, columnspan=2, sticky="ew", pady=4)
+        self.url_entry = ttk.Entry(box, textvariable=self.url_var, width=36)
+        self.url_entry.grid(row=0, column=1, sticky="ew", pady=4)
+        self.recent_btn = ttk.Button(box, text="Recent ▾", width=9,
+                                     command=self._show_recent)
+        self.recent_btn.grid(row=0, column=2, sticky="w", padx=8)
         self.url_status = ttk.Label(box, text="", font=self.font_small,
                                     style="Hint.TLabel")
         self.url_status.grid(row=1, column=1, columnspan=2, sticky="w")
@@ -1027,6 +1065,49 @@ class App:
         except tk.TclError:
             pass
 
+    def _show_recent(self) -> None:
+        """The papers exported before, by name.
+
+        Picking one restores the folder it went to as well. Each paper tends
+        to have its own comments folder next to it, so choosing the paper and
+        then hunting for the folder again is two steps where one will do.
+        """
+        recent = [r for r in self.config.get("recent_projects") or []
+                  if isinstance(r, dict) and r.get("url")]
+        menu = tk.Menu(self.root, tearoff=0)
+        if not recent:
+            menu.add_command(label="Nothing here yet", state="disabled")
+            menu.add_separator()
+            menu.add_command(
+                label="Papers you export appear here, by name.", state="disabled")
+        else:
+            for item in recent:
+                title = str(item.get("title") or item["url"])
+                menu.add_command(
+                    label=title if len(title) <= 48 else title[:47] + "…",
+                    command=lambda i=item: self._use_recent(i))
+            menu.add_separator()
+            menu.add_command(label="Forget these", command=self._forget_recent)
+        try:
+            x = self.recent_btn.winfo_rootx()
+            y = self.recent_btn.winfo_rooty() + self.recent_btn.winfo_height()
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def _use_recent(self, item: dict) -> None:
+        self.url_var.set(item.get("url", ""))
+        if item.get("out_dir"):
+            self.out_var.set(item["out_dir"])
+        # The title box is for overriding Overleaf's name, so it is left alone
+        # rather than filled with the name we are only showing in the menu.
+        self._set_status(f"Loaded {item.get('title') or 'that paper'}.", "hint")
+
+    def _forget_recent(self) -> None:
+        self.config["recent_projects"] = []
+        _save_config(self.config)
+        self._set_status("Recent papers cleared.", "hint")
+
     def _pick_folder(self) -> None:
         self._to_front()
         try:
@@ -1265,6 +1346,15 @@ class App:
 
     def _on_done(self, result: ExportResult) -> None:
         self.last_result = result
+        # Recorded here rather than when the button was pressed, because this
+        # is where Overleaf's own name for the paper is known, and because a
+        # URL that turned out not to work is not worth remembering.
+        self.config["recent_projects"] = remember_project(
+            self.config.get("recent_projects") or [],
+            self.url_var.get().strip(),
+            result.project_title,
+            str(result.markdown_path.parent) if result.markdown_path else "")
+        _save_config(self.config)
         self.progress.stop()
         self.progress.pack_forget()
         self.stop_btn.pack_forget()

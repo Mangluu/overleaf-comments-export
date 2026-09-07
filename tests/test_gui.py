@@ -333,3 +333,84 @@ def test_bringing_the_window_forward_never_touches_topmost(app):
     assert "'-topmost'" not in source
     app._to_front()
     assert not app.root.attributes("-topmost")
+
+
+# --- the recent papers list ------------------------------------------------
+
+def test_a_paper_is_remembered_by_name():
+    from overleaf_comments_export.gui import remember_project
+
+    got = remember_project([], "https://www.overleaf.com/project/" + "a" * 24,
+                           "NASA-TLX", "/tmp/comments")
+    assert got == [{"url": "https://www.overleaf.com/project/" + "a" * 24,
+                    "title": "NASA-TLX", "out_dir": "/tmp/comments"}]
+
+
+def test_the_same_paper_does_not_appear_twice():
+    """/project/<id> and /project/<id>/edit are the same paper, so the list is
+    keyed on the id rather than on the whole address."""
+    from overleaf_comments_export.gui import remember_project
+
+    base = "https://www.overleaf.com/project/" + "a" * 24
+    recent = remember_project([], base, "First name", "/tmp/one")
+    recent = remember_project(recent, base + "/edit", "Renamed", "/tmp/two")
+    assert len(recent) == 1
+    assert recent[0]["title"] == "Renamed"
+    assert recent[0]["out_dir"] == "/tmp/two"
+
+
+def test_the_newest_paper_comes_first():
+    from overleaf_comments_export.gui import remember_project
+
+    a = "https://www.overleaf.com/project/" + "a" * 24
+    b = "https://www.overleaf.com/project/" + "b" * 24
+    recent = remember_project([], a, "Older", "/tmp/a")
+    recent = remember_project(recent, b, "Newer", "/tmp/b")
+    assert [r["title"] for r in recent] == ["Newer", "Older"]
+
+
+def test_the_list_does_not_grow_without_end():
+    from overleaf_comments_export.gui import MAX_RECENT, remember_project
+
+    recent = []
+    for i in range(MAX_RECENT + 5):
+        url = f"https://www.overleaf.com/project/{i:024x}"
+        recent = remember_project(recent, url, f"Paper {i}", "/tmp")
+    assert len(recent) == MAX_RECENT
+    assert recent[0]["title"] == f"Paper {MAX_RECENT + 4}"
+
+
+def test_a_url_that_is_not_a_project_is_not_remembered():
+    """An export cannot succeed on one, so it would only ever be clutter."""
+    from overleaf_comments_export.gui import remember_project
+
+    recent = remember_project([], "https://example.com/nope", "X", "/tmp")
+    assert recent == []
+
+
+def test_rubbish_already_in_the_list_is_dropped():
+    from overleaf_comments_export.gui import remember_project
+
+    junk = [{"no_url": True}, "a string", None, {"url": "not-a-project"}]
+    recent = remember_project(junk, "https://www.overleaf.com/project/" + "c" * 24,
+                              "Good", "/tmp")
+    assert len(recent) == 1 and recent[0]["title"] == "Good"
+
+
+def test_the_window_has_a_recent_button_and_it_opens(app):
+    assert app.recent_btn.winfo_manager(), "the Recent button is not shown"
+    app._show_recent()          # empty list: must not raise
+    app.config["recent_projects"] = [
+        {"url": "https://www.overleaf.com/project/" + "d" * 24,
+         "title": "A paper", "out_dir": "/tmp/x"}]
+    app._show_recent()
+
+
+def test_picking_a_paper_fills_the_link_and_the_folder(app):
+    """Each paper has its own comments folder, so choosing the paper should
+    not mean hunting for the folder again."""
+    item = {"url": "https://www.overleaf.com/project/" + "e" * 24,
+            "title": "A paper", "out_dir": "/tmp/somewhere"}
+    app._use_recent(item)
+    assert app.url_var.get() == item["url"]
+    assert app.out_var.get() == "/tmp/somewhere"

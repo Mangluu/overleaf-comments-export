@@ -118,6 +118,9 @@ class ExportResult:
     source_dir: Path | None = None
     since_path: Path | None = None
     since_summary: str | None = None
+    # Overleaf's own name for the project. The window remembers it so a paper
+    # can be picked from a list by name rather than by a 24-character id.
+    project_title: str = ""
 
 
 def _build_user_map(threads_raw: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -1114,6 +1117,7 @@ def run_export(
 
         return ExportResult(
             project_id=project_id,
+            project_title=title,
             markdown_path=final(md_path),
             json_path=final(json_path),
             log_path=log_path,
