@@ -39,3 +39,8 @@ dist/
 packaging/AppIcon.iconset/
 
 screenshots/
+
+# Rendered by chrome-store/make-preview.py for screenshots
+browser-extension/preview.html
+browser-extension/preview-frame.html
+chrome-store/screenshots/

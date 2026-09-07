@@ -50,16 +50,16 @@
         </label>
       </fieldset>
 
-      <fieldset id="scope" class="card">
-        <legend data-i18n="scopeLegend">Narrow it down</legend>
-        <label class="row">
+      <details id="scope" class="scope">
+        <summary data-i18n="scopeLegend">Narrow it down</summary>
+        <label class="toggle-row">
           <span>
             <strong data-i18n="currentFileTitle">This file only</strong>
             <small data-i18n="currentFileHelp">Just the document open in the editor</small>
           </span>
           <input type="checkbox" id="scope-current">
         </label>
-        <label class="row">
+        <label class="toggle-row">
           <span>
             <strong data-i18n="reviewerTitle">One person</strong>
             <small data-i18n="reviewerHelp">Only threads this person took part in</small>
@@ -68,7 +68,7 @@
         <input type="search" id="scope-reviewer" class="reviewer"
                data-i18n-placeholder="reviewerPlaceholder"
                placeholder="Leave empty for everyone">
-      </fieldset>
+      </details>
 
       <fieldset id="formats" disabled>
         <legend data-i18n="outputLegend">Output files</legend>

@@ -261,6 +261,15 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
+/* An author `display` beats the user agent's `[hidden] { display: none }`,
+   whatever the specificity, because author rules win on origin. `button` below
+   sets `display: flex`, which silently made every hidden button visible: Stop
+   and Copy showed the moment the popup opened. One rule covers every element
+   rather than every button growing its own guard. */
+[hidden] {
+  display: none !important;
+}
+
 button {
   display: flex;
   width: 100%;
@@ -410,3 +419,39 @@ button:disabled {
   font: inherit;
   font-size: 12px;
 }
+
+.scope {
+  /* Folded away by default. Chrome shows at most 600 pixels of a popup, and
+     with this open the Export button sat at or below that fold, so the main
+     action needed scrolling to reach. Most exports want the whole project
+     and everyone, which is exactly what the closed state means. */
+  margin: 0 0 10px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+}
+
+.scope summary {
+  padding: 9px 0;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  list-style: none;
+}
+
+.scope summary::-webkit-details-marker { display: none; }
+
+.scope summary::after {
+  content: "＋";
+  float: right;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.scope[open] summary::after { content: "－"; }
+
+.scope[open] { padding-bottom: 10px; }
