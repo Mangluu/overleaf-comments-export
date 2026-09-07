@@ -1,7 +1,7 @@
 (function attachOverleafPageClient(root) {
   "use strict";
 
-  const VERSION = "1.3.0";
+  const VERSION = "1.4.0";
   if (root.__overleafCommentsExtension?.version === VERSION) return;
 
   const core = root.OverleafCommentsCore;
@@ -234,6 +234,18 @@
         filename: "comments.json",
         mimeType: "application/json;charset=utf-8",
         content: `${JSON.stringify(exported.payload, null, 2)}\n`,
+      });
+    }
+    if (formats.xlsx && typeof OverleafCommentsXlsx !== "undefined") {
+      const bytes = OverleafCommentsXlsx.build(core.buildSheetRows(exported.payload));
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+      files.push({
+        filename: "comments.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        // executeScript can only hand back things that survive JSON, so the
+        // bytes travel as base64 and become a blob again in the popup.
+        base64: btoa(binary),
       });
     }
     if (formats.jsonl) {

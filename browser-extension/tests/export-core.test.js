@@ -97,10 +97,10 @@ test("assembles comments, replies, resolved threads, changes, and output formats
   assert.equal(exported.payload.summary.resolved_count, 1);
   assert.equal(exported.payload.summary.tracked_change_count, 1);
   assert.equal(exported.payload.comments[0].short_id, "C001");
-  assert.equal(exported.payload.comments[0].created_at, "2023-11-14T22:13:20.000Z");
-  assert.equal(exported.payload.comments[0].last_activity_at, "2023-11-14T22:13:21.000Z");
+  assert.equal(exported.payload.comments[0].created_at, "2023-11-14T22:13:20+00:00");
+  assert.equal(exported.payload.comments[0].last_activity_at, "2023-11-14T22:13:21+00:00");
   assert.equal(exported.payload.comments[0].nearest_heading, "Introduction");
-  assert.equal(exported.payload.tracked_changes[0].timestamp, "2023-11-14T22:13:23.000Z");
+  assert.equal(exported.payload.tracked_changes[0].timestamp, "2023-11-14T22:13:23+00:00");
   assert.deepEqual(exported.payload.orphan_thread_ids, ["threadResolved"]);
   assert.match(exported.markdown, /Please define this term\./);
   assert.match(exported.markdown, /Commented: 2023-11-14 22:13 UTC/);
@@ -200,4 +200,24 @@ test("the include chain is readable from outside, for fetching the rest", () => 
   assert.equal(core.resolveInclude("intro", { "sections/intro.tex": "x" }),
                "sections/intro.tex");
   assert.equal(core.resolveInclude("nope", { "a.tex": "x" }), null);
+});
+
+
+test("timestamps are written the way Python writes them", () => {
+  // Both exports claim the same schema, so the same instant has to be the
+  // same string, not two spellings of it. Python is the one to match: the
+  // project supports 3.10, whose fromisoformat cannot read the Z form, and
+  // since.py parses these back.
+  const threads = {
+    t1: { messages: [{ id: "m1", content: "x", timestamp: 1700000000000,
+                       user_id: "u1", user: { name: "R" } }] },
+  };
+  const out = core.assembleExport({
+    projectId: "0123456789abcdef01234567", projectTitle: "P",
+    rawThreads: threads, resolvedIds: [], rangesPayload: [],
+    docTexts: {}, docIdToPath: {},
+  });
+  const stamp = out.payload.threads.t1.messages[0].timestamp;
+  assert.match(stamp, /\+00:00$/, `got ${stamp}`);
+  assert.doesNotMatch(stamp, /Z$/);
 });

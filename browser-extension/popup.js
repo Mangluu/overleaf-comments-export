@@ -12,6 +12,7 @@ const CHOICE_DEFAULTS = {
   "format-md": true,
   "format-json": true,
   "format-jsonl": false,
+  "format-xlsx": false,
   "format-letter": false,
 };
 
@@ -54,6 +55,8 @@ function rememberChoices() {
 
 const COPY = {
   en: {
+    formatXlsx: "Spreadsheet",
+    repoLink: "Free and open source. Star it on GitHub ★",
     stopButton: "Stop",
     stopping: "Stopping…",
     stopped: "Stopped. Nothing was downloaded.",
@@ -85,6 +88,8 @@ const COPY = {
     warnings: "Warnings: {warnings}",
   },
   zh: {
+    formatXlsx: "电子表格",
+    repoLink: "免费开源，欢迎在 GitHub 点亮星标 ★",
     stopButton: "停止",
     stopping: "正在停止…",
     stopped: "已停止，未下载任何文件。",
@@ -235,6 +240,7 @@ function readOptions() {
       markdown: document.getElementById("format-md").checked,
       json: document.getElementById("format-json").checked,
       jsonl: document.getElementById("format-jsonl").checked,
+      xlsx: document.getElementById("format-xlsx").checked,
       responseLetter: document.getElementById("format-letter").checked,
     },
   };
@@ -292,7 +298,7 @@ async function collectFromPage(options) {
   // return early, and have whatever it liked written to the user's Downloads.
   await chrome.scripting.executeScript({
     target: { tabId: activeTab.id },
-    files: ["src/export-core.js", "src/page-client.js"],
+    files: ["src/export-core.js", "src/xlsx.js", "src/page-client.js"],
   });
 
   const [execution] = await chrome.scripting.executeScript({
@@ -308,7 +314,10 @@ async function collectFromPage(options) {
 }
 
 async function downloadOutput(output, folder) {
-  const url = URL.createObjectURL(new Blob([output.content], { type: output.mimeType }));
+  const body = output.base64
+    ? Uint8Array.from(atob(output.base64), (ch) => ch.charCodeAt(0))
+    : output.content;
+  const url = URL.createObjectURL(new Blob([body], { type: output.mimeType }));
   try {
     await chrome.downloads.download({
       url,

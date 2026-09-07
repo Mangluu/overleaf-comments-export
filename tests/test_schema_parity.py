@@ -280,3 +280,43 @@ def test_jsonl_matches_the_json_it_came_from(python_run):
     for rec, canonical in zip(comments, payload["comments"]):
         for key, value in canonical.items():
             assert rec[key] == value, f"{key} differs between comments.json and .jsonl"
+
+
+# --- the spreadsheet ---------------------------------------------------------
+#
+# Two writers produce the file, openpyxl in Python and a hand-rolled one in the
+# extension, so comparing bytes would compare the writers rather than the data.
+# Both build their rows first, and those are compared here.
+
+def test_both_build_the_same_sheets(python_run, extension_run):
+    from overleaf_comments_export.sheets import build_rows
+
+    py = build_rows(python_run["payload"])
+    ext = extension_run["sheets"]
+    assert list(py) == list(ext), "different sheets"
+
+
+def test_both_build_the_same_headers(python_run, extension_run):
+    from overleaf_comments_export.sheets import build_rows
+
+    py = build_rows(python_run["payload"])
+    ext = extension_run["sheets"]
+    for name in py:
+        assert py[name][0] == ext[name][0], f"{name} headers differ"
+
+
+def test_both_build_the_same_rows(python_run, extension_run):
+    """Every cell, in every sheet, for every scenario in the matrix."""
+    from overleaf_comments_export.sheets import build_rows
+
+    py = build_rows(python_run["payload"])
+    ext = extension_run["sheets"]
+    for name in py:
+        assert len(py[name]) == len(ext[name]), (
+            f"{name}: Python has {len(py[name]) - 1} rows, "
+            f"the extension {len(ext[name]) - 1}")
+        for i, (a, b) in enumerate(zip(py[name], ext[name])):
+            # JSON has no integers distinct from floats, and an empty cell is
+            # written either way, so compare as text.
+            assert [str(x) for x in a] == [str(x) for x in b], (
+                f"{name} row {i + 1} differs:\n  python    {a}\n  extension {b}")

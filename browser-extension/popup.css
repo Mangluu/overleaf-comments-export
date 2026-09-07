@@ -362,3 +362,21 @@ button:disabled {
   opacity: 0.5;
   cursor: default;
 }
+
+.repo-note {
+  /* The project is free and open, and the only way anyone finds that out is
+     if the thing they installed says so. */
+  margin: 12px 0 0;
+  text-align: center;
+  font-size: 11px;
+}
+
+.repo-note a {
+  color: var(--green);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.repo-note a:hover {
+  text-decoration: underline;
+}

@@ -50,5 +50,6 @@ const payload = out.payload ?? out;
 process.stdout.write(JSON.stringify({
   payload,
   jsonl: out.jsonl ?? core.renderJsonLines(payload),
+  sheets: core.buildSheetRows(payload),
   markdown: out.markdown ?? "",
 }, null, 2));

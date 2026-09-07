@@ -8,7 +8,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "1.3";
-  const TOOL_VERSION = "1.3.0-extension";
+  const TOOL_VERSION = "1.4.0-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 
@@ -35,7 +35,19 @@
     const milliseconds = toMilliseconds(value);
     if (!milliseconds) return null;
     try {
-      return new Date(milliseconds).toISOString();
+      // Written the way Python's datetime.isoformat() writes it, so the two
+      // exports carry the same string for the same instant rather than two
+      // spellings of it. toISOString gives 2023-11-14T22:13:20.000Z; Python
+      // gives 2023-11-14T22:13:20+00:00, dropping the fraction when it is
+      // zero and using six digits when it is not.
+      //
+      // Matching Python rather than the other way round, because the project
+      // supports Python 3.10, whose fromisoformat cannot read the Z form, and
+      // our own since.py parses these back.
+      const iso = new Date(milliseconds).toISOString();
+      const [main, fraction] = iso.split(".");
+      const digits = String(fraction || "000Z").slice(0, -1);
+      return digits === "000" ? `${main}+00:00` : `${main}.${digits}000+00:00`;
     } catch {
       return null;
     }
@@ -968,6 +980,94 @@ Project ID for reference: \`${payload.project.id}\`.
     }
   }
 
+
+  // ---- The export as rows, for a spreadsheet -------------------------------
+  //
+  // Mirrors sheets.py. A sheet is flat and the data is not, so three sheets
+  // keyed on the short id: one row per comment, one per reply, one per
+  // tracked change. One flat table would force a choice between losing the
+  // replies and repeating every comment's details on every reply row, and the
+  // second makes filtering lie to you.
+
+  const COMMENT_COLUMNS = [
+    "Comment", "File", "Line", "Section", "Figure or table", "Commented on",
+    "Author", "Raised", "Status", "Replies", "Comment text",
+  ];
+  const REPLY_COLUMNS = ["Comment", "Reply", "Author", "Written", "Reply text"];
+  const CHANGE_COLUMNS = [
+    "Change", "File", "Line", "Section", "Kind", "Author", "When", "Text",
+  ];
+
+  function floatLabel(enclosing) {
+    if (!enclosing) return "";
+    const kindRaw = String(enclosing.kind || "");
+    const kind = kindRaw ? kindRaw[0].toUpperCase() + kindRaw.slice(1) : "";
+    if (enclosing.number) return `${kind} ${enclosing.number}`;
+    if (enclosing.caption) {
+      return enclosing.label
+        ? `${kind} “${enclosing.caption}” (${enclosing.label})`
+        : `${kind} “${enclosing.caption}”`;
+    }
+    return `${kind} (unnumbered)`;
+  }
+
+  function personName(user) {
+    const u = user || {};
+    return String(u.name || u.email || u.id || "");
+  }
+
+  function threadMessages(thread) {
+    if (!thread || typeof thread !== "object") return [];
+    return (thread.messages || []).filter((m) => m && typeof m === "object");
+  }
+
+  function capitalise(value) {
+    const s = String(value || "");
+    return s ? s[0].toUpperCase() + s.slice(1) : "";
+  }
+
+  function buildSheetRows(payload) {
+    const threads = payload.threads || {};
+    const comments = [COMMENT_COLUMNS.slice()];
+    const replies = [REPLY_COLUMNS.slice()];
+
+    for (const c of payload.comments || []) {
+      const msgs = threadMessages(threads[c.thread_id]);
+      const first = msgs[0] || {};
+      const resolved = Boolean((threads[c.thread_id] || {}).resolved);
+      comments.push([
+        c.short_id || "",
+        c.pathname || "",
+        c.line || "",
+        c.nearest_heading || "",
+        floatLabel(c.enclosing_float),
+        c.anchored_text || "",
+        personName(first.user),
+        first.timestamp || "",
+        resolved ? "Resolved" : "Open",
+        Math.max(0, msgs.length - 1),
+        first.content || "",
+      ]);
+      msgs.slice(1).forEach((m, i) => {
+        replies.push([
+          c.short_id || "", i + 1, personName(m.user),
+          m.timestamp || "", m.content || "",
+        ]);
+      });
+    }
+
+    const changes = [CHANGE_COLUMNS.slice()];
+    for (const ch of payload.tracked_changes || []) {
+      changes.push([
+        ch.short_id || "", ch.pathname || "", ch.line || "",
+        ch.nearest_heading || "", capitalise(ch.kind),
+        personName(ch.user), ch.timestamp || "", ch.content || "",
+      ]);
+    }
+
+    return { Comments: comments, Replies: replies, "Tracked changes": changes };
+  }
+
   function assembleExport({
     projectId,
     projectTitle,
@@ -1223,6 +1323,10 @@ Project ID for reference: \`${payload.project.id}\`.
     offsetToLineColumn,
     parseThreads,
     renderJsonLines,
+    buildSheetRows,
+    COMMENT_COLUMNS,
+    REPLY_COLUMNS,
+    CHANGE_COLUMNS,
     renderMarkdown,
     renderAgentsBrief,
     renderResponseLetter,

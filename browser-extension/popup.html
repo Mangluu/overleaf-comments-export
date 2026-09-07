@@ -56,6 +56,7 @@
           <label><input id="format-md" type="checkbox" checked> Markdown</label>
           <label><input id="format-json" type="checkbox" checked> JSON</label>
           <label><input id="format-jsonl" type="checkbox"> JSONL</label>
+          <label><input id="format-xlsx" type="checkbox"> <span data-i18n="formatXlsx">Spreadsheet</span></label>
           <label><input id="format-letter" type="checkbox"> <span data-i18n="responseLetter">Response letter</span></label>
         </div>
       </fieldset>
@@ -69,6 +70,11 @@
       <button id="stop" type="button" class="stop" hidden>Stop</button>
 
       <section id="result" class="result" hidden aria-live="polite"></section>
+
+      <p class="repo-note">
+        <a id="repo-link" href="https://github.com/Mangluu/overleaf-comments-export" target="_blank" rel="noreferrer"
+           data-i18n="repoLink">Free and open source. Star it on GitHub ★</a>
+      </p>
 
       <p class="privacy-note" data-i18n="privacyNote">Data is read only from the current tab and downloaded locally. The extension never reads, stores, or uploads your login cookie.</p>
     </main>
