@@ -344,3 +344,20 @@ def test_the_window_can_ask_for_one(tmp_path, fake_overleaf):
     source = inspect.getsource(gui.App._start_export if hasattr(gui.App, "_start_export")
                                else gui.App)
     assert "write_xlsx_sheet=" in source, "the window never passes it on"
+
+
+def test_the_viewer_is_written_when_asked(tmp_path, fake_overleaf):
+    result = _run(tmp_path, write_viewer=True)
+    assert result.viewer_path is not None and result.viewer_path.exists()
+    page = result.viewer_path.read_text(encoding="utf-8")
+    assert "<html" in page and "C001" in page
+
+
+def test_no_viewer_unless_asked(tmp_path, fake_overleaf):
+    assert _run(tmp_path).viewer_path is None
+
+
+def test_the_window_can_ask_for_the_viewer(tmp_path, fake_overleaf):
+    import inspect
+    from overleaf_comments_export import gui
+    assert "write_viewer=" in inspect.getsource(gui.App), "the window never passes it on"

@@ -29,6 +29,7 @@ from .docorder import flatten, locate, reachable
 from .sections import (enclosing_float, find_floats, find_headings,
                        nearest_heading)
 from .sheets import write_xlsx
+from .viewer import render_viewer
 from .since import (SINCE_FILENAME, compare, load_previous, render_since,
                     short_ids)
 
@@ -118,6 +119,7 @@ class ExportResult:
     annotated_pdf_path: Path | None = None
     source_dir: Path | None = None
     xlsx_path: Path | None = None
+    viewer_path: Path | None = None
     since_path: Path | None = None
     since_summary: str | None = None
     # Overleaf's own name for the project. The window remembers it so a paper
@@ -500,6 +502,7 @@ def run_export(
     render_mode: str = "compact",
     write_jsonl: bool = True,
     write_xlsx_sheet: bool = False,
+    write_viewer: bool = False,
     per_reviewer_reports: bool = False,
     response_letter: bool = False,
     annotated_tex: bool = False,
@@ -953,6 +956,13 @@ def run_export(
                 xlsx_path = None
                 progress(str(err))
 
+        viewer_path: Path | None = None
+        if write_viewer:
+            viewer_path = stage / "comments.html"
+            viewer_path.write_text(render_viewer(json_payload), encoding="utf-8")
+            progress(f"Wrote {viewer_path.name} — one file, opens anywhere, "
+                     f"nothing to install")
+
         # Per-reviewer sub-reports
         if per_reviewer_reports:
             by_reviewer_dir = stage / "by-reviewer"
@@ -1149,6 +1159,7 @@ def run_export(
             annotated_pdf_path=final(annotated_pdf_path),
             source_dir=final(source_dir),
             xlsx_path=final(xlsx_path),
+            viewer_path=final(viewer_path),
             since_path=final(since_path),
             since_summary=since_summary,
         )

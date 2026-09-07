@@ -816,6 +816,7 @@ class App:
         self.detailed_var = tk.BooleanVar(value=cfg.get("render_mode", "compact") == "detailed")
         self.write_jsonl_var = tk.BooleanVar(value=bool(cfg.get("write_jsonl", True)))
         self.write_xlsx_var = tk.BooleanVar(value=bool(cfg.get("write_xlsx", False)))
+        self.write_viewer_var = tk.BooleanVar(value=bool(cfg.get("write_viewer", False)))
         self.include_raw_var = tk.BooleanVar(value=bool(cfg.get("include_raw", False)))
 
         # Three named groups rather than twelve boxes in a grid. The old list
@@ -832,25 +833,29 @@ class App:
                  "Overleaf Premium, or Server Pro if self-hosted."),
             ]),
             ("Documents to write", [
-                (self.annotated_pdf_var, "The paper, with comments highlighted in it",
+                (self.annotated_pdf_var, "The commented PDF",
                  "Writes commented.pdf: your paper exactly as Overleaf builds "
                  "it, with each comment highlighted on the words it was written "
                  "about, coloured by who wrote it. Nothing to install and "
                  "nothing to compile. Open it in a web browser: Preview on a "
                  "Mac shows the highlights but not the comments."),
+                (self.write_viewer_var, "A page to send",
+                 "comments.html, one file with search and filters that opens "
+                 "in any browser. Nothing to install and it works offline, so "
+                 "you can email it to a co-author or a supervisor."),
                 (self.write_xlsx_var, "A spreadsheet",
                  "comments.xlsx, with the comments, their replies and the "
                  "tracked changes on three sheets. Sort by file, filter to "
                  "one reviewer, tick things off as you answer them."),
-                (self.response_letter_var, "A reply letter to fill in",
+                (self.response_letter_var, "A reply letter",
                  "response-letter.md, a point-by-point document with a blank "
                  "space under each comment for your answer."),
                 (self.per_reviewer_var, "One file per person",
                  "So you can work through one reviewer at a time."),
-                (self.annotated_var, "The LaTeX, with comments in it",
+                (self.annotated_var, "The annotated LaTeX",
                  "A copy of your source with the commented words highlighted, "
                  "to compile yourself. Your own files are never touched."),
-                (self.include_source_var, "The text of the commented files",
+                (self.include_source_var, "The source text",
                  "source/, the full text of every file that has a comment in "
                  "it, so an assistant can read the whole paragraph rather than "
                  "the few words either side."),
@@ -861,7 +866,7 @@ class App:
                  "can live in a git repository without noise."),
                 (self.detailed_var, "More of the surrounding text",
                  "More of the sentence around each comment, on several lines."),
-                (self.write_jsonl_var, "The data file for other tools",
+                (self.write_jsonl_var, "A data file for other tools",
                  "comments.jsonl, one comment per line. Harmless to leave on."),
                 (self.include_raw_var, "The raw data from Overleaf",
                  "Only useful for reporting a problem. Makes the file bigger."),
@@ -882,7 +887,20 @@ class App:
         # two qualifying groups sit side by side underneath, which keeps the
         # whole window short enough not to need scrolling.
         by_title = {title: rows for title, rows in groups}
-        put(box, "", by_title["Documents to write"])
+
+        # The documents go two across. There are seven of them now, and one
+        # per row made the window taller than a short screen can show, which
+        # is the whole of issue #11.
+        docs = by_title["Documents to write"]
+        doc_pair = ttk.Frame(box, style="Card.TFrame")
+        doc_pair.pack(fill="x")
+        doc_pair.columnconfigure(0, weight=1, uniform="docs")
+        doc_pair.columnconfigure(1, weight=1, uniform="docs")
+        half = (len(docs) + 1) // 2
+        for i, chunk in enumerate((docs[:half], docs[half:])):
+            col = ttk.Frame(doc_pair, style="Card.TFrame")
+            col.grid(row=0, column=i, sticky="nw", padx=(0, 10) if i == 0 else (10, 0))
+            put(col, "", chunk)
 
         # The two qualifying groups sit side by side underneath, which is what
         # keeps the window short enough not to need scrolling. Giving each its
@@ -1206,6 +1224,7 @@ class App:
             "render_mode": "detailed" if self.detailed_var.get() else "compact",
             "write_jsonl": bool(self.write_jsonl_var.get()),
             "write_xlsx": bool(self.write_xlsx_var.get()),
+            "write_viewer": bool(self.write_viewer_var.get()),
             "per_reviewer_reports": bool(self.per_reviewer_var.get()),
             "response_letter": bool(self.response_letter_var.get()),
             "annotated_tex": bool(self.annotated_var.get()),
@@ -1253,6 +1272,7 @@ class App:
             render_mode="detailed" if self.detailed_var.get() else "compact",
             write_jsonl=bool(self.write_jsonl_var.get()),
             write_xlsx_sheet=bool(self.write_xlsx_var.get()),
+            write_viewer=bool(self.write_viewer_var.get()),
             per_reviewer_reports=bool(self.per_reviewer_var.get()),
             response_letter=bool(self.response_letter_var.get()),
             annotated_tex=bool(self.annotated_var.get()),
@@ -1385,6 +1405,7 @@ class App:
         for label, path in (
             ("Data", result.json_path), ("Lines", result.jsonl_path),
             ("Spreadsheet", result.xlsx_path),
+            ("Page to send", result.viewer_path),
             ("Letter", result.response_letter_path),
             ("Commented PDF", result.annotated_pdf_path),
             ("Source", result.source_dir),

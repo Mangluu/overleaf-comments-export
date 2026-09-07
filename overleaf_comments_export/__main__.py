@@ -112,6 +112,14 @@ def main(argv: list[str] | None = None) -> int:
         'openpyxl: pip install "overleaf-comments-export[xlsx]"',
     )
     parser.add_argument(
+        "--html",
+        dest="write_viewer",
+        action="store_true",
+        help="Also write comments.html: one self-contained page with search "
+        "and filters, for sending to a co-author who will not install "
+        "anything. Works offline.",
+    )
+    parser.add_argument(
         "--since",
         metavar="PATH",
         help="Compare against a specific earlier export and write "
@@ -309,6 +317,7 @@ def main(argv: list[str] | None = None) -> int:
             render_mode=args.render_mode,
             write_jsonl=args.write_jsonl,
             write_xlsx_sheet=args.write_xlsx_sheet,
+            write_viewer=args.write_viewer,
             per_reviewer_reports=args.per_reviewer,
             response_letter=args.response_letter,
             annotated_tex=args.annotated_tex,

@@ -176,3 +176,14 @@ test("a missing or unreadable snapshot is no snapshot, not a crash", () => {
   const { api } = loadPopup();
   assert.equal(api.loadSnapshot("nothing-stored-here"), null);
 });
+
+test("the result says where the files went", () => {
+  // The first question after clicking Export, and the popup used to leave it
+  // unanswered. There is no API to open the folder, so saying its name is
+  // the most it can do.
+  const { api } = loadPopup();
+  for (const [code, copy] of Object.entries(api.COPY)) {
+    assert.ok(copy.savedTo, `${code} has no savedTo`);
+    assert.match(copy.savedTo, /\{folder\}/, `${code} savedTo has no {folder}`);
+  }
+});

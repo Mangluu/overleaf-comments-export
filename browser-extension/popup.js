@@ -100,6 +100,7 @@ function rememberChoices() {
 
 const COPY = {
   en: {
+    savedTo: "Saved to your Downloads folder, under {folder}",
     formatXlsx: "Spreadsheet",
     repoLink: "Free and open source. Star it on GitHub ★",
     stopButton: "Stop",
@@ -133,6 +134,7 @@ const COPY = {
     warnings: "Warnings: {warnings}",
   },
   zh: {
+    savedTo: "已保存到下载文件夹的 {folder} 中",
     formatXlsx: "电子表格",
     repoLink: "免费开源，欢迎在 GitHub 点亮星标 ★",
     stopButton: "停止",
@@ -436,6 +438,7 @@ ui.exportButton.addEventListener("click", async () => {
       changes: summary.trackedChangeCount,
       files: result.outputs.length,
     });
+    message += ` ${t("savedTo", { folder })}`;
     if (result.warnings?.length) {
       const separator = language === "zh" ? "；" : "; ";
       message += ` ${t("warnings", { warnings: result.warnings.join(separator) })}`;
