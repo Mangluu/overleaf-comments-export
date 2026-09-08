@@ -3,7 +3,7 @@
     "message": "Overleaf Comments Export"
   },
   "extensionDescription": {
-    "message": "Export comments and tracked changes from the currently open Overleaf project to local files."
+    "message": "Export Overleaf reviewer comments and tracked changes to Markdown, JSON or a spreadsheet. One click, saved on your computer."
   },
   "actionTitle": {
     "message": "Export Overleaf comments"

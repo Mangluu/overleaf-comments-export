@@ -3,7 +3,7 @@
     "message": "Overleaf 评论导出"
   },
   "extensionDescription": {
-    "message": "将当前 Overleaf 项目的评论和修订记录导出到本地文件。"
+    "message": "一键将 Overleaf 审阅评论和修订记录导出为 Markdown、JSON 或表格文件，全部保存在你自己的电脑上。"
   },
   "actionTitle": {
     "message": "导出 Overleaf 评论"
