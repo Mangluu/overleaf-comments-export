@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Export Overleaf Comments to Markdown, JSON or a Spreadsheet</title>
+<meta name="description" content="Overleaf does not include comments or tracked changes in the source download or the Git sync. This free open source tool exports every comment thread to Markdown, JSON or a spreadsheet, locally.">
+<link rel="canonical" href="https://mangluu.github.io/overleaf-comments-export/">
+<meta property="og:title" content="Export Overleaf Comments to Markdown, JSON or a Spreadsheet">
+<meta property="og:description" content="Overleaf leaves comments out of the source download and the Git sync. This gets them out, on your own machine.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://mangluu.github.io/overleaf-comments-export/">
+<style>
+  :root { --bg:#14140f; --card:#1c1b18; --line:#2e2d28; --text:#f2efe6;
+          --muted:#9d998e; --green:#2f7d4f; --bright:#4ea877; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:radial-gradient(circle at 15% 0,#26302a,var(--bg) 55%);
+         color:var(--text); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .wrap { max-width:780px; margin:0 auto; padding:72px 24px 96px; }
+  h1 { font-size:clamp(30px,5vw,46px); line-height:1.12; letter-spacing:-0.6px; margin:0 0 20px; }
+  h2 { font-size:26px; letter-spacing:-0.3px; margin:56px 0 16px; }
+  h3 { font-size:18px; margin:28px 0 6px; }
+  p { margin:0 0 16px; }
+  .lede { font-size:19px; color:#ded9cc; }
+  .muted { color:var(--muted); }
+  a { color:var(--bright); }
+  .cta { display:flex; flex-wrap:wrap; gap:12px; margin:32px 0 8px; }
+  .cta a { display:inline-block; padding:13px 22px; border-radius:12px; text-decoration:none; font-weight:640; }
+  .primary { background:var(--green); color:#fff; }
+  .secondary { border:1px solid var(--line); color:var(--text); }
+  ul { padding-left:22px; }
+  li { margin-bottom:9px; }
+  code, pre { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  code { background:rgba(255,255,255,.07); padding:2px 6px; border-radius:5px; font-size:14px; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:12px;
+        padding:16px 18px; overflow-x:auto; font-size:14px; }
+  pre code { background:none; padding:0; }
+  .files { list-style:none; padding:0; margin:0; }
+  .files li { display:flex; gap:16px; align-items:baseline; padding:14px 18px; margin-bottom:10px;
+              border:1px solid var(--line); border-radius:12px; background:rgba(255,255,255,.03); }
+  .files strong { flex:0 0 190px; font-weight:640; }
+  .files span { color:var(--muted); font-size:15px; }
+  .faq h3 { color:var(--text); }
+  .faq p { color:#ded9cc; }
+  img { max-width:100%; border-radius:14px; border:1px solid var(--line); }
+  footer { margin-top:72px; padding-top:24px; border-top:1px solid var(--line);
+           color:var(--muted); font-size:14px; }
+  @media (max-width:640px){ .files li{flex-direction:column;gap:4px} .files strong{flex:none} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Export Overleaf comments to Markdown, JSON or a spreadsheet</h1>
+
+<p class="lede">Overleaf does not include comments or tracked changes in the
+source download, and it does not include them in the Git sync either. They
+exist only inside the web editor. This gets them out, onto your own computer,
+in one click.</p>
+
+<div class="cta">
+  <a class="primary" href="https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc">Add to Chrome</a>
+  <a class="secondary" href="https://github.com/Mangluu/overleaf-comments-export">Source on GitHub</a>
+  <a class="secondary" href="https://pypi.org/project/overleaf-comments-export/">Command line version</a>
+</div>
+<p class="muted">Free and open source under the MIT licence. Works in Chrome,
+Edge, Brave and other Chromium browsers.</p>
+
+<h2>Why you need this</h2>
+
+<p>Download an Overleaf project as a zip and open it. The <code>.tex</code>
+files are all there. The comments are not. Pull the same project through the
+Git integration and the result is the same. Nothing warns you at any point.</p>
+
+<p>So every note your co-authors and supervisors left lives in exactly one
+place, behind a login, in a web editor. If you lose access to the project, or
+somebody resolves a thread to tidy up, that feedback is gone. There is an
+<a href="https://github.com/overleaf/overleaf/issues/1126">open request for
+Overleaf to fix this</a> that has been running since 2023.</p>
+
+<h2>What you get</h2>
+
+<ul class="files">
+  <li><strong>comments.md</strong> <span>Every thread, grouped by file and section, with a stable ID for each one</span></li>
+  <li><strong>comments.json</strong> <span>The same data, structured, for scripts and other tools</span></li>
+  <li><strong>comments.jsonl</strong> <span>One comment per line, for streaming into a pipeline</span></li>
+  <li><strong>comments.xlsx</strong> <span>Three sheets, comments and replies and tracked changes</span></li>
+  <li><strong>response-letter.md</strong> <span>A reply template with a blank slot under every point</span></li>
+  <li><strong>agents.md</strong> <span>A brief that tells an AI assistant how to read the rest</span></li>
+</ul>
+
+<h2>How to use it</h2>
+
+<ol>
+  <li>Open your paper on Overleaf.</li>
+  <li>Click the extension icon in the toolbar.</li>
+  <li>Tick what you want to keep.</li>
+  <li>Press Export current project.</li>
+</ol>
+
+<p>The files land in your downloads folder. Nothing is uploaded anywhere.</p>
+
+<p>If you would rather not install anything in the browser, there is a command
+line version.</p>
+
+<pre><code>pip install overleaf-comments-export
+overleaf-comments-export --gui</code></pre>
+
+<p class="muted">That opens a window. Paste your project link, choose a
+folder, press the button. For a script, pass
+<code>--project-url</code> and <code>--out</code> instead.</p>
+
+<h2>Questions</h2>
+<div class="faq">
+
+<h3>Does Overleaf include comments when you download a project?</h3>
+<p>No. The source download and the Git sync both contain only the LaTeX files.
+Comments and tracked changes are stripped out with no warning, because they are
+stored separately from the document text.</p>
+
+<h3>Can you export Overleaf comments to Word or Excel?</h3>
+<p>This tool writes a spreadsheet with three sheets, one for comments, one for
+replies and one for tracked changes, which opens in Excel, Numbers and Google
+Sheets. It also writes Markdown, which pastes into Word.</p>
+
+<h3>Does it work on resolved comments?</h3>
+<p>Yes. Resolved threads are included by default and are marked as resolved, so
+you can keep them or filter them out.</p>
+
+<h3>Is my Overleaf login safe?</h3>
+<p>The extension never reads, stores or transmits your session cookie. It runs
+in the tab you are already signed in to and asks the same endpoints the editor
+itself asks. It requests three permissions and no host permissions at all, and
+everything it writes goes straight to your downloads folder.</p>
+
+<h3>Does it handle a paper split across several files?</h3>
+<p>Yes. It follows <code>\input</code>, <code>\include</code> and
+<code>\subfile</code> from the root document, so a comment is reported with the
+section and the figure or table it actually sits in rather than a line number
+in a file you do not remember.</p>
+
+<h3>Is it free?</h3>
+<p>Yes, and it is open source under the MIT licence. There is no account, no
+paid tier and no telemetry.</p>
+
+</div>
+
+<footer>
+  <p>Written by <a href="https://github.com/Mangluu">Shivang Gupta</a>. Not
+  affiliated with Overleaf. Issues and pull requests are welcome on
+  <a href="https://github.com/Mangluu/overleaf-comments-export">GitHub</a>.</p>
+</footer>
+
+</div>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "name": "Overleaf Comments Export",
+      "applicationCategory": "BrowserApplication",
+      "operatingSystem": "Chrome, Edge, Brave, macOS, Linux, Windows",
+      "url": "https://mangluu.github.io/overleaf-comments-export/",
+      "downloadUrl": "https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc",
+      "license": "https://opensource.org/licenses/MIT",
+      "description": "Exports Overleaf review comments and tracked changes to Markdown, JSON or a spreadsheet, locally.",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Does Overleaf include comments when you download a project?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. The source download and the Git sync both contain only the LaTeX files. Comments and tracked changes are stripped out with no warning, because they are stored separately from the document text." }
+        },
+        {
+          "@type": "Question",
+          "name": "Can you export Overleaf comments to Word or Excel?",
+          "acceptedAnswer": { "@type": "Answer", "text": "This tool writes a spreadsheet with three sheets, one for comments, one for replies and one for tracked changes, which opens in Excel, Numbers and Google Sheets. It also writes Markdown, which pastes into Word." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it work on resolved comments?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. Resolved threads are included by default and are marked as resolved, so you can keep them or filter them out." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is my Overleaf login safe?",
+          "acceptedAnswer": { "@type": "Answer", "text": "The extension never reads, stores or transmits your session cookie. It runs in the tab you are already signed in to and asks the same endpoints the editor itself asks. It requests three permissions and no host permissions at all." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it handle a paper split across several files?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. It follows \\input, \\include and \\subfile from the root document, so a comment is reported with the section and the figure or table it actually sits in rather than a line number." }
+        }
+      ]
+    }
+  ]
+}
+</script>
+</body>
+</html>

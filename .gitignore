@@ -51,3 +51,6 @@ chrome-store/screenshots/*
 
 # The Chrome Web Store refresh token lives in ~/.config, never here.
 cws.json
+
+# Unposted drafts and competitor notes. Local only.
+growth/
