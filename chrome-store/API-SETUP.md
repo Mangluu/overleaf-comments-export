@@ -22,11 +22,23 @@ it anything. Then open
 https://console.cloud.google.com/apis/library/chromewebstore.googleapis.com
 and press Enable, with that project selected.
 
-### 2. Set up the consent screen
+### 2. Set up the consent screen, and add yourself as a test user
 
-Go to APIs and services, then OAuth consent screen. Choose **External**. Fill
-in the app name and your own email where it asks. On the Test users step, add
-**shivangzephyr@gmail.com**, the account that owns the extension.
+Google renamed this. It is no longer under APIs and services. It is now
+**Google Auth Platform**, and the test user list sits under **Audience**.
+
+https://console.cloud.google.com/auth/audience
+
+Check the project selector at the top matches the project from step 1. Choose
+**External**. Fill in the app name and your own email where it asks.
+
+Then, under **Test users**, press Add users and enter
+**shivangzephyr@gmail.com**, the account that owns the extension. Save.
+
+Do not skip this. Without it, `auth` fails with `Error 403: access_denied`
+and the message that the app has not completed verification, even though you
+are the developer. An app in Testing lets nobody in, not even its owner,
+unless they are on that list.
 
 Leave it in Testing. It never needs verifying, because you are the only user.
 The one catch is that refresh tokens for an app in Testing expire after seven
@@ -80,6 +92,13 @@ approves an app. Revoke it at https://myaccount.google.com/permissions and run
 
 **`invalid_grant` after about a week.** The consent screen is still in
 Testing. Either run `auth` again or press Publish app on the consent screen.
+
+**`Error 403: access_denied`, has not completed the Google verification
+process.** The account is not on the test user list. Add it at
+https://console.cloud.google.com/auth/audience under Audience, then Test
+users, and check the project selector matches the project holding your OAuth
+client. Wait five minutes before retrying, because the list takes a moment to
+propagate and an immediate retry shows the same error.
 
 **Upload says FAILURE.** The reason is printed under it. It is nearly always a
 version number that is not higher than the one already in the store.
