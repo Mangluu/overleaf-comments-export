@@ -13,7 +13,17 @@ tracked changes，并在本机生成 Markdown、JSON、JSONL 或回复信模板�
 它使用当前 Overleaf 标签页已有的登录会话：不需要复制 Cookie，不保存
 登录信息，也不会把项目内容发送到第三方服务器。
 
-## 在 Chrome 中加载
+## 安装
+
+[从 Chrome 网上应用店安装](https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc)。
+支持 Chrome、Edge、Brave 等 Chromium 浏览器，并且会自动更新。
+
+安装后，在 Overleaf 中打开论文，点击工具栏上的图标，然后点击“导出当前项目”。
+
+## 从源码加载（仅用于开发）
+
+只有在你要修改代码时才需要。这种方式需要开启开发者模式，Chrome 每次启动
+都会提示。
 
 1. 在 Chrome 地址栏打开 `chrome://extensions/`。
 2. 打开页面右上角的“开发者模式”。
@@ -23,9 +33,6 @@ tracked changes，并在本机生成 Markdown、JSON、JSONL 或回复信模板�
    ```text
    overleaf-comments-export/browser-extension
    ```
-
-5. 在 Chrome 工具栏的扩展菜单中找到 **Overleaf Comments Export**，并可选地
-   将它固定到工具栏。
 
 修改扩展源代码后，回到 `chrome://extensions/`，点击扩展卡片上的“重新加载”，
 然后刷新已经打开的 Overleaf 标签页。
@@ -107,7 +114,20 @@ It uses the existing signed-in session in the current Overleaf tab. It does not
 read or store browser cookies, and it does not send project content to a
 third-party server.
 
-### Load it in Chrome
+### Install it
+
+[Add it from the Chrome Web
+Store](https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc).
+That works in Chrome, Edge, Brave and other Chromium browsers, and it updates
+itself.
+
+Then open a paper on Overleaf, click the icon in the toolbar, and press Export
+current project.
+
+### Load it from source, for working on it
+
+Only needed if you are changing the code. It requires developer mode, and
+Chrome warns about it on every start.
 
 1. Open `chrome://extensions/` in Chrome.
 2. Enable **Developer mode** in the top-right corner.
@@ -117,8 +137,6 @@ third-party server.
    ```text
    overleaf-comments-export/browser-extension
    ```
-
-5. Optionally pin **Overleaf Comments Export** from Chrome's Extensions menu.
 
 After editing the source, click **Reload** on the extension card and refresh
 any Overleaf tabs that were already open.

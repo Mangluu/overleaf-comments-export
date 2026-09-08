@@ -88,6 +88,9 @@ Brave and other Chromium browsers. The
 [extension guide](browser-extension/README.md) explains its deliberately
 limited permissions.
 
+There is also a [page explaining what this does](https://mangluu.github.io/overleaf-comments-export/), if you want something to send
+someone rather than a repository.
+
 ### Which one to use
 
 |  | Extension | Python tool and app |
