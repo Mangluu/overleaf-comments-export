@@ -10,6 +10,7 @@ jobs:
   test:
     name: Test ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -35,13 +36,25 @@ jobs:
   window:
     # The window is what most people who download this actually use, and its
     # tests skip themselves unless OCE_GUI_TESTS is set, so nothing had ever
-    # run them automatically. Linux needs a virtual display; macOS has one.
+    # run them automatically. Linux needs a virtual display, which xvfb gives.
+    #
+    # macOS used to be in this matrix, on the assumption that the runner has a
+    # display of its own. It does not. A hosted macOS runner has no logged-in
+    # window server session, so Tk blocks on the first window it opens and the
+    # job never finishes. It was cancelled on every single run it ever had, so
+    # it reported nothing while billing macOS minutes at ten times the Linux
+    # rate. A test that has never once produced a result is not coverage.
+    #
+    # The Tk code under test is the same on both, so xvfb on Linux exercises
+    # it. What is genuinely macOS specific is the .app bundle, and that is
+    # built and opened by hand in packaging/, not here.
     name: Window on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -81,6 +94,7 @@ jobs:
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: test
     steps:
       - uses: actions/checkout@v4
