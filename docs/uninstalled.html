@@ -69,14 +69,15 @@
 <script>
 "use strict";
 
-// Where answers go. A Google Form owned by the maintainer, posted to directly
-// so the page never leaves this site. Until it is filled in, Send opens a
-// prefilled GitHub issue instead, which works but needs a GitHub account.
-const FORM = null;
-// const FORM = {
-//   action: "https://docs.google.com/forms/d/e/FORM_ID/formResponse",
-//   fields: { reason: "entry.0", details: "entry.0", version: "entry.0", language: "entry.0" },
-// };
+// Where answers go. A Google Form owned by the maintainer, in the account that
+// publishes the extension, posted to directly so the page never leaves this
+// site. Reason is a short answer and Details a paragraph, and the version and
+// language ride along at the end of Details. Set FORM to null to fall back to
+// a prefilled GitHub issue.
+const FORM = {
+  action: "https://docs.google.com/forms/d/e/1FAIpQLSeRkVO2-wLNajMsWrkhZ7RSet6WE17rCFZTF5dmourZ3Dtk5w/formResponse",
+  fields: { reason: "entry.520499739", details: "entry.880276742" },
+};
 
 const params = new URLSearchParams(location.search);
 const version = (params.get("v") || "").slice(0, 20);
@@ -144,13 +145,15 @@ send.addEventListener("click", async () => {
   if (!chosen) return;
   send.disabled = true;
   const details = document.getElementById("details").value.trim();
+  const note = `${details || "No details given."}\n\nVersion ${version || "unknown"}, language ${lang}.`;
 
   if (FORM) {
     const body = new URLSearchParams({
       [FORM.fields.reason]: chosen.en,
-      [FORM.fields.details]: details,
-      [FORM.fields.version]: version,
-      [FORM.fields.language]: lang,
+      [FORM.fields.details]: note,
+      // Static fields the form's own page posts. The rest are per session.
+      fvv: "1",
+      pageHistory: "0",
     });
     // Google does not allow reading the reply from another site, so a sent
     // request is taken as delivered. The answer is lost only if it never left.
@@ -163,7 +166,7 @@ send.addEventListener("click", async () => {
   } else {
     const issue = new URL("https://github.com/Mangluu/overleaf-comments-export/issues/new");
     issue.searchParams.set("title", `Uninstall feedback: ${chosen.en}`);
-    issue.searchParams.set("body", `${details || "No details given."}\n\nVersion ${version || "unknown"}, language ${lang}.`);
+    issue.searchParams.set("body", note);
     window.open(issue.href, "_blank", "noopener");
   }
 

@@ -10,25 +10,32 @@ most of what 1.7.0 added did nothing.
 | extension version | 1.8.0 |
 | replaces | 1.7.0 |
 | package | chrome-store/extension.zip |
-| package sha256 | `c86b1c3925081bff866cd2a71a41d708cea20ecd9f367c2a56f4f3b693c720ba` |
-| package size | 46K |
+| package sha256 | `6a3c96b78d3b4353e2dc6a4ed1d06b899b09a71e56860b747ce2205e33126a13` |
+| package size | 47K |
 | screenshots | unchanged |
-| permissions | unchanged |
+| permissions | unchanged, activeTab, downloads, scripting |
 
-What it fixes.
+What it fixes, each one checked on a real paper on overleaf.com on 28
+September 2026 before upload.
 
 - Comments are filed under their real file names again. overleaf.com stopped
   putting the file tree in the page, so every export used document ids.
-- A paper in several files is read in document order, so sections and figure
-  numbers follow the whole paper.
+- Comments are no longer flagged stale for having no anchored text. On the
+  paper checked, that was 120 false alarms out of 134 comments.
 - Spreadsheet, This file only, One person and the comparison with the last
   export all work. All four were silently ignored in 1.7.0.
+- A paper in several files is read in document order, so sections and figure
+  numbers follow the whole paper.
 
-Nothing new is asked of the user and no permission changes, so review should
-treat it as a routine update.
+What it adds.
 
-Before uploading, load the folder unpacked and export one real multi-file
-project with every box ticked. See CHECKLIST.md.
+- A short page opens when someone removes the extension, asking why. It needs
+  no permission. Answers go to a Google Form in the account that publishes
+  the extension.
+
+If review asks about the new background service worker, it does one thing,
+registers that page with chrome.runtime.setUninstallURL. It reads nothing,
+stores nothing and sends nothing.
 
 ---
 
