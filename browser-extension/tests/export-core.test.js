@@ -334,3 +334,20 @@ test("the version the export reports is the version in the manifest", () => {
   const manifest = require("../manifest.json");
   assert.equal(core.TOOL_VERSION, `${manifest.version}-extension`);
 });
+
+test("a comment on a position, with no anchored text, is not stale", () => {
+  // Overleaf sends those with no text. On a real paper this flagged 120 of
+  // 134 comments "⚠ stale" when not one of them had moved.
+  const core = require("../src/export-core.js");
+  const text = "\\section{A}\nTouch input is fast.\n";
+  const starts = core.buildLineStarts(text);
+  assert.equal(core.resolveAnchor(text, starts, 14, "").stale, false);
+  assert.equal(core.resolveAnchor(text, starts, 14, null).stale, false);
+  // Past the end is kept inside the text, and still not called stale.
+  const far = core.resolveAnchor(text, starts, 9999, "");
+  assert.equal(far.stale, false);
+  assert.ok(far.offset < text.length);
+  // Real anchors keep their meaning.
+  assert.equal(core.resolveAnchor(text, starts, text.indexOf("fast"), "fast").stale, false);
+  assert.equal(core.resolveAnchor(text, starts, 0, "gone for good").stale, true);
+});

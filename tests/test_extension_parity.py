@@ -16,7 +16,10 @@ Windows a read without one uses cp1252 and dies on the first Chinese character.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -161,3 +164,40 @@ def test_no_subprocess_decodes_with_the_locale_encoding():
     assert not offenders, (
         "these decode a child process with the locale encoding; name "
         f"encoding='utf-8' instead of text=True: {offenders}")
+
+
+# The same anchor, resolved by both. Only the first comment of one fixture is
+# compared above, and it has anchored text, so when the extension flagged every
+# comment without text as stale and Python did not, nothing noticed. On a real
+# paper that was 120 false alarms out of 134 comments.
+ANCHOR_TEXT = ("\\section{Intro}\nTouch input is fast.\n"
+               + "x" * 400 + "\nWe ran twelve people.\n")
+ANCHOR_CASES = [
+    (ANCHOR_TEXT.index("Touch"), ""),                        # a position, no text
+    (ANCHOR_TEXT.index("Touch"), "Touch input"),             # exactly where it says
+    (ANCHOR_TEXT.index("Touch") + 5, "Touch input"),         # moved a little
+    (0, "twelve people"),                                    # moved far
+    (ANCHOR_TEXT.index("fast"), "deleted since"),            # gone
+    (len(ANCHOR_TEXT) + 50, ""),                             # past the end
+]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node runs the extension's own core")
+def test_both_resolve_an_anchor_the_same_way():
+    from overleaf_comments_export.anchors import build_line_starts, resolve_anchor
+    from overleaf_comments_export.model import DocText
+
+    doc = DocText(doc_id="d", pathname="main.tex", text=ANCHOR_TEXT,
+                  line_starts=build_line_starts(ANCHOR_TEXT), headings=[])
+    python = [list(resolve_anchor(doc, offset, text)) for offset, text in ANCHOR_CASES]
+
+    script = ("const core = require(process.argv[1]);"
+              "const { text, cases } = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+              "const starts = core.buildLineStarts(text);"
+              "process.stdout.write(JSON.stringify(cases.map(([o, a]) => {"
+              "  const r = core.resolveAnchor(text, starts, o, a);"
+              "  return [r.offset, r.line, r.column, r.stale]; })));")
+    out = subprocess.run(["node", "-e", script, str(CORE)],
+                         input=json.dumps({"text": ANCHOR_TEXT, "cases": ANCHOR_CASES}),
+                         capture_output=True, text=True, encoding="utf-8", check=True).stdout
+    assert json.loads(out) == python

@@ -229,21 +229,29 @@
   function resolveAnchor(text, lineStarts, rawOffset, anchoredText, searchWindow = 200) {
     const offset = Math.max(0, Number(rawOffset) || 0);
     const anchor = String(anchoredText || "");
-    if (anchor && text.slice(offset, offset + anchor.length) === anchor) {
+    if (!anchor) {
+      // A comment can be attached to a position rather than a span, and
+      // Overleaf sends those with no anchored text. Nothing has moved and
+      // there is nothing to check, so it is not stale. This fell through to
+      // the stale branch below: on one real paper it put "⚠ stale" on 120 of
+      // 134 comments, every one of them a false alarm, which buries the few
+      // that really have moved. Same rule as resolve_anchor in anchors.py.
+      const bounded = Math.min(offset, Math.max(0, text.length - 1));
+      return { offset: bounded, ...offsetToLineColumn(lineStarts, bounded), stale: false };
+    }
+    if (text.slice(offset, offset + anchor.length) === anchor) {
       return { offset, ...offsetToLineColumn(lineStarts, offset), stale: false };
     }
 
-    if (anchor) {
-      const low = Math.max(0, offset - searchWindow);
-      const high = Math.min(text.length, offset + searchWindow + anchor.length);
-      const nearby = text.indexOf(anchor, low);
-      if (nearby !== -1 && nearby <= high - anchor.length) {
-        return { offset: nearby, ...offsetToLineColumn(lineStarts, nearby), stale: false };
-      }
-      const anywhere = text.indexOf(anchor);
-      if (anywhere !== -1) {
-        return { offset: anywhere, ...offsetToLineColumn(lineStarts, anywhere), stale: true };
-      }
+    const low = Math.max(0, offset - searchWindow);
+    const high = Math.min(text.length, offset + searchWindow + anchor.length);
+    const nearby = text.indexOf(anchor, low);
+    if (nearby !== -1 && nearby <= high - anchor.length) {
+      return { offset: nearby, ...offsetToLineColumn(lineStarts, nearby), stale: false };
+    }
+    const anywhere = text.indexOf(anchor);
+    if (anywhere !== -1) {
+      return { offset: anywhere, ...offsetToLineColumn(lineStarts, anywhere), stale: true };
     }
 
     // The bounded one, not the raw one. An offset past the end slices to
