@@ -39,13 +39,14 @@ def _canonical(text: str) -> str:
     return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n")).strip()
 
 
-def index_zip(data: bytes) -> dict[str, list[str]]:
-    """Map canonical content to the paths holding it.
+def read_zip_texts(data: bytes) -> dict[str, str]:
+    """Every text file in the project zip, by path.
 
-    A list, because a project can genuinely contain two identical files, and
-    guessing between them is worse than admitting we cannot tell.
+    Kept whole, not only indexed, because the files with no comments in them
+    are what put a multi-file paper in order, and the zip is the only place a
+    pasted-cookie session can read them from without their document ids.
     """
-    index: dict[str, list[str]] = {}
+    texts: dict[str, str] = {}
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile as e:
@@ -63,10 +64,21 @@ def index_zip(data: bytes) -> dict[str, list[str]]:
             logger.warning("Skipped %s in the project zip: %s", info.filename, e)
             continue
         try:
-            text = raw.decode("utf-8")
+            texts[info.filename] = raw.decode("utf-8")
         except UnicodeDecodeError:
-            text = raw.decode("latin-1")
-        index.setdefault(_canonical(text), []).append(info.filename)
+            texts[info.filename] = raw.decode("latin-1")
+    return texts
+
+
+def index_texts(texts: dict[str, str]) -> dict[str, list[str]]:
+    """Map canonical content to the paths holding it.
+
+    A list, because a project can genuinely contain two identical files, and
+    guessing between them is worse than admitting we cannot tell.
+    """
+    index: dict[str, list[str]] = {}
+    for path, text in texts.items():
+        index.setdefault(_canonical(text), []).append(path)
     return index
 
 

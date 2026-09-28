@@ -206,3 +206,117 @@ def test_a_single_file_paper_is_unaffected(tmp_path, monkeypatch):
     c = list(_comments(tmp_path).values())[0]
     assert c["enclosing_float"]["number"] == 1
     assert c["nearest_heading"] == "Method"
+
+
+# --- when Overleaf does not say which file is the paper ---------------------
+#
+# Everything above fakes a metadata answer carrying rootDocId. overleaf.com
+# stopped sending one. It came from an ol-project or ol-rootDocId meta tag, and
+# the editor template, services/web/app/views/project/editor/_meta.pug, emits
+# neither. pyoverleaf's file tree carries no root either. So on the real site
+# _apply_document_order always returned at its first line, and every multi-file
+# paper had its figures counted per file, while these tests stayed green.
+
+import io
+import shutil
+import subprocess
+import zipfile
+from pathlib import Path
+
+from overleaf_comments_export.docorder import pick_root_path
+
+
+def _without_main_anchor(ranges):
+    # The root carries no comment, so nothing but the search for the paper can
+    # bring it in. With a comment in it, it would be read anyway.
+    return [r for r in ranges if r["id"] != "d_main"]
+
+
+class NoRootGiven(MultiFile):
+    """What overleaf.com gives a browser session today: a tree, no root."""
+
+    def get_project_metadata(self, project_id):
+        return {"files": {"docs": []}, "name": "Paper", "rootDocId": None, "raw_meta": {}}
+
+    def get_project_ranges(self, project_id):
+        return _without_main_anchor(super().get_project_ranges(project_id))
+
+
+class NoTreeNoRoot(NoRootGiven):
+    """What a pasted cookie gets: no tree and no root, only the project zip."""
+
+    def get_project_metadata(self, project_id):
+        return {"files": None, "name": "Paper", "rootDocId": None, "raw_meta": {}}
+
+    def flatten_files(self, files_root, debug_logger=None):
+        return []
+
+    def download_project_zip(self, project_id):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for path, text in FILES.values():
+                z.writestr(path, text)
+            z.writestr("figures/plot.png", b"\x89PNG not text")
+        return buf.getvalue()
+
+
+@pytest.mark.parametrize("client", [NoRootGiven, NoTreeNoRoot],
+                         ids=["tree-without-root", "zip-only"])
+def test_the_paper_is_found_when_overleaf_does_not_name_it(tmp_path, monkeypatch, client):
+    client.unreadable = set()
+    monkeypatch.setattr(export_mod, "OverleafClient", client)
+    by_path = {c["pathname"]: c for c in _comments(tmp_path).values()}
+
+    assert "discussion-body.tex" in by_path, sorted(by_path)
+    # First is 1, Nobody commented is 2, Fourth is 3. Counted per file, as the
+    # real site got before this, Fourth came back as 1.
+    assert by_path["discussion-body.tex"]["enclosing_float"]["number"] == 3
+    assert by_path["results-body.tex"]["nearest_heading"] == "Results"
+
+
+def test_the_paper_is_the_one_complete_document():
+    doc = lambda cls, body="": f"\\documentclass{{{cls}}}\n\\begin{{document}}\n{body}\\end{{document}}\n"
+    assert pick_root_path({"paper.tex": doc("article", "\\input{sec}\n"),
+                           "sec.tex": "\\section{A}\n"}) == "paper.tex"
+    # standalone builds a figure and subfiles a chapter. Both look complete.
+    assert pick_root_path({
+        "paper.tex": doc("acmart"),
+        "figures/plot.tex": doc("standalone"),
+        "chapters/one.tex": "\\documentclass[../paper.tex]{subfiles}\n\\begin{document}\nx\n\\end{document}\n",
+    }) == "paper.tex"
+    # A commented-out class line is not a class line.
+    assert pick_root_path({"notes.tex": "% \\documentclass{article}\n\\begin{document}\n",
+                           "real.tex": doc("article")}) == "real.tex"
+
+
+def test_with_several_complete_documents_main_wins_then_the_one_that_pulls_most():
+    doc = lambda body="": f"\\documentclass{{article}}\n\\begin{{document}}\n{body}\\end{{document}}\n"
+    assert pick_root_path({"main.tex": doc(), "letter.tex": doc()}) == "main.tex"
+    assert pick_root_path({"paper.tex": doc("\\input{a}\n\\input{b}\n"),
+                           "rebuttal.tex": doc()}) == "paper.tex"
+    # A tie stays unresolved. No order is better than the wrong one.
+    assert pick_root_path({"x.tex": doc(), "y.tex": doc()}) is None
+
+
+ROOT_CASES = [
+    {"paper.tex": "\\documentclass{article}\n\\begin{document}\n\\input{s}\n\\end{document}\n", "s.tex": "x"},
+    {"main.tex": "\\documentclass{book}\n\\begin{document}\n\\end{document}\n",
+     "cover.tex": "\\documentclass{letter}\n\\begin{document}\n\\end{document}\n"},
+    {"a.tex": "\\documentclass{standalone}\n\\begin{document}\n\\end{document}\n"},
+    {"x.tex": "\\documentclass{article}\n\\begin{document}\n\\end{document}\n",
+     "y.tex": "\\documentclass{article}\n\\begin{document}\n\\end{document}\n"},
+    {"p.tex": "\\documentclass[11pt]{article}\n\\begin{document}\n\\include{c1}\n\\subfile{c2}\n\\end{document}\n",
+     "c2.tex": "\\documentclass[p.tex]{subfiles}\n\\begin{document}\n\\end{document}\n"},
+]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node runs the extension's own rule")
+def test_the_extension_and_the_cli_pick_the_same_paper():
+    """Two copies of one rule drift apart unless something holds them together."""
+    core = Path(__file__).resolve().parent.parent / "browser-extension" / "src" / "export-core.js"
+    script = ("const core = require(process.argv[1]);"
+              "const cases = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+              "process.stdout.write(JSON.stringify(cases.map((c) => core.pickRootPath(c))));")
+    out = subprocess.run(["node", "-e", script, str(core)], input=json.dumps(ROOT_CASES),
+                         capture_output=True, text=True, encoding="utf-8", check=True).stdout
+    assert json.loads(out) == [pick_root_path(c) for c in ROOT_CASES]

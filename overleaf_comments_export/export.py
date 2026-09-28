@@ -15,7 +15,7 @@ from . import __version__
 from .anchors import build_line_starts, resolve_anchor
 from .annotate import ANNOTATE_STYLES, annotate_document
 from .client import OverleafClient, UserFacingError, parse_project_id
-from .filenames import index_zip, name_for
+from .filenames import index_texts, name_for, read_zip_texts
 from .model import (
     AnchoredComment,
     DocText,
@@ -25,7 +25,7 @@ from .model import (
     TrackedChange,
 )
 from .render import render_markdown, render_response_letter
-from .docorder import flatten, locate, reachable
+from .docorder import flatten, locate, pick_root_path, reachable
 from .sections import (enclosing_float, find_floats, find_headings,
                        nearest_heading)
 from .sheets import write_xlsx
@@ -352,7 +352,8 @@ def _slug_reviewer(name: str) -> str:
 
 
 def _apply_document_order(client, project_id, doc_texts, doc_id_to_path,
-                          root_doc_id, anchored, changes, progress) -> None:
+                          root_doc_id, anchored, changes, progress,
+                          extra_texts=None) -> None:
     """Number floats and name sections across the whole document, not per file.
 
     Only the files carrying comments were downloaded, and that is not enough:
@@ -367,39 +368,65 @@ def _apply_document_order(client, project_id, doc_texts, doc_id_to_path,
     If any part of the chain cannot be read, no number is claimed at all. A
     missing number sends nobody anywhere. A wrong one sends them to the wrong
     figure.
+
+    `extra_texts` is the project zip's text files by path, when it was read for
+    names. It stands in for documents whose ids are unknown.
     """
     by_path = {d.pathname: d for d in doc_texts.values()}
-    root_path = doc_id_to_path.get(root_doc_id or "")
-    if not root_path or root_path not in by_path and root_path not in doc_id_to_path.values():
-        return
-
     path_to_doc_id = {v: k for k, v in doc_id_to_path.items()}
     texts = {p: d.text for p, d in by_path.items()}
+    extra = dict(extra_texts or {})
+
+    def read(path: str) -> str | None:
+        if path in extra:
+            return extra[path]
+        doc_id = path_to_doc_id.get(path)
+        if not doc_id:
+            return None
+        try:
+            return client.download_doc_text(project_id, doc_id)
+        except Exception as e:
+            logger.warning("Could not read %s for numbering: %s", path, e)
+            return None
+
+    root_path = doc_id_to_path.get(root_doc_id or "")
+    if not root_path:
+        # overleaf.com no longer says which file is the root, and pyoverleaf's
+        # tree never did. Without this, every multi-file paper returned here
+        # and kept its figures counted per file. The paper is the one file
+        # that is a whole document on its own, which takes reading every .tex
+        # file, the ones with no comments included. They are small.
+        unread = sorted(p for p in {*path_to_doc_id, *extra}
+                        if p.lower().endswith(".tex") and p not in texts)
+        if unread:
+            progress(f"Reading {len(unread)} more file(s) to find which one is the paper…")
+            for path in unread:
+                text = read(path)
+                if text is not None:
+                    texts[path] = text
+        root_path = pick_root_path(texts)
+        if not root_path:
+            return
 
     if root_path not in texts:
-        doc_id = path_to_doc_id.get(root_path)
-        try:
-            texts[root_path] = client.download_doc_text(project_id, doc_id)
-        except Exception as e:
-            logger.warning("Could not read the root document %s: %s", root_path, e)
+        text = read(root_path)
+        if text is None:
+            logger.warning("Could not read the root document %s", root_path)
             return
+        texts[root_path] = text
 
     # Includes nest, so widen the set until nothing new is named.
     for _ in range(8):
-        wanted = [p for p in reachable(root_path, texts, path_to_doc_id)
+        wanted = [p for p in reachable(root_path, texts, {*path_to_doc_id, *extra})
                   if p not in texts]
         if not wanted:
             break
         got = False
         for path in wanted:
-            doc_id = path_to_doc_id.get(path)
-            if not doc_id:
-                continue
-            try:
-                texts[path] = client.download_doc_text(project_id, doc_id)
+            text = read(path)
+            if text is not None:
+                texts[path] = text
                 got = True
-            except Exception as e:
-                logger.warning("Could not read %s for numbering: %s", path, e)
         if not got:
             break
 
@@ -646,6 +673,9 @@ def run_export(
         changes: list[TrackedChange] = []
         referenced_thread_ids: set[str] = set()
         doc_texts: dict[str, DocText] = {}
+        # Every text file in the project zip, when one had to be read for names.
+        # Document order uses it for the files that carry no comments.
+        zip_texts: dict[str, str] = {}
 
         if ranges_payload:
             docs_with_anchors = list(_iter_doc_ranges(ranges_payload))
@@ -673,7 +703,8 @@ def run_export(
                         progress("Filenames were not in the file tree, asking for the "
                                  "project zip instead…")
                         data = client.download_project_zip(project_id)
-                        zip_index = index_zip(data) if data else {}
+                        zip_texts = read_zip_texts(data) if data else {}
+                        zip_index = index_texts(zip_texts)
                         logger.info("Read %d text file(s) from the project zip.",
                                     len(zip_index))
                     pathname = name_for(zip_index, text)
@@ -768,7 +799,8 @@ def run_export(
         # reported as Figure 1.
         _apply_document_order(
             client, project_id, doc_texts, doc_id_to_path,
-            metadata.get("rootDocId"), anchored, changes, progress)
+            metadata.get("rootDocId"), anchored, changes, progress,
+            extra_texts=zip_texts)
 
         orphan_threads = [
             thread for tid, thread in threads.items() if tid not in referenced_thread_ids

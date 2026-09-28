@@ -11,7 +11,11 @@ from __future__ import annotations
 import io
 import zipfile
 
-from overleaf_comments_export.filenames import index_zip, name_for
+from overleaf_comments_export.filenames import index_texts, name_for, read_zip_texts
+
+
+def index_zip(data):
+    return index_texts(read_zip_texts(data))
 
 MAIN = "\\documentclass{article}\n\\begin{document}\nThe opening claim.\n\\end{document}\n"
 INTRO = "\\section{Introduction}\nParticipants completed three blocks.\n"

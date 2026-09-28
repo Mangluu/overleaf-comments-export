@@ -178,6 +178,46 @@ def resolve_order(root: str, texts: Mapping[str, str]) -> tuple[list[str], list[
     return order, missing
 
 
+# The root is the one file that is a whole document on its own, a class and a
+# body. standalone is how people build a figure and subfiles how they build a
+# chapter, and both look complete without being the paper.
+_NOT_THE_PAPER = {"standalone", "subfiles"}
+_DOCUMENTCLASS_RE = re.compile(r"\\documentclass\s*(?:\[[^\]]*\])?\s*\{\s*([^}\s]+)\s*\}")
+_BEGIN_DOCUMENT_RE = re.compile(r"\\begin\s*\{document\}")
+
+
+def pick_root_path(texts: Mapping[str, str]) -> str | None:
+    """Which file is the paper, now that Overleaf does not say.
+
+    It used to, in an ol-project or ol-rootDocId meta tag on the editor page.
+    Neither is emitted any more, and pyoverleaf's file tree never carried it.
+    Mirrors pickRootPath in the extension's export-core.js, and a test runs
+    both over the same cases so the two cannot drift.
+    """
+    roots: list[tuple[str, int]] = []
+    for path, text in texts.items():
+        if not path.lower().endswith(".tex") or not isinstance(text, str):
+            continue
+        body = _strip_comments(text)
+        doc_class = _DOCUMENTCLASS_RE.search(body)
+        if not doc_class or doc_class.group(1).lower() in _NOT_THE_PAPER:
+            continue
+        if not _BEGIN_DOCUMENT_RE.search(body):
+            continue
+        roots.append((path, len(find_includes(text))))
+    if len(roots) < 2:
+        return roots[0][0] if roots else None
+    # A paper beside a cover letter or a rebuttal. main.tex is what Overleaf
+    # calls the root of a new project, and failing that the paper is the file
+    # that pulls the others in. A tie stays unresolved: no document order is
+    # better than the wrong one.
+    for path, _ in roots:
+        if path.lower() == "main.tex":
+            return path
+    roots.sort(key=lambda root: -root[1])
+    return roots[0][0] if roots[0][1] > roots[1][1] else None
+
+
 def reachable(root: str, texts: Mapping[str, str],
               known_paths: Iterable[str]) -> list[str]:
     """Files named from `root` that we have not read yet.
