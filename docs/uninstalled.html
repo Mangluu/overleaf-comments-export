@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Chrome opens this when someone removes the extension. Nobody searches for
+     it, and it should not compete with the real page in results. -->
+<meta name="robots" content="noindex">
+<title>Overleaf Comments Export, removed</title>
+<style>
+  :root { --bg:#14140f; --card:#1c1b18; --line:#2e2d28; --text:#f2efe6;
+          --muted:#9d998e; --green:#2f7d4f; --bright:#4ea877; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:radial-gradient(circle at 15% 0,#26302a,var(--bg) 55%);
+         color:var(--text); font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+         min-height:100vh; }
+  .wrap { max-width:600px; margin:0 auto; padding:64px 24px 80px; }
+  h1 { font-size:clamp(28px,5vw,38px); line-height:1.15; letter-spacing:-0.5px; margin:0 0 14px; }
+  .lede { color:#ded9cc; font-size:18px; margin:0 0 32px; }
+  h2 { font-size:15px; font-weight:640; color:var(--muted); letter-spacing:.3px; margin:0 0 12px; }
+  .reasons { display:grid; gap:10px; margin:0 0 26px; }
+  .reason { text-align:left; padding:14px 18px; border-radius:12px; cursor:pointer;
+            border:1px solid var(--line); background:rgba(255,255,255,.03);
+            color:var(--text); font:inherit; }
+  .reason:hover { border-color:#4a4943; }
+  .reason[aria-pressed="true"] { border-color:var(--bright); background:rgba(78,168,119,.12); }
+  label { display:block; color:var(--muted); font-size:15px; margin:0 0 8px; }
+  textarea { width:100%; min-height:110px; padding:12px 14px; border-radius:12px;
+             border:1px solid var(--line); background:var(--card); color:var(--text);
+             font:inherit; resize:vertical; }
+  textarea:focus, .reason:focus-visible, button:focus-visible { outline:2px solid var(--bright); outline-offset:2px; }
+  .send { margin-top:18px; padding:13px 26px; border:0; border-radius:12px; cursor:pointer;
+          background:var(--green); color:#fff; font:inherit; font-weight:640; }
+  .send:disabled { opacity:.45; cursor:default; }
+  .small { color:var(--muted); font-size:14px; margin:14px 0 0; }
+  .thanks h1 { margin-bottom:12px; }
+  a { color:var(--bright); }
+  footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--line);
+           color:var(--muted); font-size:14px; }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section id="ask">
+    <h1 data-t="title"></h1>
+    <p class="lede" data-t="lede"></p>
+    <h2 data-t="question"></h2>
+    <div class="reasons" id="reasons"></div>
+    <label for="details" data-t="details"></label>
+    <textarea id="details" maxlength="2000"></textarea>
+    <button class="send" id="send" type="button" disabled data-t="send"></button>
+    <p class="small" data-t="privacy"></p>
+  </section>
+
+  <section id="thanks" class="thanks" hidden>
+    <h1 data-t="thanks"></h1>
+    <p class="lede" id="broken-help" hidden>
+      <span data-t="brokenHelp"></span>
+      <a href="https://github.com/Mangluu/overleaf-comments-export/issues/new" data-t="openIssue"></a>
+    </p>
+    <p><a href="https://chromewebstore.google.com/detail/overleaf-comments-export/nbbappjfcankkjnpbaopjhejgdagaglc" data-t="reinstall"></a></p>
+  </section>
+
+  <footer>
+    <a href="https://mangluu.github.io/overleaf-comments-export/" data-t="home"></a>
+  </footer>
+</main>
+
+<script>
+"use strict";
+
+// Where answers go. A Google Form owned by the maintainer, posted to directly
+// so the page never leaves this site. Until it is filled in, Send opens a
+// prefilled GitHub issue instead, which works but needs a GitHub account.
+const FORM = null;
+// const FORM = {
+//   action: "https://docs.google.com/forms/d/e/FORM_ID/formResponse",
+//   fields: { reason: "entry.0", details: "entry.0", version: "entry.0", language: "entry.0" },
+// };
+
+const params = new URLSearchParams(location.search);
+const version = (params.get("v") || "").slice(0, 20);
+const lang = params.get("lang") === "zh" ? "zh" : "en";
+
+// Always recorded in English, so answers read the same whatever the language.
+const REASONS = [
+  ["broken", "It did not work on my paper", "在我的论文上无法正常工作"],
+  ["output", "The files were not what I needed", "导出的文件不是我需要的"],
+  ["once", "I only needed it once", "我只需要用一次"],
+  ["confusing", "I could not work out how to use it", "我不知道怎么使用"],
+  ["other", "Something else", "其他原因"],
+];
+
+const COPY = {
+  en: {
+    title: "Sorry to see it go",
+    lede: "Would you tell me what went wrong? One click is enough, and it helps fix it for the next person.",
+    question: "What happened?",
+    details: "Anything else? What were you trying to do?",
+    send: "Send",
+    privacy: "Only what you choose here is sent, with the extension's version. No name, no email, nothing from your paper.",
+    thanks: "Thank you. It goes straight to the person who builds it.",
+    brokenHelp: "If it broke on your paper, a short issue on GitHub gets it fixed fastest.",
+    openIssue: "Open an issue",
+    reinstall: "Changed your mind? Install it again",
+    home: "Overleaf Comments Export, free and open source",
+  },
+  zh: {
+    title: "很遗憾看到你离开",
+    lede: "能告诉我哪里出了问题吗？点一下就够了，这能帮我为下一个人修好它。",
+    question: "发生了什么？",
+    details: "还有什么想说的吗？你当时想做什么？",
+    send: "发送",
+    privacy: "只会发送你在这里选择或填写的内容，以及扩展的版本号。不包含姓名、邮箱，也不包含你论文中的任何内容。",
+    thanks: "谢谢！你的反馈会直接送到开发者手中。",
+    brokenHelp: "如果它在你的论文上出错了，在 GitHub 上提一个简短的 issue 能最快得到修复。",
+    openIssue: "提交 issue",
+    reinstall: "改变主意了？重新安装",
+    home: "Overleaf Comments Export，免费开源",
+  },
+};
+
+document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+for (const el of document.querySelectorAll("[data-t]")) el.textContent = COPY[lang][el.dataset.t];
+
+let chosen = null;
+const send = document.getElementById("send");
+const holder = document.getElementById("reasons");
+for (const [key, en, zh] of REASONS) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "reason";
+  button.textContent = lang === "zh" ? zh : en;
+  button.setAttribute("aria-pressed", "false");
+  button.addEventListener("click", () => {
+    chosen = { key, en };
+    for (const b of holder.children) b.setAttribute("aria-pressed", String(b === button));
+    send.disabled = false;
+  });
+  holder.append(button);
+}
+
+send.addEventListener("click", async () => {
+  if (!chosen) return;
+  send.disabled = true;
+  const details = document.getElementById("details").value.trim();
+
+  if (FORM) {
+    const body = new URLSearchParams({
+      [FORM.fields.reason]: chosen.en,
+      [FORM.fields.details]: details,
+      [FORM.fields.version]: version,
+      [FORM.fields.language]: lang,
+    });
+    // Google does not allow reading the reply from another site, so a sent
+    // request is taken as delivered. The answer is lost only if it never left.
+    try {
+      await fetch(FORM.action, { method: "POST", mode: "no-cors", body });
+    } catch {
+      send.disabled = false;
+      return;
+    }
+  } else {
+    const issue = new URL("https://github.com/Mangluu/overleaf-comments-export/issues/new");
+    issue.searchParams.set("title", `Uninstall feedback: ${chosen.en}`);
+    issue.searchParams.set("body", `${details || "No details given."}\n\nVersion ${version || "unknown"}, language ${lang}.`);
+    window.open(issue.href, "_blank", "noopener");
+  }
+
+  document.getElementById("ask").hidden = true;
+  document.getElementById("thanks").hidden = false;
+  document.getElementById("broken-help").hidden = chosen.key !== "broken";
+});
+</script>
+</body>
+</html>

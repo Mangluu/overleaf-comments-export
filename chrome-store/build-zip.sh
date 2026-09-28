@@ -14,7 +14,7 @@ OUT="$HERE/extension.zip"
 rm -f "$OUT"
 cd "$ROOT/browser-extension"
 zip -r -q -X "$OUT" \
-    manifest.json popup.html popup.css popup.js \
+    manifest.json background.js popup.html popup.css popup.js \
     src icons _locales \
     -x '*.DS_Store' '*/node_modules/*'
 cd "$ROOT"

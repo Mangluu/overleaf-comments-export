@@ -10,6 +10,9 @@
     "downloads",
     "scripting"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "__MSG_actionTitle__",
     "default_popup": "popup.html",

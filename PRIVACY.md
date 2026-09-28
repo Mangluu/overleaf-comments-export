@@ -35,6 +35,14 @@ Into the folder you chose, on your computer. Nowhere else.
 The settings file is named at the bottom of the window and you can delete it
 whenever you like.
 
+## When you remove the extension
+
+Chrome opens a page on this project's website asking why. Its address carries
+the extension's version and your browser's language, and nothing else. The
+page sends nothing unless you pick a reason and press Send, and then only what
+you picked and typed, with that version, to a form only the maintainer can
+read.
+
 ## Your project is never modified
 
 Everything here only reads. It does not post replies, resolve threads, edit
