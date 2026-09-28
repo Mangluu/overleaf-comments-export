@@ -1,5 +1,37 @@
 # Submission record
 
+## Update 3, ready to upload
+
+A fix release. The store has been serving 1.7.0, and on today's overleaf.com
+most of what 1.7.0 added did nothing.
+
+| | |
+|---|---|
+| extension version | 1.8.0 |
+| replaces | 1.7.0 |
+| package | chrome-store/extension.zip |
+| package sha256 | `c86b1c3925081bff866cd2a71a41d708cea20ecd9f367c2a56f4f3b693c720ba` |
+| package size | 46K |
+| screenshots | unchanged |
+| permissions | unchanged |
+
+What it fixes.
+
+- Comments are filed under their real file names again. overleaf.com stopped
+  putting the file tree in the page, so every export used document ids.
+- A paper in several files is read in document order, so sections and figure
+  numbers follow the whole paper.
+- Spreadsheet, This file only, One person and the comparison with the last
+  export all work. All four were silently ignored in 1.7.0.
+
+Nothing new is asked of the user and no permission changes, so review should
+treat it as a routine update.
+
+Before uploading, load the folder unpacked and export one real multi-file
+project with every box ticked. See CHECKLIST.md.
+
+---
+
 ## Update 2, ready to upload
 
 The store is still serving **1.1.0**. Everything from 1.2.0 to 1.7.0 goes up
