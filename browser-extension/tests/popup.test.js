@@ -187,3 +187,15 @@ test("the result says where the files went", () => {
     assert.match(copy.savedTo, /\{folder\}/, `${code} savedTo has no {folder}`);
   }
 });
+
+test("the paper a snapshot belongs to is read from the tab's address", () => {
+  // It was read from activeTab.projectId, which Chrome's Tab object has never
+  // had, so no snapshot was ever saved and whats-new.md never appeared.
+  const { api } = loadPopup();
+  assert.equal(api.projectIdFromUrl("https://www.overleaf.com/project/0123456789abcdef01234567"),
+    "0123456789abcdef01234567");
+  assert.equal(api.projectIdFromUrl("https://www.overleaf.com/project/0123456789abcdef01234567?a=1#b"),
+    "0123456789abcdef01234567");
+  assert.equal(api.projectIdFromUrl("https://www.overleaf.com/project"), "");
+  assert.equal(api.projectIdFromUrl(undefined), "");
+});

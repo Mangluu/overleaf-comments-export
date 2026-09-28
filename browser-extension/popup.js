@@ -275,6 +275,17 @@ function renderPageState() {
   ui.pageDetail.textContent = pageStatus === "invalid" ? t("invalidPageHelp") : pageDetail;
 }
 
+// The paper a snapshot belongs to. This used to be read from
+// activeTab.projectId, which Chrome's Tab object has never had, so no
+// snapshot was ever saved and whats-new.md could not appear.
+function projectIdFromUrl(value) {
+  try {
+    return (new URL(value).pathname.match(PROJECT_PATH_RE) || [])[1] || "";
+  } catch {
+    return "";
+  }
+}
+
 function isSupportedProjectUrl(value) {
   try {
     const url = new URL(value);
@@ -464,7 +475,7 @@ ui.exportButton.addEventListener("click", async () => {
   ui.result.hidden = true;
 
   try {
-    const projectId = activeTab?.projectId || "";
+    const projectId = projectIdFromUrl(activeTab?.url);
     if (projectId) options.previousSnapshot = loadSnapshot(projectId);
     const result = await collectFromPage(options);
     if (!result?.ok) throw new Error(result?.error || t("invalidResult"));
@@ -484,8 +495,9 @@ ui.exportButton.addEventListener("click", async () => {
       changes: summary.trackedChangeCount,
       files: result.outputs.length,
     });
-    const markdownFile = result.outputs.find((o) => o.filename.endsWith(".md")
-      && !o.filename.startsWith("agents") && !o.filename.startsWith("whats-new"));
+    // The comments file by name. Any .md used to match, so with Markdown
+    // unticked the button copied the response letter under this label.
+    const markdownFile = result.outputs.find((o) => /^comments-.*\.md$/.test(o.filename));
     lastMarkdown = markdownFile ? markdownFile.content || "" : "";
 
     message += ` ${t("savedTo", { folder })}`;
@@ -514,5 +526,6 @@ if (typeof module === "object" && module.exports) {
   module.exports = {
     COPY, DEFAULT_LANGUAGE, resolveLanguage, languageChoices,
     CHOICE_DEFAULTS, readStoredChoices, loadSnapshot, saveSnapshot,
+    projectIdFromUrl,
   };
 }

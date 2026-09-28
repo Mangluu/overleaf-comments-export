@@ -1,8 +1,9 @@
 (function attachOverleafPageClient(root) {
   "use strict";
 
-  const VERSION = "1.6.0";
-  if (root.__overleafCommentsExtension?.version === VERSION) return;
+  // No "already injected" guard. There used to be one, keyed on a version
+  // string nobody remembered to bump, so after an update a tab could keep
+  // answering with the old collect(). Defining it again costs nothing.
 
   const core = root.OverleafCommentsCore;
   if (!core) throw new Error("OverleafCommentsCore was not loaded before page-client.js.");
@@ -18,8 +19,9 @@
       invalidThreads: "Overleaf 的评论接口返回了无法识别的数据结构。",
       resolvedWarning: "无法读取独立的 resolved 列表，已使用 thread 自带状态",
       rangesWarning: "无法读取评论锚点，评论仍会导出但可能没有文件名和行号",
-      filesWarning: "当前页面没有暴露完整文件树，部分文件将使用文档 ID 命名",
+      filesWarning: "部分文件无法确定文件名，将使用文档 ID 命名",
       sourceWarning: "无法下载源文件 {file}，相关评论将作为未定位讨论导出",
+      noOpenDoc: "无法确定当前打开的是哪个文件。请在左侧文件列表中点击该文件，或取消勾选“仅当前文件”。",
     },
     en: {
       notSignedIn: "This tab is not signed in to Overleaf. Sign in, reload the project, then try again.",
@@ -31,8 +33,9 @@
       invalidThreads: "The Overleaf comments endpoint returned an unrecognized data structure.",
       resolvedWarning: "The separate resolved list was unavailable; thread-level status was used instead",
       rangesWarning: "Comment anchors were unavailable; comments were exported without reliable filenames or line numbers",
-      filesWarning: "The page did not expose the complete file tree; some files use document IDs as names",
+      filesWarning: "Some files could not be named, so they use document IDs instead",
       sourceWarning: "Could not download {file}; its comments were exported as unlocated discussions",
+      noOpenDoc: "Could not tell which file is open. Click it in the file list on the left, or untick This file only.",
     },
   };
   let currentLanguage = "en";
@@ -155,6 +158,23 @@
     return true;
   }
 
+  // "This file only" means the document open in the editor. Older pages put
+  // its id in the address or in a meta tag. Today's file list marks the open
+  // item aria-selected, and the element carrying data-file-id is the first
+  // thing inside that item, ahead of any folder contents. See
+  // file-tree-doc.tsx and file-tree-item-inner.tsx in overleaf/overleaf.
+  function openDocFromPage() {
+    const legacy = (location.pathname.match(/\/doc\/([0-9a-f]{24})/i) || [])[1]
+      || readMeta("ol-openDocId");
+    if (legacy) return String(legacy);
+    const open = [];
+    for (const item of document.querySelectorAll?.('li[role="treeitem"][aria-selected="true"]') || []) {
+      const entity = item.querySelector?.("[data-file-id]");
+      if (entity?.getAttribute("data-file-type") === "doc") open.push(entity.getAttribute("data-file-id"));
+    }
+    return open.length === 1 ? open[0] : null;
+  }
+
   function readProjectMetadata(projectId) {
     const project = readMeta("ol-project");
     const titleFromMeta = readMeta("ol-projectName", "ol-project-name", "ol-project_name");
@@ -206,6 +226,14 @@
       throw new RequestError(tx("http", { path, status: response.status }), response.status);
     }
 
+    // A document download names its file in this header, and on today's
+    // Overleaf that is the only place the name is to be had.
+    if (responseType === "doc") {
+      return {
+        text: await response.text(),
+        name: core.fileNameFromDisposition(response.headers.get("content-disposition")),
+      };
+    }
     if (responseType === "text") return response.text();
     try {
       return await response.json();
@@ -310,14 +338,22 @@
 
   async function collect(userOptions = {}) {
     currentLanguage = userOptions.language === "zh" ? "zh" : "en";
+    // Everything the popup sends, normalised. In 1.7.0 this was rebuilt from
+    // a list older than four of the popup's options, so Spreadsheet, This file
+    // only, One person and the comparison with the last export all reached
+    // this point and were dropped without a word.
     const options = {
       language: currentLanguage,
       includeResolved: userOptions.includeResolved !== false,
       includeChanges: userOptions.includeChanges !== false,
+      currentFileOnly: Boolean(userOptions.currentFileOnly),
+      reviewer: String(userOptions.reviewer || "").trim(),
+      previousSnapshot: userOptions.previousSnapshot || null,
       formats: {
         markdown: userOptions.formats?.markdown !== false,
         json: userOptions.formats?.json !== false,
         jsonl: Boolean(userOptions.formats?.jsonl),
+        xlsx: Boolean(userOptions.formats?.xlsx),
         responseLetter: Boolean(userOptions.formats?.responseLetter),
       },
     };
@@ -333,6 +369,7 @@
     if (!signedIn()) throw new RequestError(tx("notSignedIn"), 401);
 
     const metadata = readProjectMetadata(projectId);
+    let rootDocId = metadata.rootDocId;
 
     const rawThreadsPayload = await request(`/project/${projectId}/threads`);
     const rawThreads = rawThreadsPayload?.threads && typeof rawThreadsPayload.threads === "object"
@@ -357,22 +394,21 @@
       warnings.push(tx("rangesWarning"));
     }
 
+    // Only older pages carry the tree. On today's Overleaf this stays empty
+    // and the names are worked out further down instead.
     const docIdToPath = {};
     for (const entry of core.flattenFiles(metadata.filesRoot)) {
       docIdToPath[entry.docId] = entry.pathname;
     }
-    if (!Object.keys(docIdToPath).length) {
-      warnings.push(tx("filesWarning"));
-    }
 
     const rangeEntries = core.documentRanges(rangesPayload);
-    // "This file only" narrows to the document open in the editor. Overleaf
-    // puts it in the address; on a thesis it is the difference between one
-    // chapter and the whole book.
-    const openDocId = options.currentFileOnly
-      ? (location.pathname.match(/\/doc\/([0-9a-f]{24})/i) || [])[1]
-        || readMeta("ol-openDocId") || null
-      : null;
+    // "This file only" narrows to the document open in the editor. On a
+    // thesis it is the difference between one chapter and the whole book.
+    const openDocId = options.currentFileOnly ? openDocFromPage() : null;
+    if (options.currentFileOnly && !openDocId) {
+      // Exporting the whole paper instead is the silent failure this replaces.
+      return { ok: false, error: tx("noOpenDoc") };
+    }
     const docIds = [...new Set(
       rangeEntries
         .filter((entry) => !openDocId || entry.docId === openDocId)
@@ -381,23 +417,67 @@
     )];
     // The root as well, even with no comments in it, because it names the
     // order the rest are read in.
-    if (metadata.rootDocId && !docIds.includes(metadata.rootDocId)) {
-      docIds.push(metadata.rootDocId);
-    }
+    if (rootDocId && !docIds.includes(rootDocId)) docIds.push(rootDocId);
+
     const docTexts = {};
-    let fetched = 0;
-    await throwIfStopped();
-    await report("files", 0, docIds.length);
-    await mapWithConcurrency(docIds, 4, async (docId) => {
+    const docNames = {};
+    let read = 0;
+    let toRead = docIds.length;
+    // warn is off for files read only to put the paper in order. They have no
+    // comments to lose, so a failure there costs the numbering, which
+    // assembleExport already withholds rather than guesses.
+    async function readDocs(ids, { warn = true } = {}) {
+      await throwIfStopped();
+      await report("files", read, toRead);
+      await mapWithConcurrency(ids, 4, async (docId) => {
+        try {
+          const doc = await request(`/Project/${projectId}/doc/${encodeURIComponent(docId)}/download`, "doc");
+          docTexts[docId] = doc.text;
+          if (doc.name) docNames[docId] = doc.name;
+        } catch {
+          if (warn) warnings.push(tx("sourceWarning", { file: docIdToPath[docId] || docId }));
+        }
+        read += 1;
+        await report("files", read, toRead);
+      });
+    }
+    await readDocs(docIds);
+
+    if (!Object.keys(docIdToPath).length) {
+      // Today's Overleaf. Each download named its own file, and this lists
+      // every path in the project, which supplies the folders.
+      let docPaths = [];
       try {
-        docTexts[docId] = await request(`/Project/${projectId}/doc/${encodeURIComponent(docId)}/download`, "text");
+        const listing = await request(`/project/${projectId}/entities`);
+        docPaths = (listing?.entities || [])
+          .filter((entity) => entity?.type === "doc" && typeof entity.path === "string")
+          .map((entity) => entity.path.replace(/^\/+/, ""));
       } catch (error) {
-        const label = docIdToPath[docId] || docId;
-        warnings.push(tx("sourceWarning", { file: label }));
+        if (error.status === 401 || error.status === 403) throw error;
+        // Names without their folders are still far better than ids.
       }
-      fetched += 1;
-      await report("files", fetched, docIds.length);
-    });
+      // A paper in several files is only put in order, and its figures only
+      // numbered, if every part is read, the parts with no comments included.
+      // They are small text files, and nothing else says which one is the root.
+      if (!rootDocId && docPaths.filter((path) => /\.tex$/i.test(path)).length > 1) {
+        const rest = [...new Set(rangeEntries.map((entry) => entry.docId))]
+          .filter((docId) => !(docId in docTexts));
+        toRead += rest.length;
+        await readDocs(rest, { warn: false });
+      }
+      Object.assign(docIdToPath, core.placeDocs(docNames, docPaths));
+      if (!rootDocId) {
+        const textsByPath = {};
+        for (const [docId, text] of Object.entries(docTexts)) {
+          if (docIdToPath[docId]) textsByPath[docIdToPath[docId]] = text;
+        }
+        const rootPath = core.pickRootPath(textsByPath);
+        rootDocId = Object.keys(docIdToPath).find((docId) => docIdToPath[docId] === rootPath) || null;
+      }
+    }
+    if (Object.keys(docTexts).some((docId) => !docIdToPath[docId])) {
+      warnings.push(tx("filesWarning"));
+    }
 
     // Files with no comments in them still hold figures, and a figure decides
     // what number the next one gets. Follow the includes from the root and
@@ -436,11 +516,30 @@
     await throwIfStopped();
     await report("building", 0, 0);
 
+    // Narrowed to one file, a thread anchored in another file is simply not
+    // part of this export. Left in, assembleExport never sees its anchor and
+    // files it under threads that "could not be mapped to live source text",
+    // which is false. A thread anchored nowhere at all stays, since it could
+    // just as well belong here.
+    let threadsInScope = rawThreads;
+    if (openDocId) {
+      const elsewhere = new Set();
+      for (const entry of rangeEntries) {
+        if (entry.docId === openDocId) continue;
+        for (const comment of entry.comments) {
+          const threadId = comment?.op?.t || comment?.t;
+          if (threadId) elsewhere.add(String(threadId));
+        }
+      }
+      threadsInScope = Object.fromEntries(
+        Object.entries(rawThreads).filter(([threadId]) => !elsewhere.has(threadId)));
+    }
+
     const exported = core.assembleExport({
       projectId,
       projectTitle: metadata.title,
       language: options.language,
-      rawThreads,
+      rawThreads: threadsInScope,
       resolvedIds,
       rangesPayload: openDocId
         ? rangeEntries.filter((e) => e.docId === openDocId)
@@ -448,7 +547,7 @@
         : rangesPayload,
       docTexts,
       docIdToPath,
-      rootDocId: metadata.rootDocId,
+      rootDocId,
       includeResolved: options.includeResolved,
       reviewer: options.reviewer || "",
       includeChanges: options.includeChanges,
@@ -474,7 +573,7 @@
   }
 
   root.__overleafCommentsExtension = {
-    version: VERSION,
+    version: core.TOOL_VERSION,
     collect,
   };
 })(globalThis);

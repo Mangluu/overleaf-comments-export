@@ -8,7 +8,9 @@
   "use strict";
 
   const SCHEMA_VERSION = "1.3";
-  const TOOL_VERSION = "1.6.0-extension";
+  // Must equal manifest.json's version. A test holds the two together, because
+  // this had been left at 1.6.0 while 1.7.0 shipped.
+  const TOOL_VERSION = "1.8.0-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 
@@ -309,6 +311,87 @@
 
   function resolveInclude(ref, available) {
     return matchInclude(ref, available);
+  }
+
+  // ---- Naming files, now that the page no longer does ----------------------
+  //
+  // Overleaf's editor page used to carry the whole file tree, with the root
+  // document, in an ol-project meta tag. It stopped. The tags it emits today
+  // are in services/web/app/views/project/editor/_meta.pug, and none of them
+  // is a tree. What is left is enough, though. Every document download names
+  // its file in Content-Disposition, see DocumentUpdaterController.getDoc,
+  // and /project/:id/entities lists every path without saying which id is
+  // which. A name that ends only one path is that path.
+
+  function fileNameFromDisposition(header) {
+    const value = String(header || "");
+    // The encoded form is the exact name, so it wins when both are sent.
+    const encoded = value.match(/filename\*\s*=\s*[^']*'[^']*'([^;\s]+)/i);
+    if (encoded) {
+      try {
+        return decodeURIComponent(encoded[1]);
+      } catch {
+        // Malformed escapes. The plain form below is still worth trying.
+      }
+    }
+    const quoted = value.match(/filename\s*=\s*"((?:[^"\\]|\\.)*)"/i);
+    if (quoted) return quoted[1].replace(/\\(.)/g, "$1") || null;
+    const bare = value.match(/filename\s*=\s*([^;\s]+)/i);
+    return bare ? bare[1] : null;
+  }
+
+  function placeDocs(docNames, docPaths = []) {
+    const pathsByName = new Map();
+    for (const path of docPaths) {
+      const name = path.slice(path.lastIndexOf("/") + 1);
+      pathsByName.set(name, [...(pathsByName.get(name) || []), path]);
+    }
+    const timesSeen = new Map();
+    for (const name of Object.values(docNames)) {
+      if (name) timesSeen.set(name, (timesSeen.get(name) || 0) + 1);
+    }
+    const placed = {};
+    for (const [docId, name] of Object.entries(docNames)) {
+      if (!name) continue;
+      const paths = pathsByName.get(name) || [];
+      if (paths.length === 1) {
+        placed[docId] = paths[0];
+      } else if (paths.length > 1 || timesSeen.get(name) > 1) {
+        // ponytail: two files with one name are kept apart by id, not by
+        // folder, since nothing here says which id lives where. The project
+        // zip can settle it by content, as filenames.py does, if anyone needs.
+        placed[docId] = `${name} [${docId.slice(-6)}]`;
+      } else {
+        placed[docId] = name;
+      }
+    }
+    return placed;
+  }
+
+  // The root is the one file that is a whole document on its own, a class and
+  // a body. standalone is how people build a figure and subfiles how they
+  // build a chapter, and both look complete without being the paper.
+  const NOT_THE_PAPER = /^(standalone|subfiles)$/i;
+
+  function pickRootPath(textsByPath) {
+    const roots = [];
+    for (const [path, text] of Object.entries(textsByPath || {})) {
+      if (!/\.tex$/i.test(path) || typeof text !== "string") continue;
+      const body = stripComments(text);
+      const docClass = body.match(/\\documentclass\s*(?:\[[^\]]*\])?\s*\{\s*([^}\s]+)\s*\}/);
+      if (!docClass || NOT_THE_PAPER.test(docClass[1])) continue;
+      if (!/\\begin\s*\{document\}/.test(body)) continue;
+      roots.push({ path, pulls: findIncludes(text).length });
+    }
+    if (roots.length < 2) return roots[0]?.path || null;
+    // A paper beside a cover letter or a rebuttal. main.tex is what Overleaf
+    // calls the root of a new project, and failing that the paper is the file
+    // that pulls the others in. A tie stays unresolved: no document order is
+    // better than the wrong one.
+    const main = roots.find((root) => root.path.toLowerCase() === "main.tex");
+    if (main) return main.path;
+    roots.sort((a, b) => b.pulls - a.pulls);
+    return roots[0].pulls > roots[1].pulls ? roots[0].path : null;
   }
 
   function flattenProject(root, texts) {
@@ -1675,5 +1758,9 @@ Project ID for reference: \`${payload.project.id}\`.
     renderResponseLetter,
     resolveAnchor,
     toMilliseconds,
+    fileNameFromDisposition,
+    placeDocs,
+    pickRootPath,
+    TOOL_VERSION,
   };
 });

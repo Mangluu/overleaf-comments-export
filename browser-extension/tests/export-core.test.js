@@ -258,3 +258,79 @@ test("the reviewer filter ignores case and matches an email", () => {
   assert.equal(run("someone@example.com"), 1);
   assert.equal(run("SOMEONE"), 1);
 });
+
+// ---- Naming files and finding the root on today's Overleaf ---------------
+
+test("the file name is read from the download's Content-Disposition", () => {
+  const core = require("../src/export-core.js");
+  assert.equal(core.fileNameFromDisposition('attachment; filename="main.tex"'), "main.tex");
+  assert.equal(core.fileNameFromDisposition("attachment; filename=main.tex"), "main.tex");
+  // The encoded form wins when both are sent, because it is the exact name.
+  assert.equal(core.fileNameFromDisposition(
+    "attachment; filename=\"r?sum?.tex\"; filename*=UTF-8''r%C3%A9sum%C3%A9.tex"), "résumé.tex");
+  assert.equal(core.fileNameFromDisposition('attachment; filename="say \\"hi\\".tex"'), 'say "hi".tex');
+  assert.equal(core.fileNameFromDisposition(""), null);
+  assert.equal(core.fileNameFromDisposition(null), null);
+});
+
+test("a name is given its folder when only one path ends in it", () => {
+  const core = require("../src/export-core.js");
+  const placed = core.placeDocs(
+    { a: "main.tex", b: "method.tex", c: "intro.tex", d: "intro.tex" },
+    ["main.tex", "sections/method.tex", "sections/intro.tex", "appendix/intro.tex"],
+  );
+  assert.equal(placed.a, "main.tex");
+  assert.equal(placed.b, "sections/method.tex");
+  // Two files called intro.tex. Which id is which folder cannot be known from
+  // here, so they are kept apart by id rather than merged or guessed.
+  assert.notEqual(placed.c, placed.d);
+  assert.match(placed.c, /^intro\.tex /);
+  assert.match(placed.d, /^intro\.tex /);
+});
+
+test("with no list of paths, the bare name is kept", () => {
+  const core = require("../src/export-core.js");
+  assert.deepEqual(core.placeDocs({ a: "method.tex" }, []), { a: "method.tex" });
+});
+
+test("the root is the one complete document", () => {
+  const core = require("../src/export-core.js");
+  const doc = (cls, body = "") => `\\documentclass{${cls}}\n\\begin{document}\n${body}\\end{document}\n`;
+  assert.equal(core.pickRootPath({
+    "paper.tex": doc("article", "\\input{sec}\n"),
+    "sec.tex": "\\section{A}\n",
+  }), "paper.tex");
+
+  // A figure built with standalone, and a chapter built with subfiles, both
+  // look like complete documents and neither is the root.
+  assert.equal(core.pickRootPath({
+    "paper.tex": doc("acmart"),
+    "figures/plot.tex": doc("standalone"),
+    "chapters/one.tex": "\\documentclass[../paper.tex]{subfiles}\n\\begin{document}\nx\n\\end{document}\n",
+  }), "paper.tex");
+
+  // A commented-out class line is not a class line.
+  assert.equal(core.pickRootPath({
+    "notes.tex": "% \\documentclass{article}\n\\begin{document}\n",
+    "real.tex": doc("article"),
+  }), "real.tex");
+});
+
+test("with several complete documents, main.tex wins, then the one that pulls in most", () => {
+  const core = require("../src/export-core.js");
+  const doc = (body = "") => `\\documentclass{article}\n\\begin{document}\n${body}\\end{document}\n`;
+  assert.equal(core.pickRootPath({ "main.tex": doc(), "letter.tex": doc() }), "main.tex");
+  assert.equal(core.pickRootPath({
+    "paper.tex": doc("\\input{a}\n\\input{b}\n"),
+    "rebuttal.tex": doc(),
+  }), "paper.tex");
+  // A tie is left unresolved. No order is better than the wrong one.
+  assert.equal(core.pickRootPath({ "x.tex": doc(), "y.tex": doc() }), null);
+});
+
+test("the version the export reports is the version in the manifest", () => {
+  // Both version strings had drifted to 1.6.0 while 1.7.0 shipped.
+  const core = require("../src/export-core.js");
+  const manifest = require("../manifest.json");
+  assert.equal(core.TOOL_VERSION, `${manifest.version}-extension`);
+});
