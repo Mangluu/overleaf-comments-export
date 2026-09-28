@@ -51,7 +51,7 @@ jobs:
           # The pdf extra matters here more than anywhere: these apps exist
           # for people who do not have Python, and putting the comments into
           # the PDF is the reason most of them will open it.
-          python -m pip install ".[gui,pdf]" pyinstaller
+          python -m pip install ".[gui,pdf,xlsx]" pyinstaller
 
       - name: Build
         shell: bash
@@ -64,6 +64,7 @@ jobs:
             --collect-all sv_ttk \
             --collect-submodules browser_cookie3 \
             --collect-all pymupdf \
+            --collect-submodules openpyxl \
             packaging/app_entry.py
 
       - name: Add a readme people will actually see

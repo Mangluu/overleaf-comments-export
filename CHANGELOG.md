@@ -4,6 +4,37 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.22.2] — 2026-09-28
+
+### Fixed
+- **A paper split across files had its figures numbered file by file again.**
+  The document order added in 0.22.0 needs to know which file is the root,
+  and it learned that from a tag on the Overleaf editor page. overleaf.com
+  stopped sending that tag, so the order never ran. A comment on the third
+  figure in the paper came back as Figure 1, and a comment in an included
+  file lost the section it sits under.
+
+  The tool now finds the root itself. It reads the paper's `.tex` files, the
+  ones with no comments included, and picks the one that is a whole document
+  on its own. A figure built with `standalone` or a chapter built with
+  `subfiles` is not the paper. When two files tie, no order is claimed,
+  because no number is better than the wrong one.
+
+  The tests had been faking the answer the site no longer gives, which is how
+  this went unnoticed.
+
+### Added
+- **A spreadsheet.** `--xlsx`, or A spreadsheet in the window, writes
+  `comments.xlsx` on three sheets, one each for comments, replies and tracked
+  changes, so you can sort, filter to one reviewer and tick things off. It
+  needs the `[xlsx]` extra, which `[all]` now includes, and the Windows and
+  Linux apps have it built in.
+- **A page to send a co-author.** `--html`, or A page to send in the window,
+  writes `comments.html`. It is one file with search and filters, works
+  offline, and fetches nothing, so it opens anywhere.
+- **Recent papers in the window.** Papers you have exported before are under
+  Recent, and choosing one fills in the link and the folder it went to.
+
 ## [0.22.1] — 2026-08-31
 
 ### Fixed

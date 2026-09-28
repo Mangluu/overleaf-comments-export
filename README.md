@@ -95,12 +95,14 @@ someone rather than a repository.
 
 |  | Extension | Python tool and app |
 |---|---|---|
-| To install | Load a folder in your browser | pip, or download an app |
+| To install | From the Chrome Web Store | pip, or download an app |
 | Session cookie | Never touched | Read from your browser, or pasted |
-| Markdown, JSON, JSONL, reply letter | Yes | Yes |
+| Markdown, JSON, JSONL, spreadsheet, reply letter | Yes | Yes |
+| Only one person's threads | Yes | Yes |
+| Only the file open in the editor | Yes | No |
 | `commented.pdf`, the paper with the comments highlighted | No | Yes |
 | Comments written into your LaTeX | No | Yes |
-| One report per reviewer, reviewer filters, git-stable output | No | Yes |
+| One report per reviewer, git-stable output, a page to send a co-author | No | Yes |
 | Interface language | English and Chinese | English |
 
 Use the extension when you want the comments out with nothing to install. Use
@@ -113,12 +115,13 @@ leaves an old version in place and says "Requirement already satisfied", so you
 end up running whatever you installed months ago.
 
 ```bash
-pip install --upgrade "overleaf-comments-export[gui,pdf]"
+pip install --upgrade "overleaf-comments-export[all]"
 overleaf-comments-export --gui
 ```
 
 That opens the same window. Paste your project link, choose a folder, press the
-button.
+button. Papers you have exported before are under Recent, which fills in the
+link and the folder for you.
 
 The window is not a reduced version of the tool. Everything below is in it,
 including the reply letter, the comments-in-the-PDF option, and the tidy output
@@ -142,6 +145,8 @@ Python 3.10 or newer, tested up to 3.14, on macOS, Windows, and Linux.
 | `agents.md` | A short brief telling an AI assistant how to read the other two. |
 | `whats-new.md` | Only what changed since your last export into that folder. Written from the second run onwards. |
 | `response-letter.md` | Optional. A point-by-point reply document with a blank slot under every open comment. |
+| `comments.xlsx` | Optional. A spreadsheet on three sheets, comments, replies and tracked changes, for sorting, filtering and ticking things off. |
+| `comments.html` | Optional. One self-contained page with search and filters, to send a co-author who will not install anything. Works offline. |
 | `commented.pdf` | Optional. Your paper as Overleaf builds it, with the comments highlighted on the text. |
 | `annotated/` | Optional. Your LaTeX with the comments embedded, if you would rather compile it yourself. |
 | `source/` | Optional. The text of every commented file. The offsets in `comments.json` index into these. |
@@ -216,6 +221,8 @@ change.
 --pdf                      # a PDF of your paper with the comments in it
 --include-source           # the full text of every commented file
 --response-letter          # draft a point-by-point reply document
+--xlsx                     # a spreadsheet, needs the [xlsx] extra
+--html                     # one page to send a co-author
 --annotated-tex            # a copy of your source with the comments embedded
 --annotate-style todonotes # put those comments in the margin instead
 --per-reviewer             # one report per reviewer
