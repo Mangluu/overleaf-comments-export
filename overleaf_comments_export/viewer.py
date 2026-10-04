@@ -189,7 +189,9 @@ def render_viewer(payload: dict[str, Any]) -> str:
         count=len(data["comments"]),
         pulled=f", pulled {html.escape(data['pulled'])}" if data["pulled"] else "",
         version=html.escape(__version__),
-        # </script> inside the data would end the block early, so the one
-        # sequence that can escape a script tag is broken up.
-        data=json.dumps(data, ensure_ascii=False).replace("</", "<\\/"),
+        # Every "<" escaped, not only "</". Inside a script block the HTML
+        # parser watches for "<!--" and "<script" as well as "</script", and a
+        # comment containing "<!--<script" kept the block from ever closing, so
+        # the page came up blank with no error. JSON reads "\\u003c" as "<".
+        data=json.dumps(data, ensure_ascii=False).replace("<", "\\u003c"),
     )

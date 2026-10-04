@@ -50,17 +50,18 @@ def test_the_comment_is_actually_in_the_page():
     assert "Bakhtawar Khan" in page
 
 
-def test_a_comment_cannot_close_the_script_block():
-    """A comment really can contain </script>, and if it ends the block the
-    page stops working and shows raw data instead."""
+def test_a_comment_cannot_break_the_script_block():
+    """A comment can contain anything. "</script>" would end the block early,
+    and "<!--<script" kept it from ever ending, which in Chrome left the page
+    blank with no error. With no "<" at all in the data, neither can happen."""
     p = payload()
-    p["threads"]["t1"]["messages"][0]["content"] = "use </script> carefully <b>x</b>"
+    p["threads"]["t1"]["messages"][0]["content"] = (
+        "use </script> carefully, try <!--<script> in the template, <b>x</b>")
     page = render_viewer(p)
-    body = page.split("const DATA = ", 1)[1]
-    assert "</script>" not in body.split("</script>", 1)[0] or True
-    # The sequence must not appear unescaped anywhere in the data blob.
-    blob = body.split(";\n", 1)[0]
-    assert "</" not in blob, "a comment could end the script block"
+    blob = page.split("const DATA = ", 1)[1].split(";\nconst list", 1)[0]
+    assert "<" not in blob, "a comment can still change how the page is parsed"
+    # And nothing is lost: the reader still sees exactly what was written.
+    assert json.loads(blob)["comments"][0]["messages"][0]["text"].startswith("use </script>")
 
 
 def test_a_title_with_html_in_it_is_escaped():
@@ -72,7 +73,7 @@ def test_a_title_with_html_in_it_is_escaped():
 def test_the_data_is_valid_json():
     page = render_viewer(payload())
     blob = page.split("const DATA = ", 1)[1].split(";\nconst list", 1)[0]
-    data = json.loads(blob.replace("<\\/", "</"))
+    data = json.loads(blob)
     assert data["comments"][0]["id"] == "C001"
 
 
