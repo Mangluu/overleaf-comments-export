@@ -351,3 +351,18 @@ test("a comment on a position, with no anchored text, is not stale", () => {
   assert.equal(core.resolveAnchor(text, starts, text.indexOf("fast"), "fast").stale, false);
   assert.equal(core.resolveAnchor(text, starts, 0, "gone for good").stale, true);
 });
+
+test("a spreadsheet holds only characters XML allows, and no cell Excel would refuse", () => {
+  // A stray U+FFFE or U+FFFF left the sheet unreadable to Excel, and a cell
+  // over 32,767 characters makes Excel offer a repair instead of opening it.
+  const xlsx = require("../src/xlsx.js");
+  const hostile = "bell\u0007 vtab\u000B noncharacter￾￿ and ]]> <&>";
+  const bytes = xlsx.build({ comments: [["Comment"], [hostile], ["x".repeat(40000)]], replies: [["A"]], changes: [["A"]] });
+  const text = Buffer.from(bytes).toString("latin1");
+  const start = text.indexOf("<worksheet");
+  const sheet = Buffer.from(text.slice(start, text.indexOf("</worksheet>", start) + 12), "latin1").toString("utf8");
+  assert.doesNotMatch(sheet, /[^\t\n\r -퟿-�\u{10000}-\u{10FFFF}]/u, "a character XML forbids is still in the sheet");
+  assert.match(sheet, /bell vtab noncharacter and \]\]&gt; &lt;&amp;&gt;/);
+  const longest = Math.max(...[...sheet.matchAll(/<t xml:space="preserve">([^<]*)<\/t>/g)].map((m) => Array.from(m[1]).length));
+  assert.equal(longest, 32767);
+});

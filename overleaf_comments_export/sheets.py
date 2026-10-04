@@ -16,6 +16,8 @@ drift into different spreadsheets.
 
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 COMMENT_COLUMNS = [
@@ -104,6 +106,21 @@ def build_rows(payload: dict[str, Any]) -> dict[str, list[list[Any]]]:
     return {"Comments": comments, "Replies": replies, "Tracked changes": changes}
 
 
+# Everything XML 1.0 does not allow. openpyxl refuses a control character in
+# a cell with IllegalCharacterError, and that ended the whole export, so one
+# comment pasted from Word with a vertical tab in it meant no files at all.
+_NOT_XML = re.compile("[^\t\n\r\u0020-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+
+
+def _cell(value: Any) -> Any:
+    """A value Excel will open. The extension's writer applies the same rule.
+
+    Length needs nothing here: openpyxl already cuts a string at 32,767
+    characters, Excel's limit for one cell.
+    """
+    return _NOT_XML.sub("", value) if isinstance(value, str) else value
+
+
 def write_xlsx(payload: dict[str, Any], path) -> None:
     """Write the sheets to an .xlsx file.
 
@@ -128,7 +145,7 @@ def write_xlsx(payload: dict[str, Any], path) -> None:
     for name, rows in sheets.items():
         sheet = book.create_sheet(title=name)
         for row in rows:
-            sheet.append(row)
+            sheet.append([_cell(value) for value in row])
         # A header you can still read after scrolling, and filters, because
         # the entire point of this format is sorting and filtering.
         sheet.freeze_panes = "A2"

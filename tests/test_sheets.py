@@ -129,3 +129,75 @@ def test_every_row_matches_its_header_width():
         width = len(table[0])
         for i, row in enumerate(table[1:], start=2):
             assert len(row) == width, f"{name} row {i} has {len(row)} of {width}"
+
+
+# --- characters a comment can carry that a spreadsheet cannot ---------------
+
+HOSTILE = "bell\x07 vtab\x0b ff\x0c esc\x1b noncharacter￾ and ]]> <&>"
+
+
+def _well_formed(path):
+    import xml.parsers.expat
+    import zipfile
+    bad = []
+    with zipfile.ZipFile(path) as z:
+        for name in z.namelist():
+            if name.endswith((".xml", ".rels")):
+                parser = xml.parsers.expat.ParserCreate()
+                try:
+                    parser.Parse(z.read(name), True)
+                except xml.parsers.expat.ExpatError as e:
+                    bad.append(f"{name}: {e}")
+    return bad
+
+
+def test_a_comment_with_characters_xml_forbids_still_makes_a_spreadsheet(tmp_path):
+    """openpyxl raised IllegalCharacterError on a control character, and that
+    ended the whole export. Text pasted from Word can carry a vertical tab."""
+    pytest.importorskip("openpyxl")
+    from openpyxl import load_workbook
+    from overleaf_comments_export.sheets import write_xlsx
+
+    data = payload()
+    data["threads"]["t1"]["messages"][0]["content"] = HOSTILE
+    out = tmp_path / "comments.xlsx"
+    write_xlsx(data, out)
+
+    assert _well_formed(out) == []
+    texts = [c.value for row in load_workbook(out)["Comments"].iter_rows() for c in row if isinstance(c.value, str)]
+    kept = next(t for t in texts if "bell" in t)
+    assert kept == "bell vtab ff esc noncharacter and ]]> <&>"
+
+
+def test_a_cell_is_cut_to_what_excel_can_hold(tmp_path):
+    pytest.importorskip("openpyxl")
+    from openpyxl import load_workbook
+    from overleaf_comments_export.sheets import write_xlsx
+
+    data = payload()
+    data["threads"]["t1"]["messages"][0]["content"] = "x" * 40000
+    out = tmp_path / "comments.xlsx"
+    write_xlsx(data, out)
+    longest = max(len(c.value) for row in load_workbook(out)["Comments"].iter_rows()
+                  for c in row if isinstance(c.value, str))
+    assert longest == 32767
+
+
+def test_the_export_survives_such_a_comment_with_the_spreadsheet_on(tmp_path, monkeypatch):
+    """The real failure: no files at all, because one cell raised."""
+    pytest.importorskip("openpyxl")
+    from overleaf_comments_export import export as export_mod
+    from tests.test_export_wiring import FakeClient
+
+    class Hostile(FakeClient):
+        def get_threads(self, project_id):
+            threads = super().get_threads(project_id)
+            threads["t1"]["messages"][0]["content"] = HOSTILE
+            return threads
+
+    monkeypatch.setattr(export_mod, "OverleafClient", Hostile)
+    export_mod.run_export(project_url="https://www.overleaf.com/project/" + "a" * 24,
+                          out_dir=tmp_path, write_xlsx_sheet=True)
+    sheets = list(tmp_path.rglob("comments.xlsx"))
+    assert sheets, sorted(p.name for p in tmp_path.rglob("*"))
+    assert _well_formed(sheets[0]) == []

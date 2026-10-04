@@ -100,7 +100,12 @@
 
   // Control characters are not legal in XML and Excel refuses the whole file
   // rather than skipping them. Pasted comment text really does contain them.
-  const ILLEGAL = new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F]", "g");
+  // Everything XML 1.0 does not allow, not only the control characters: a
+  // stray U+FFFE or U+FFFF also left the sheet unreadable to Excel.
+  const ILLEGAL = /[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/gu;
+  // Excel's limit on what one cell can hold. Past it, Excel offers to repair
+  // the file instead of opening it.
+  const MAX_CELL = 32767;
 
   function xmlEscape(value) {
     return String(value)
@@ -127,7 +132,8 @@
         if (typeof value === "number" && Number.isFinite(value)) {
           return `<c r="${ref}"><v>${value}</v></c>`;
         }
-        const text = value === null || value === undefined ? "" : String(value);
+        const full = value === null || value === undefined ? "" : String(value);
+        const text = full.length > MAX_CELL ? `${full.slice(0, MAX_CELL - 1)}…` : full;
         if (!text) return "";
         // Inline strings, so there is no shared string table to keep in step.
         return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(text)}</t></is></c>`;
