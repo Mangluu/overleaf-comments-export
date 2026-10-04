@@ -199,3 +199,63 @@ test("the paper a snapshot belongs to is read from the tab's address", () => {
   assert.equal(api.projectIdFromUrl("https://www.overleaf.com/project"), "");
   assert.equal(api.projectIdFromUrl(undefined), "");
 });
+
+test("every file is requested before the popup can be closed", async () => {
+  // With Chrome's "Ask where to save each file" on, each download opens a Save
+  // dialog even though saveAs is false. The first dialog takes focus, focus
+  // loss closes the popup, and closing it stops this script. Files requested
+  // one at a time, each awaited, meant every file after the first was lost,
+  // and the snapshot after them was never saved. This presses the real button.
+  const PID = "0123456789abcdef01234567";
+  const byId = {};
+  const element = () => ({
+    hidden: false, disabled: false, checked: false, value: "", textContent: "",
+    dataset: {}, classList: { toggle() {}, add() {}, remove() {} },
+    listeners: {}, append() {},
+    addEventListener(type, fn) { this.listeners[type] = fn; },
+  });
+  global.document = {
+    documentElement: {},
+    getElementById: (id) => (byId[id] ||= element()),
+    querySelectorAll: () => [],
+    createElement: () => element(),
+  };
+  const stored = {};
+  global.localStorage = {
+    getItem: (key) => (key in stored ? stored[key] : null),
+    setItem: (key, value) => { stored[key] = String(value); },
+    removeItem: (key) => { delete stored[key]; },
+  };
+  const outputs = ["comments-2026-10-04.md", "comments.json", "agents.md", "whats-new.md"]
+    .map((filename) => ({ filename, mimeType: "text/plain;charset=utf-8", content: "x" }));
+  const requested = [];
+  let release;
+  const settled = new Promise((resolve) => { release = resolve; });   // a dialog nobody has answered
+  global.chrome = {
+    runtime: { onMessage: { addListener() {} } },
+    tabs: { query: async () => [{ id: 7, url: `https://www.overleaf.com/project/${PID}`, title: "Paper" }] },
+    scripting: {
+      executeScript: async ({ files }) => (files ? [] : [{ result: {
+        ok: true, project: { title: "Paper" }, generatedAt: "2026-10-04T10:00:00Z",
+        summary: { threadCount: 1, openCount: 1, resolvedCount: 0, trackedChangeCount: 0 },
+        warnings: [], snapshot: { pulled_at: "2026-10-04T10:00:00Z" }, outputs,
+      } }]),
+    },
+    downloads: { download: (options) => { requested.push(options.filename); return settled; } },
+  };
+  delete require.cache[require.resolve("../popup.js")];
+  require("../popup.js");
+  await new Promise((resolve) => setImmediate(resolve));        // initialize() finds the tab
+
+  const clicked = byId.export.listeners.click();
+  for (let tick = 0; tick < 50 && !requested.length; tick += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  assert.equal(requested.length, outputs.length,
+    `only ${requested.length} of ${outputs.length} files were requested before the first one settled`);
+  assert.ok(stored[`oce-snapshot-${PID}`],
+    "the snapshot waited on downloads that a closed popup never sees settle");
+  release(1);
+  await clicked;
+});

@@ -1,5 +1,29 @@
 # Submission record
 
+## Update 4, ready to upload
+
+A one-fix release on top of 1.8.0, which is live.
+
+| | |
+|---|---|
+| extension version | 1.8.1 |
+| replaces | 1.8.0 |
+| package | chrome-store/extension.zip |
+| package sha256 | `5b2e026c9ebad698ede568ca9eb11a5500c24dc64df6848bfd5e5a33ad91008d` |
+| package size | 47K |
+| screenshots | unchanged |
+| permissions | unchanged, activeTab, downloads, scripting |
+
+What it fixes.
+
+- With Chrome's Ask where to save each file switched on, an export saved only
+  its first file. Chrome opens a Save dialog per file whatever saveAs says,
+  the first dialog closed the popup, and the popup was requesting the files
+  one at a time. All of them are now requested at once, before anything can
+  close it.
+
+---
+
 ## Update 3, ready to upload
 
 A fix release. The store has been serving 1.7.0, and on today's overleaf.com

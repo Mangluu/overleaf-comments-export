@@ -408,17 +408,26 @@ async function downloadOutput(output, folder) {
   const body = output.base64
     ? Uint8Array.from(atob(output.base64), (ch) => ch.charCodeAt(0))
     : output.content;
+  // Not revoked. Chrome starts reading the file the moment it is requested,
+  // and the URL goes when the popup closes, which is soon either way.
   const url = URL.createObjectURL(new Blob([body], { type: output.mimeType }));
-  try {
-    await chrome.downloads.download({
-      url,
-      filename: `${folder}/${safeSegment(output.filename, "comments.txt")}`,
-      conflictAction: "uniquify",
-      saveAs: false,
-    });
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  }
+  await chrome.downloads.download({
+    url,
+    filename: `${folder}/${safeSegment(output.filename, "comments.txt")}`,
+    conflictAction: "uniquify",
+    saveAs: false,
+  });
+}
+
+// Every file is requested before anything is awaited. saveAs: false only
+// means no Save dialog of ours: when Chrome's own "Ask where to save each
+// file" is on, every download still opens one (ShouldPromptForDownload in
+// Chromium's download_target_determiner.cc). The first dialog takes focus,
+// losing focus closes this popup, and closing it stops this script. Awaited
+// one by one, every file after the first was lost. Requested together, they
+// all leave in this one task, before anything can close.
+function downloadAll(outputs, folder) {
+  return Promise.all(outputs.map((output) => downloadOutput(output, folder)));
 }
 
 // Built from COPY, so a new language appears here by adding it there.
@@ -481,11 +490,12 @@ ui.exportButton.addEventListener("click", async () => {
     if (!result?.ok) throw new Error(result?.error || t("invalidResult"));
 
     const folder = `overleaf-comments/${safeSegment(result.project.title)}/${exportTimestampSegment(result.generatedAt)}`;
-    for (const output of result.outputs) await downloadOutput(output, folder);
-
-    // Kept only after the files are safely written, so a failed export never
-    // moves the baseline the next diff is measured against.
+    const downloads = downloadAll(result.outputs, folder);
+    // Saved in the same task as the requests, not after they settle. A Save
+    // dialog closes the popup first, and anything below the await never
+    // runs, so the next export would have nothing to compare against.
     if (projectId && result.snapshot) saveSnapshot(projectId, result.snapshot);
+    await downloads;
 
     const summary = result.summary;
     let message = t("complete", {

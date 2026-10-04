@@ -10,7 +10,7 @@
   const SCHEMA_VERSION = "1.3";
   // Must equal manifest.json's version. A test holds the two together, because
   // this had been left at 1.6.0 while 1.7.0 shipped.
-  const TOOL_VERSION = "1.8.0-extension";
+  const TOOL_VERSION = "1.8.1-extension";
   const CONTEXT_BEFORE = 160;
   const CONTEXT_AFTER = 160;
 

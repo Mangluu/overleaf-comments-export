@@ -5,6 +5,7 @@ Everything you paste is in `LISTING.md`. This is the order to do it in.
 ## Before you start
 
 - [ ] Before every upload, load the folder unpacked and export one real multi-file project with every box ticked. Check the file names, the spreadsheet, and that a second export writes whats-new.md. The unit tests fake Overleaf, and 1.7.0 passed all of them while broken on the real site.
+- [ ] Export once more with Chrome's Ask where to save each file switched on, in chrome://settings/downloads. Every file should get its own Save dialog and every file should arrive. Before 1.8.1 only the first one did.
 - [ ] Pay the 5 USD at https://chrome.google.com/webstore/devconsole
       signed in as **shivangzephyr@gmail.com**. One-time, per account.
 - [ ] Render shots 1 and 2, then take the rest by hand. See the Screenshots section of `LISTING.md`.
