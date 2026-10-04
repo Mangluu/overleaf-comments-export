@@ -233,7 +233,7 @@ change.
 --render-mode detailed     # more source context around each comment
 --stable                   # output that only changes when the comments change
 --cookie "PASTE"           # sign in with a pasted cookie
---base-url https://...     # a self-hosted Overleaf
+--base-url https://...     # a server other than the one in the link
 --since ../january         # compare against a different earlier export
 --no-since                 # do not compare against an earlier export
 --no-jsonl                 # skip comments.jsonl
@@ -406,9 +406,15 @@ Next time you pull the comments, `git diff` shows the new ones and nothing else.
 
 ## Self-hosted Overleaf
 
-If your university runs its own Overleaf rather than using overleaf.com, tick
-"My university runs its own Overleaf" in the window and put in its address, or
-pass `--base-url https://overleaf.my-university.edu` on the command line.
+If your university runs its own Overleaf rather than using overleaf.com, paste
+your project link as usual. The tool talks to the server the link names, in the
+window and on the command line alike. `--base-url`, and the address box in the
+window, are only for naming a different server, which should rarely be needed.
+
+Overleaf itself only runs at the root of its own address, so a link like
+`https://overleaf.my-university.edu/project/...` is the shape to expect. A
+server under a path such as `/overleaf/` is not something Overleaf supports,
+see overleaf/overleaf#1399.
 
 Comments work. Tracked changes do not, because Overleaf makes them part of
 Server Pro rather than the free Community Edition, so there are none to export.
@@ -420,8 +426,7 @@ setting up. If your server names it something else entirely, the export lists
 the cookies it did find and you can name the right one.
 
 ```bash
-overleaf-comments-export --project-url <link> --out ./out \
-  --base-url https://overleaf.my-university.edu --cookie-name my_session
+overleaf-comments-export --project-url <link> --out ./out --cookie-name my_session
 ```
 
 There is a box for it in the window too, under the self-hosted options.

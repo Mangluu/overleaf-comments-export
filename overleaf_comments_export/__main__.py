@@ -9,7 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .annotate import ANNOTATE_STYLES
-from .client import OverleafClient, UserFacingError
+from .client import OverleafClient, UserFacingError, base_url_for
 from .export import ExportCancelled, ExportResult, run_export
 
 
@@ -135,8 +135,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--base-url",
-        default="https://www.overleaf.com",
-        help="Override the Overleaf base URL (for self-hosted instances).",
+        default=None,
+        help="The Overleaf server. Normally not needed: it is read from "
+             "--project-url, self-hosted servers included.",
     )
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="More logging."
@@ -253,7 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         from .doctor import run as run_doctor
 
         return run_doctor(
-            base_url=args.base_url, browser=args.browser,
+            base_url=args.base_url or base_url_for(args.project_url), browser=args.browser,
             cookie_value=args.cookie or os.environ.get("OVERLEAF_SESSION") or None,
             cookie_name=args.cookie_name, check_session=not args.no_session,
         )

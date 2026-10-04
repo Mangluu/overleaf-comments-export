@@ -190,6 +190,29 @@ def _network_hint(exc: Exception) -> str:
     )
 
 
+# overleaf.com's own addresses, which all mean the canonical one. Following a
+# bare overleaf.com link literally would put every request through a redirect.
+_OVERLEAF_HOSTS = {"overleaf.com", "www.overleaf.com"}
+
+
+def base_url_for(project_url: str | None) -> str:
+    """The server a project link points at, which is where its API lives.
+
+    A self-hosted link already names its server, so asking for --base-url as
+    well sent every request to overleaf.com whenever it was left out, where
+    the project does not exist. Overleaf only runs at the root of a domain
+    (overleaf/overleaf#1399), so the scheme and host are the whole answer.
+    """
+    link = (project_url or "").strip()
+    parsed = urlparse(link if "://" in link else f"https://{link}")
+    host = (parsed.hostname or "").lower()
+    # Only a real project link says where a project lives.
+    if (parsed.scheme not in ("http", "https") or not host or host in _OVERLEAF_HOSTS
+            or not PROJECT_URL_RE.search(parsed.path)):
+        return OVERLEAF_BASE
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
 def parse_project_id(project_url: str) -> str:
     parsed = urlparse(project_url)
     m = PROJECT_URL_RE.search(parsed.path)

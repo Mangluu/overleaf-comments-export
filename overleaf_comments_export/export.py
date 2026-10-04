@@ -14,7 +14,7 @@ from typing import Any, Callable
 from . import __version__
 from .anchors import build_line_starts, resolve_anchor
 from .annotate import ANNOTATE_STYLES, annotate_document
-from .client import OverleafClient, UserFacingError, parse_project_id
+from .client import OVERLEAF_BASE, OverleafClient, UserFacingError, base_url_for, parse_project_id
 from .filenames import index_texts, name_for, read_zip_texts
 from .model import (
     AnchoredComment,
@@ -522,7 +522,7 @@ def run_export(
     out_dir: Path,
     *,
     project_title: str | None = None,
-    base_url: str = "https://www.overleaf.com",
+    base_url: str | None = None,
     browser: str = "auto",
     cookie_value: str | None = None,
     cookie_name: str | None = None,
@@ -628,6 +628,10 @@ def run_export(
         progress(f"Project id: {project_id}")
         logger.info("Project id: %s", project_id)
 
+        # The server the link names, unless the caller named another.
+        base_url = base_url or base_url_for(project_url)
+        if base_url != OVERLEAF_BASE:
+            progress(f"Server: {base_url}")
         client = OverleafClient(base_url=base_url, cookie_name=cookie_name)
         client.should_cancel = should_cancel
         if cookie_value:

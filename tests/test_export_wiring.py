@@ -372,3 +372,53 @@ def test_a_reviewer_named_like_a_windows_device_still_gets_a_file():
         assert slug.endswith("-reviewer"), (name, slug)
     assert _slug_reviewer("Con O'Brien") == "con-obrien"
     assert _slug_reviewer("Connor") == "connor"
+
+
+# --- which server a link points at ------------------------------------------
+
+def test_the_server_is_the_one_the_link_names():
+    """A self-hosted link already names its server. Without --base-url as well,
+    every request went to overleaf.com, where the project does not exist."""
+    from overleaf_comments_export.client import base_url_for
+    pid = "a" * 24
+    assert base_url_for(f"https://latex.example.edu/project/{pid}") == "https://latex.example.edu"
+    assert base_url_for(f"http://localhost:8080/project/{pid}/") == "http://localhost:8080"
+    assert base_url_for(f"latex.example.edu/project/{pid}") == "https://latex.example.edu"
+    # overleaf.com in any of its spellings is the canonical address, so a link
+    # without www does not put every request through a redirect.
+    for link in (f"https://www.overleaf.com/project/{pid}", f"https://overleaf.com/project/{pid}",
+                 f"https://WWW.Overleaf.com/project/{pid}", "", None, "not a link"):
+        assert base_url_for(link) == "https://www.overleaf.com", link
+
+
+def _server_used(tmp_path, monkeypatch, **kwargs):
+    from overleaf_comments_export import export as export_mod
+    seen = {}
+
+    class Spy(FakeClient):
+        def __init__(self, base_url="", **kw):
+            seen["base_url"] = base_url
+            super().__init__(base_url, **kw)
+
+    monkeypatch.setattr(export_mod, "OverleafClient", Spy)
+    export_mod.run_export(out_dir=tmp_path, **kwargs)
+    return seen["base_url"]
+
+
+def test_a_self_hosted_link_is_exported_from_its_own_server(tmp_path, monkeypatch):
+    used = _server_used(tmp_path, monkeypatch,
+                        project_url="https://latex.example.edu/project/" + "a" * 24)
+    assert used == "https://latex.example.edu"
+
+
+def test_a_server_named_explicitly_still_wins(tmp_path, monkeypatch):
+    used = _server_used(tmp_path, monkeypatch,
+                        project_url="https://www.overleaf.com/project/" + "a" * 24,
+                        base_url="https://mirror.example.org")
+    assert used == "https://mirror.example.org"
+
+
+def test_the_command_line_no_longer_assumes_overleaf_com():
+    from overleaf_comments_export import __main__ as cli
+    import inspect
+    assert "default=None" in inspect.getsource(cli).split('"--base-url"', 1)[1].split(")", 1)[0]

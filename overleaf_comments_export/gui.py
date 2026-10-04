@@ -19,7 +19,7 @@ import traceback
 from pathlib import Path
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from .client import UserFacingError, parse_project_id
+from .client import OVERLEAF_BASE, UserFacingError, base_url_for, parse_project_id
 from .export import ExportCancelled, ExportResult, run_export
 
 logger = logging.getLogger(__name__)
@@ -635,7 +635,7 @@ class App:
             value=self.config.get("base_url", "https://www.overleaf.com"))
         self.base_entry = ttk.Entry(box, textvariable=self.base_var)
         self.base_note = ttk.Label(
-            box, text="For example  https://overleaf.my-university.edu\n"
+            box, text="Read from your project link, so usually leave it.\n"
                  "Tracked changes need Server Pro.",
             style="Hint.TLabel", font=self.font_small, wraplength=380, justify="left")
         self.base_label.grid(row=6, column=0, sticky="w", pady=4)
@@ -684,6 +684,17 @@ class App:
         if self.root.winfo_width() < want_w or self.root.winfo_height() < want_h:
             self.root.geometry(f"{max(self.root.winfo_width(), want_w)}x"
                                f"{max(self.root.winfo_height(), want_h)}")
+
+    def _server_override(self) -> str:
+        """A server to use instead of the one in the link, or "" for none.
+
+        The field starts out holding overleaf.com. Someone ticking the box only
+        to name a cookie leaves that in place, and it then overrode their
+        self-hosted link and sent everything to overleaf.com. So that default
+        counts as not set.
+        """
+        base = self.base_var.get().strip().rstrip("/") if self.self_hosted_var.get() else ""
+        return "" if base == OVERLEAF_BASE else base
 
     def _toggle_self_hosted(self) -> None:
         show = self.self_hosted_var.get()
@@ -1254,14 +1265,14 @@ class App:
                 f"boxes will be empty next time. The export itself is not "
                 f"affected. The system said: {why_not_saved}")
 
-        base = self.base_var.get().strip() if self.self_hosted_var.get() else "https://www.overleaf.com"
+        base = self._server_override()
         cookie_name = (self.cookie_name_var.get().strip()
                        if self.self_hosted_var.get() else "")
         params = dict(
             project_url=url,
             out_dir=Path(out_dir).expanduser(),
             project_title=self.title_var.get().strip() or None,
-            base_url=base or "https://www.overleaf.com",
+            base_url=base or None,
             browser=self.browser_var.get(),
             cookie_value=cookie_value,
             cookie_name=cookie_name or None,
@@ -1309,9 +1320,7 @@ class App:
         self.root.update_idletasks()
         lines: list[str] = []
         try:
-            base = (self.base_var.get().strip() if self.self_hosted_var.get()
-                    else "https://www.overleaf.com")
-            run_doctor(base_url=base or "https://www.overleaf.com",
+            run_doctor(base_url=self._server_override() or base_url_for(self.url_var.get().strip()),
                        check_session=False, out=lines.append)
         except Exception as e:                     # a check must never crash the window
             lines.append(f"The check itself failed: {type(e).__name__}: {e}")

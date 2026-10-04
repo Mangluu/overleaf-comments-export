@@ -414,3 +414,18 @@ def test_picking_a_paper_fills_the_link_and_the_folder(app):
     app._use_recent(item)
     assert app.url_var.get() == item["url"]
     assert app.out_var.get() == "/tmp/somewhere"
+
+
+def test_the_server_comes_from_the_link_unless_another_is_named(app):
+    """Unticked used to mean overleaf.com whatever the link said. And the
+    address box starts out holding overleaf.com, so ticking the box only to
+    name a cookie sent a self-hosted export to overleaf.com."""
+    app.self_hosted_var.set(False)
+    assert app._server_override() == ""
+    app.self_hosted_var.set(True)
+    app.base_var.set("https://www.overleaf.com")
+    assert app._server_override() == "", "the untouched default overrode the link"
+    app.base_var.set("https://www.overleaf.com/")
+    assert app._server_override() == ""
+    app.base_var.set("https://latex.example.edu/")
+    assert app._server_override() == "https://latex.example.edu"
