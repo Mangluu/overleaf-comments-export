@@ -98,15 +98,16 @@
   }
 
 
-  // ---- Talking to the popup while the work happens ------------------------
+  // ---- Talking to the extension while the work happens --------------------
   //
   // executeScript hands back one result at the end, so an export on a thesis
-  // was a silent wait with no way out. These two send messages the popup
-  // listens for: one to say where we are, one to ask whether to stop.
+  // was a silent wait with no way out. These two send messages: one to say
+  // where we are, which the popup shows if it is open, and one to ask the
+  // background whether to stop.
   //
-  // If the popup has gone, sendMessage rejects. That is treated as a stop:
-  // the popup is what writes the files, so work continued after it closes is
-  // work nobody will ever see.
+  // The background owns the export, so a popup that has closed changes
+  // nothing. Only a rejected stop check means nobody is waiting, for example
+  // after the extension was updated mid-export, and that is treated as a stop.
 
   function canMessage() {
     return typeof chrome === "object" && chrome?.runtime
@@ -118,8 +119,7 @@
     try {
       await chrome.runtime.sendMessage({ oceProgress: { stage, done, total } });
     } catch {
-      // The popup closed. Nothing to report to, and the next stop check
-      // will end the export.
+      // Nobody listening for progress is fine. The stop check decides.
     }
   }
 
@@ -132,14 +132,19 @@
       const answer = await chrome.runtime.sendMessage({ oceStopCheck: true });
       return Boolean(answer && answer.stop);
     } catch {
-      return true;                 // popup gone: nobody is waiting for this
+      return true;                 // nobody is waiting for this any more
     }
   }
 
-  class ExportStopped extends Error {}
+  class ExportStopped extends Error {
+    constructor() {
+      super("stopped");
+      this.name = "ExportStopped";
+    }
+  }
 
   async function throwIfStopped() {
-    if (await stopRequested()) throw new ExportStopped("stopped");
+    if (await stopRequested()) throw new ExportStopped();
   }
 
   function signedIn() {
@@ -336,7 +341,26 @@
     return files;
   }
 
+  // Chrome does not pass on anything thrown inside an injected script.
+  // ProgrammaticScriptInjector::OnInjectionComplete in Chromium finishes with
+  // an empty error whatever happened, so executeScript resolves with a null
+  // result. Every message below, "not signed in" among them, used to arrive
+  // as that null, and the reader saw "did not return a valid result" instead.
+  // So collect never throws. It hands any failure back as data.
   async function collect(userOptions = {}) {
+    try {
+      return await collectOrThrow(userOptions);
+    } catch (error) {
+      return {
+        ok: false,
+        error: error?.message || String(error),
+        status: error?.status ?? null,
+        stopped: error instanceof ExportStopped,
+      };
+    }
+  }
+
+  async function collectOrThrow(userOptions) {
     currentLanguage = userOptions.language === "zh" ? "zh" : "en";
     // Everything the popup sends, normalised. In 1.7.0 this was rebuilt from
     // a list older than four of the popup's options, so Spreadsheet, This file

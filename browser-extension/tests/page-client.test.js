@@ -118,11 +118,11 @@ test("asking it to stop stops it, and nothing is downloaded", async () => {
   delete require.cache[require.resolve("../src/page-client.js")];
   require("../src/page-client.js");
   const { collect } = globalThis.__overleafCommentsExtension;
-  const result = await collect({ language: "en", formats: {} })
-    .catch((error) => ({ stopped: error }));
+  const result = await collect({ language: "en", formats: {} });
 
   assert.ok(asked > 0, "it never asked whether to stop");
-  assert.ok(!result?.ok, "it produced a result after being told to stop");
+  assert.equal(result.ok, false, "it produced a result after being told to stop");
+  assert.equal(result.stopped, true, "a stop has to say it was a stop, or it reads as a failure");
 });
 
 test("a signed-out tab is told so, not told Overleaf refused it", async () => {
@@ -142,15 +142,39 @@ test("a signed-out tab is told so, not told Overleaf refused it", async () => {
   delete global.__overleafCommentsExtension;
   delete require.cache[require.resolve("../src/page-client.js")];
   require("../src/page-client.js");
-  // collect throws; the popup's wrapper is what turns that into a result.
-  const error = await global.__overleafCommentsExtension
-    .collect({ language: "en", formats: {} })
-    .then(() => null, (e) => e);
+  const result = await global.__overleafCommentsExtension.collect({ language: "en", formats: {} });
 
-  assert.ok(error, "a signed-out tab exported anyway");
-  assert.equal(error.status, 401);
-  assert.match(error.message, /not signed in/i, `got: ${error.message}`);
-  assert.doesNotMatch(error.message, /rejected the request/i);
+  assert.equal(result.ok, false, "a signed-out tab exported anyway");
+  assert.equal(result.status, 401);
+  assert.match(result.error, /not signed in/i, `got: ${result.error}`);
+  assert.doesNotMatch(result.error, /rejected the request/i);
+});
+
+test("collect never throws, because Chrome would lose what it threw", async () => {
+  // Anything thrown inside an injected script reaches the extension as a null
+  // result. Every failure has to come back as data, or the reader is told only
+  // that the export "did not return a valid result".
+  global.OverleafCommentsCore = require("../src/export-core.js");
+  global.location = { pathname: "/project/0123456789abcdef01234567" };
+  global.document = { title: "Demo - Overleaf", querySelector: () => null };
+  global.chrome = { runtime: { sendMessage: async () => ({ stop: false }) } };
+  delete global.__overleafCommentsExtension;
+  delete require.cache[require.resolve("../src/page-client.js")];
+  require("../src/page-client.js");
+  const { collect } = global.__overleafCommentsExtension;
+
+  for (const [why, fetchImpl] of [
+    ["the network is down", async () => { throw new TypeError("Failed to fetch"); }],
+    ["access is refused", async () => new Response("", { status: 403 })],
+    ["the reply is not JSON", async () => new Response("<html>", { status: 200 })],
+    ["the server errors", async () => new Response("", { status: 500 })],
+  ]) {
+    global.fetch = fetchImpl;
+    let result;
+    await assert.doesNotReject(async () => { result = await collect({ language: "en", formats: {} }); }, why);
+    assert.equal(result.ok, false, why);
+    assert.ok(result.error && result.error !== "undefined", `${why}: no words for the reader`);
+  }
 });
 
 // ---- Against the Overleaf that exists today ------------------------------
