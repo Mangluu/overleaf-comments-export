@@ -263,7 +263,7 @@ build a tile from it.
 ## After you submit
 
 The first review usually takes a few days and can take longer. Reviewers look
-hardest at the three permissions, which is why each justification above says
+hardest at the four permissions, which is why each justification above says
 what it is for in one plain sentence.
 
 Two things to expect:
