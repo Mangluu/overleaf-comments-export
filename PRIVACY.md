@@ -35,6 +35,13 @@ Into the folder you chose, on your computer. Nowhere else.
 The settings file is named at the bottom of the window and you can delete it
 whenever you like.
 
+## What the extension keeps
+
+A summary of the last export of each paper, so the next export can list what
+changed, and the boxes you ticked. Both stay in the extension's own storage in
+your browser and are never sent anywhere. If that storage ever fills up, the
+oldest are dropped first. Removing the extension deletes all of it.
+
 ## When you remove the extension
 
 Chrome opens a page on this project's website asking why. Its address carries

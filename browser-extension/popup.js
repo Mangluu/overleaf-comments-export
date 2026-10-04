@@ -3,52 +3,6 @@
 const PROJECT_PATH_RE = /\/project\/([0-9a-f]{24})(?:\/|$)/i;
 const LANGUAGE_STORAGE_KEY = "overleaf-comments-export-language";
 const CHOICES_STORAGE_KEY = "overleaf-comments-export-choices";
-// One snapshot of the last export per paper, so the next one can say what
-// changed. Kept in localStorage rather than chrome.storage because that would
-// mean adding the storage permission to the manifest, and a permission change
-// buys a slower review at the store for something the page can already do.
-const SNAPSHOT_PREFIX = "oce-snapshot-";
-// Enough for everything somebody has in review at once. Snapshots are trimmed
-// to what the comparison reads, but they are still the biggest thing kept.
-const MAX_SNAPSHOTS = 6;
-
-function loadSnapshot(projectId) {
-  if (typeof localStorage === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(SNAPSHOT_PREFIX + projectId);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;               // unreadable: no diff, and no failure either
-  }
-}
-
-function saveSnapshot(projectId, snapshot) {
-  if (typeof localStorage === "undefined" || !snapshot) return;
-  const write = () => localStorage.setItem(
-    SNAPSHOT_PREFIX + projectId, JSON.stringify(snapshot));
-  try {
-    write();
-  } catch {
-    // Out of room. Drop the oldest and try once more; nothing here is
-    // precious, a missing snapshot only costs the next export its diff.
-    try {
-      const keys = Object.keys(localStorage).filter((k) => k.startsWith(SNAPSHOT_PREFIX));
-      keys.sort((a, b) => {
-        const at = JSON.parse(localStorage.getItem(a) || "{}").pulled_at || "";
-        const bt = JSON.parse(localStorage.getItem(b) || "{}").pulled_at || "";
-        return String(at).localeCompare(String(bt));
-      });
-      for (const key of keys.slice(0, Math.max(1, keys.length - MAX_SNAPSHOTS + 1))) {
-        localStorage.removeItem(key);
-      }
-      write();
-    } catch {
-      // Still no room. An export that has already happened must not fail
-      // because of a nicety.
-    }
-  }
-}
-
 // The boxes people tick, and what they start as. Anyone exporting the same
 // project twice wants the same files twice, so the choices are remembered.
 const CHOICE_DEFAULTS = {
@@ -206,20 +160,14 @@ const ui = {
 
 let activeTab = null;
 let busy = false;
-let stopRequested = false;
+let stopping = false;
 
-// The page asks whether to stop, and reports where it has got to. Both
-// arrive here while executeScript is still running, which is the only way
-// the popup learns anything before the export finishes.
-chrome.runtime.onMessage.addListener((message, _sender, respond) => {
-  if (message?.oceStopCheck) {
-    respond({ stop: stopRequested });
-    return true;
-  }
-  if (message?.oceProgress) {
-    showProgress(message.oceProgress);
-  }
-  return undefined;
+// Progress comes straight from the page, job news from the background. Both
+// are about one tab, which has to be this one.
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.oceProgress && sender.tab?.id === activeTab?.id) showProgress(message.oceProgress);
+  if (message?.target === "popup" && message.tabId === activeTab?.id) render(message.job);
+  return false;
 });
 
 function showProgress({ stage, done, total }) {
@@ -240,8 +188,15 @@ function languageChoices() {
   return Object.entries(COPY).map(([code, copy]) => ({ code, label: copy.languageName || code }));
 }
 
-let language = resolveLanguage(
-  typeof localStorage === "undefined" ? null : localStorage.getItem(LANGUAGE_STORAGE_KEY));
+function storedLanguage() {
+  try {
+    return localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  } catch {
+    return null;                 // storage unavailable: English, not a crash
+  }
+}
+
+let language = resolveLanguage(typeof localStorage === "undefined" ? null : storedLanguage());
 
 function t(key, replacements = {}) {
   let value = COPY[language]?.[key] || COPY.en[key] || key;
@@ -275,17 +230,6 @@ function renderPageState() {
   ui.pageDetail.textContent = pageStatus === "invalid" ? t("invalidPageHelp") : pageDetail;
 }
 
-// The paper a snapshot belongs to. This used to be read from
-// activeTab.projectId, which Chrome's Tab object has never had, so no
-// snapshot was ever saved and whats-new.md could not appear.
-function projectIdFromUrl(value) {
-  try {
-    return (new URL(value).pathname.match(PROJECT_PATH_RE) || [])[1] || "";
-  } catch {
-    return "";
-  }
-}
-
 function isSupportedProjectUrl(value) {
   try {
     const url = new URL(value);
@@ -293,23 +237,6 @@ function isSupportedProjectUrl(value) {
   } catch {
     return false;
   }
-}
-
-function safeSegment(value, fallback = "overleaf-project") {
-  const cleaned = String(value || "")
-    .normalize("NFKC")
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "-")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[. ]+$/g, "")
-    .slice(0, 90);
-  return cleaned || fallback;
-}
-
-function exportTimestampSegment(value) {
-  const date = new Date(value || Date.now());
-  const valid = Number.isNaN(date.getTime()) ? new Date() : date;
-  return valid.toISOString().replace(/:/g, "-").replace(/\.\d{3}Z$/, "Z");
 }
 
 function readOptions() {
@@ -340,8 +267,8 @@ function setBusy(nextBusy) {
   if (!busy) ui.progress.textContent = "";
   ui.buttonLabel.textContent = busy ? t("exporting") : t("exportButton");
   ui.stopButton.hidden = !busy;
-  ui.stopButton.disabled = stopRequested;
-  ui.stopButton.textContent = stopRequested ? t("stopping") : t("stopButton");
+  ui.stopButton.disabled = stopping;
+  ui.stopButton.textContent = stopping ? t("stopping") : t("stopButton");
 }
 
 // The Markdown of the last export, held so it can be copied without running
@@ -378,56 +305,55 @@ async function initialize() {
   ui.pageCard.classList.add("ready");
   renderPageState();
   setBusy(false);
+  // An export may already be running here, started before the popup last
+  // closed, or have just finished. Either way, show it.
+  render(await send("status").catch(() => null));
 }
 
-async function collectFromPage(options) {
-  // The isolated world on purpose. Everything the injected code needs from
-  // the page is DOM, which the isolated world shares, and a relative fetch
-  // sends the session cookie there just the same. In the main world the page
-  // owns the globals, so a hostile page matching the project URL pattern
-  // could define __overleafCommentsExtension before us, make the real client
-  // return early, and have whatever it liked written to the user's Downloads.
-  await chrome.scripting.executeScript({
-    target: { tabId: activeTab.id },
-    files: ["src/export-core.js", "src/xlsx.js", "src/page-client.js"],
-  });
-
-  const [execution] = await chrome.scripting.executeScript({
-    target: { tabId: activeTab.id },
-    func: async (exportOptions, injectionError) => {
-      if (!globalThis.__overleafCommentsExtension) throw new Error(injectionError);
-      return globalThis.__overleafCommentsExtension.collect(exportOptions);
-    },
-    args: [options, t("injectionError")],
-  });
-
-  return execution?.result;
+function send(type, payload = {}) {
+  return chrome.runtime.sendMessage({ target: "background", type, tabId: activeTab?.id, url: activeTab?.url, ...payload });
 }
 
-async function downloadOutput(output, folder) {
-  const body = output.base64
-    ? Uint8Array.from(atob(output.base64), (ch) => ch.charCodeAt(0))
-    : output.content;
-  // Not revoked. Chrome starts reading the file the moment it is requested,
-  // and the URL goes when the popup closes, which is soon either way.
-  const url = URL.createObjectURL(new Blob([body], { type: output.mimeType }));
-  await chrome.downloads.download({
-    url,
-    filename: `${folder}/${safeSegment(output.filename, "comments.txt")}`,
-    conflictAction: "uniquify",
-    saveAs: false,
-  });
+// Codes from the background, worded here, where the language is known.
+// Anything else arrives already worded by the page.
+function errorText(error) {
+  return ["injectionError", "invalidResult"].includes(error) ? t(error) : String(error || t("invalidResult"));
 }
 
-// Every file is requested before anything is awaited. saveAs: false only
-// means no Save dialog of ours: when Chrome's own "Ask where to save each
-// file" is on, every download still opens one (ShouldPromptForDownload in
-// Chromium's download_target_determiner.cc). The first dialog takes focus,
-// losing focus closes this popup, and closing it stops this script. Awaited
-// one by one, every file after the first was lost. Requested together, they
-// all leave in this one task, before anything can close.
-function downloadAll(outputs, folder) {
-  return Promise.all(outputs.map((output) => downloadOutput(output, folder)));
+function completeMessage(job) {
+  const summary = job.summary || {};
+  let message = t("complete", {
+    threads: summary.threadCount,
+    open: summary.openCount,
+    resolved: summary.resolvedCount,
+    changes: summary.trackedChangeCount,
+    files: job.files,
+  });
+  message += ` ${t("savedTo", { folder: job.folder })}`;
+  if (job.warnings?.length) {
+    const separator = language === "zh" ? "；" : "; ";
+    message += ` ${t("warnings", { warnings: job.warnings.join(separator) })}`;
+  }
+  return message;
+}
+
+function render(job) {
+  if (!job) return;
+  stopping = Boolean(job.stopping);
+  if (job.state === "running") {
+    ui.result.hidden = true;
+    ui.copyButton.hidden = true;
+    setBusy(true);
+    if (stopping) ui.progress.textContent = t("stopping");
+    else if (job.progress) showProgress(job.progress);
+    return;
+  }
+  setBusy(false);
+  // Held so it can be copied without running the export again.
+  lastMarkdown = job.state === "done" ? job.markdown || "" : "";
+  if (job.state === "done") showResult(completeMessage(job));
+  else if (job.state === "stopped") showResult(t("stopped"));
+  else showResult(errorText(job.error), true);
 }
 
 // Built from COPY, so a new language appears here by adding it there.
@@ -455,17 +381,22 @@ ui.copyButton.addEventListener("click", async () => {
 });
 
 ui.stopButton.addEventListener("click", () => {
-  // The page checks this between steps. A request already in flight has to
-  // come back first, so the button says what it is doing rather than
-  // appearing to have done nothing.
-  stopRequested = true;
+  // The page checks between steps. A request already in flight has to come
+  // back first, so the button says what it is doing rather than appearing to
+  // have done nothing.
+  stopping = true;
   setBusy(true);
   ui.progress.textContent = t("stopping");
+  send("stop").catch(() => {});
 });
 
 ui.languageSelect.addEventListener("change", () => {
   language = resolveLanguage(ui.languageSelect.value);
-  localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  try {
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  } catch {
+    // Not remembered, but still switched for now.
+  }
   ui.result.hidden = true;
   applyLanguage();
 });
@@ -476,50 +407,19 @@ ui.exportButton.addEventListener("click", async () => {
     showResult(t("noFormat"), true);
     return;
   }
-
-  stopRequested = false;
+  // Starts it and nothing more. The background runs it, so this popup can
+  // close at any moment, to a stray click or a Save dialog, and lose nothing.
+  stopping = false;
   lastMarkdown = "";
   ui.copyButton.hidden = true;
-  setBusy(true);
   ui.result.hidden = true;
-
+  setBusy(true);
   try {
-    const projectId = projectIdFromUrl(activeTab?.url);
-    if (projectId) options.previousSnapshot = loadSnapshot(projectId);
-    const result = await collectFromPage(options);
-    if (!result?.ok) throw new Error(result?.error || t("invalidResult"));
-
-    const folder = `overleaf-comments/${safeSegment(result.project.title)}/${exportTimestampSegment(result.generatedAt)}`;
-    const downloads = downloadAll(result.outputs, folder);
-    // Saved in the same task as the requests, not after they settle. A Save
-    // dialog closes the popup first, and anything below the await never
-    // runs, so the next export would have nothing to compare against.
-    if (projectId && result.snapshot) saveSnapshot(projectId, result.snapshot);
-    await downloads;
-
-    const summary = result.summary;
-    let message = t("complete", {
-      threads: summary.threadCount,
-      open: summary.openCount,
-      resolved: summary.resolvedCount,
-      changes: summary.trackedChangeCount,
-      files: result.outputs.length,
-    });
-    // The comments file by name. Any .md used to match, so with Markdown
-    // unticked the button copied the response letter under this label.
-    const markdownFile = result.outputs.find((o) => /^comments-.*\.md$/.test(o.filename));
-    lastMarkdown = markdownFile ? markdownFile.content || "" : "";
-
-    message += ` ${t("savedTo", { folder })}`;
-    if (result.warnings?.length) {
-      const separator = language === "zh" ? "；" : "; ";
-      message += ` ${t("warnings", { warnings: result.warnings.join(separator) })}`;
-    }
-    showResult(message);
+    const reply = await send("export", { options });
+    if (reply?.job) render(reply.job);      // one was already running here
   } catch (error) {
-    showResult(error?.message || String(error), true);
-  } finally {
     setBusy(false);
+    showResult(error?.message || String(error), true);
   }
 });
 
@@ -535,7 +435,6 @@ initialize().catch((error) => {
 if (typeof module === "object" && module.exports) {
   module.exports = {
     COPY, DEFAULT_LANGUAGE, resolveLanguage, languageChoices,
-    CHOICE_DEFAULTS, readStoredChoices, loadSnapshot, saveSnapshot,
-    projectIdFromUrl,
+    CHOICE_DEFAULTS, readStoredChoices,
   };
 }

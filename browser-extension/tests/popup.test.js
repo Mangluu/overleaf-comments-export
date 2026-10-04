@@ -164,19 +164,6 @@ test("the markup has the progress line and the stop button", () => {
   assert.match(html, /id="stop"[^>]*hidden/);
 });
 
-test("a snapshot of the last export is kept, and read back", () => {
-  const { api } = loadPopup();
-  assert.equal(typeof api.loadSnapshot, "function");
-  assert.equal(typeof api.saveSnapshot, "function");
-});
-
-test("a missing or unreadable snapshot is no snapshot, not a crash", () => {
-  // Storage is hand-editable and outlives version changes, so anything in it
-  // has to be treated as untrusted. A failed diff must never fail an export.
-  const { api } = loadPopup();
-  assert.equal(api.loadSnapshot("nothing-stored-here"), null);
-});
-
 test("the result says where the files went", () => {
   // The first question after clicking Export, and the popup used to leave it
   // unanswered. There is no API to open the folder, so saying its name is
@@ -188,24 +175,11 @@ test("the result says where the files went", () => {
   }
 });
 
-test("the paper a snapshot belongs to is read from the tab's address", () => {
-  // It was read from activeTab.projectId, which Chrome's Tab object has never
-  // had, so no snapshot was ever saved and whats-new.md never appeared.
-  const { api } = loadPopup();
-  assert.equal(api.projectIdFromUrl("https://www.overleaf.com/project/0123456789abcdef01234567"),
-    "0123456789abcdef01234567");
-  assert.equal(api.projectIdFromUrl("https://www.overleaf.com/project/0123456789abcdef01234567?a=1#b"),
-    "0123456789abcdef01234567");
-  assert.equal(api.projectIdFromUrl("https://www.overleaf.com/project"), "");
-  assert.equal(api.projectIdFromUrl(undefined), "");
-});
+// ---- The popup starts exports and shows them, nothing more ----------------
 
-test("every file is requested before the popup can be closed", async () => {
-  // With Chrome's "Ask where to save each file" on, each download opens a Save
-  // dialog even though saveAs is false. The first dialog takes focus, focus
-  // loss closes the popup, and closing it stops this script. Files requested
-  // one at a time, each awaited, meant every file after the first was lost,
-  // and the snapshot after them was never saved. This presses the real button.
+// Enough of a document and a Chrome to press the real buttons. Elements are
+// kept by id so a test can reach the one the popup wired up.
+async function drivePopup({ status = null, exportReply = { ok: true } } = {}) {
   const PID = "0123456789abcdef01234567";
   const byId = {};
   const element = () => ({
@@ -222,40 +196,96 @@ test("every file is requested before the popup can be closed", async () => {
   };
   const stored = {};
   global.localStorage = {
-    getItem: (key) => (key in stored ? stored[key] : null),
-    setItem: (key, value) => { stored[key] = String(value); },
-    removeItem: (key) => { delete stored[key]; },
+    getItem: (k) => (k in stored ? stored[k] : null),
+    setItem: (k, v) => { stored[k] = String(v); },
+    removeItem: (k) => { delete stored[k]; },
   };
-  const outputs = ["comments-2026-10-04.md", "comments.json", "agents.md", "whats-new.md"]
-    .map((filename) => ({ filename, mimeType: "text/plain;charset=utf-8", content: "x" }));
-  const requested = [];
-  let release;
-  const settled = new Promise((resolve) => { release = resolve; });   // a dialog nobody has answered
+  const sent = [];
+  let onMessage = null;
   global.chrome = {
-    runtime: { onMessage: { addListener() {} } },
-    tabs: { query: async () => [{ id: 7, url: `https://www.overleaf.com/project/${PID}`, title: "Paper" }] },
-    scripting: {
-      executeScript: async ({ files }) => (files ? [] : [{ result: {
-        ok: true, project: { title: "Paper" }, generatedAt: "2026-10-04T10:00:00Z",
-        summary: { threadCount: 1, openCount: 1, resolvedCount: 0, trackedChangeCount: 0 },
-        warnings: [], snapshot: { pulled_at: "2026-10-04T10:00:00Z" }, outputs,
-      } }]),
+    runtime: {
+      onMessage: { addListener: (fn) => { onMessage = fn; } },
+      sendMessage: async (message) => {
+        sent.push(message);
+        if (message.type === "status") return status;
+        if (message.type === "export") return exportReply;
+        return { ok: true };
+      },
     },
-    downloads: { download: (options) => { requested.push(options.filename); return settled; } },
+    tabs: { query: async () => [{ id: 7, url: `https://www.overleaf.com/project/${PID}`, title: "Paper" }] },
+    // The popup must not need these any more. Touching them fails the test.
+    get scripting() { throw new Error("the popup reached for chrome.scripting"); },
+    get downloads() { throw new Error("the popup reached for chrome.downloads"); },
   };
   delete require.cache[require.resolve("../popup.js")];
-  require("../popup.js");
-  await new Promise((resolve) => setImmediate(resolve));        // initialize() finds the tab
+  const api = require("../popup.js");
+  for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r));
+  const news = (job, tabId = 7) => onMessage({ target: "popup", type: "job", tabId, job }, {});
+  const progress = (p, tabId = 7) => onMessage({ oceProgress: p }, { tab: { id: tabId } });
+  return { api, byId, sent, news, progress };
+}
 
-  const clicked = byId.export.listeners.click();
-  for (let tick = 0; tick < 50 && !requested.length; tick += 1) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
+test("Export hands the export to the background and nothing else", async () => {
+  // Nothing of the export lives here any more, so this popup can close at any
+  // moment, to a stray click or a Save dialog, and lose nothing.
+  const { byId, sent } = await drivePopup();
+  await byId.export.listeners.click();
+  const request = sent.find((m) => m.type === "export");
+  assert.ok(request, "no export was asked for");
+  assert.equal(request.target, "background");
+  assert.equal(request.tabId, 7);
+  assert.match(request.url, /\/project\/[0-9a-f]{24}$/);
+  assert.equal(request.options.formats.markdown, true);
+  assert.equal(byId.export.disabled, true, "the button can be pressed twice");
+});
 
-  assert.equal(requested.length, outputs.length,
-    `only ${requested.length} of ${outputs.length} files were requested before the first one settled`);
-  assert.ok(stored[`oce-snapshot-${PID}`],
-    "the snapshot waited on downloads that a closed popup never sees settle");
-  release(1);
-  await clicked;
+test("a popup opened during an export shows it running, with Stop", async () => {
+  const { byId } = await drivePopup({ status: { state: "running", progress: { stage: "files", done: 2, total: 5 } } });
+  assert.equal(byId.export.disabled, true);
+  assert.equal(byId.stop.hidden, false);
+  assert.match(byId.progress.textContent, /2 of 5/);
+});
+
+test("Stop asks the background to stop", async () => {
+  const { byId, sent } = await drivePopup({ status: { state: "running" } });
+  byId.stop.listeners.click();
+  assert.ok(sent.some((m) => m.type === "stop" && m.tabId === 7));
+  assert.match(byId.stop.textContent, /Stopping/);
+});
+
+test("a finished export is shown, and its Markdown can be copied", async () => {
+  const { byId, news } = await drivePopup();
+  news({ state: "done", summary: { threadCount: 3, openCount: 2, resolvedCount: 1, trackedChangeCount: 0 },
+    files: 4, folder: "overleaf-comments/Paper/2026-10-04T10-00-00Z", warnings: [], markdown: "# Comments" });
+  assert.match(byId.result.textContent, /3 discussions/);
+  assert.match(byId.result.textContent, /overleaf-comments\/Paper/);
+  assert.equal(byId.copy.hidden, false);
+  assert.equal(byId.export.disabled, false);
+});
+
+test("a stopped export says it stopped, not that it failed", async () => {
+  // It used to say "The export did not return a valid result."
+  const { api, byId, news } = await drivePopup();
+  news({ state: "stopped" });
+  assert.equal(byId.result.textContent, api.COPY.en.stopped);
+});
+
+test("a failed export is worded, whether the page or the background said it", async () => {
+  const { api, byId, news } = await drivePopup();
+  news({ state: "failed", error: "This tab is not signed in to Overleaf. Sign in, reload the project, then try again." });
+  assert.match(byId.result.textContent, /not signed in/);
+  news({ state: "failed", error: "invalidResult" });
+  assert.equal(byId.result.textContent, api.COPY.en.invalidResult);
+  assert.equal(byId.copy.hidden, true);
+});
+
+test("news and progress about another tab are ignored", async () => {
+  // Two papers can export at once, and every popup hears about both.
+  const { byId, news, progress } = await drivePopup({ status: { state: "running" } });
+  progress({ stage: "files", done: 1, total: 9 }, 8);
+  assert.doesNotMatch(byId.progress.textContent, /1 of 9/);
+  news({ state: "done", summary: {}, files: 1, folder: "x", markdown: "" }, 8);
+  assert.equal(byId.export.disabled, true, "tab 8 finishing ended this tab's export on screen");
+  progress({ stage: "files", done: 4, total: 9 }, 7);
+  assert.match(byId.progress.textContent, /4 of 9/);
 });

@@ -97,6 +97,7 @@ WHAT IT ASKS FOR, AND WHY
 activeTab, so it can act on the Overleaf tab you clicked it on, and no other.
 scripting, so it can read the project through the same requests the editor itself makes.
 downloads, so it can save the exported files to your computer.
+offscreen, so an export carries on and saves its files even if you click away and the popup closes.
 
 It requests no permanent host permissions at all.
 
@@ -154,6 +155,12 @@ The project's comments, tracked changes and document text are read through the s
 
 ```
 The exported Markdown, JSON, JSONL and response-letter files are saved to the user's computer. The downloads permission is what writes them.
+```
+
+**offscreen**
+
+```
+The export runs in the background service worker so it is not lost when the popup closes, which happens on any click outside it. A service worker cannot call URL.createObjectURL, so the finished files are turned into blob URLs for chrome.downloads in an offscreen document, created with the BLOBS reason. The same document reads and writes the extension's own localStorage, the LOCAL_STORAGE reason, where a summary of the last export of each project is kept so the next export can list what changed. The document is closed as soon as the downloads have started. It loads no remote content.
 ```
 
 **Remote code**

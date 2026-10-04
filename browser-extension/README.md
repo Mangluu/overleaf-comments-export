@@ -82,6 +82,9 @@ changes contain `timestamp`.
 - `activeTab`: temporary access to the current tab after an explicit click.
 - `scripting`: runs the read-only export code in the current Overleaf page.
 - `downloads`: saves generated files locally.
+- `offscreen`: lets the export finish in the background, so closing the popup
+  does not cancel it. The background cannot make files to download on its own,
+  so a hidden page does that, and is closed again straight after.
 
 The extension does not request the `cookies` permission or persistent access
 to every website. Overleaf's internal endpoints are undocumented, so a future
@@ -187,6 +190,7 @@ Markdown 和回复信会明确显示每条评论及修订记录的时间；JSON/
 - `activeTab`：仅在点击扩展时临时访问当前标签页。
 - `scripting`：在当前 Overleaf 页面中执行只读导出逻辑。
 - `downloads`：把生成的文件保存到本机。
+- `offscreen`：让导出在后台完成，关闭弹窗不会中断导出。后台本身无法生成可下载的文件，因此由一个隐藏页面完成，并在下载开始后立即关闭。
 
 扩展没有申请 `cookies` 权限，也没有申请访问所有网站的永久权限。
 
