@@ -366,3 +366,24 @@ test("a spreadsheet holds only characters XML allows, and no cell Excel would re
   const longest = Math.max(...[...sheet.matchAll(/<t xml:space="preserve">([^<]*)<\/t>/g)].map((m) => Array.from(m[1]).length));
   assert.equal(longest, 32767);
 });
+
+test("every message in the Markdown carries its time, and says when it was edited", () => {
+  // The Markdown is drawn from serialized threads, which keep times under
+  // timestamp and edited_at. It read timestampMs instead, so every message
+  // line in every export said "?" for its time.
+  const core = require("../src/export-core.js");
+  const text = "\\section{A}\nTouch input is fast.\n";
+  const { markdown } = core.assembleExport({
+    projectId: "0123456789abcdef01234567",
+    projectTitle: "Paper",
+    rawThreads: { t1: { messages: [
+      { id: "m1", content: "First.", timestamp: 1700000000000, user_id: "u1", user: { first_name: "Ana" } },
+      { id: "m2", content: "Reply, later edited.", timestamp: 1700000600000, edited_at: 1700000900000, user_id: "u2", user: { first_name: "Ben" } },
+    ] } },
+    rangesPayload: [{ id: "d1", ranges: { comments: [{ op: { t: "t1", p: text.indexOf("Touch"), c: "Touch" } }], changes: [] } }],
+    docTexts: { d1: text }, docIdToPath: { d1: "main.tex" },
+  });
+  assert.doesNotMatch(markdown, /· \?/, "a message is still shown with no time");
+  assert.match(markdown, /\*\*Ana\*\* · 2023-11-14 22:13 UTC: First\./);
+  assert.match(markdown, /\*\*Ben\*\* · 2023-11-14 22:23 UTC _\(edited\)_: Reply, later edited\./);
+});

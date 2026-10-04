@@ -14,6 +14,7 @@ an accident.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -126,6 +127,7 @@ def python_run(scenario) -> dict:
         return {
             "payload": json.loads(result.json_path.read_text(encoding="utf-8")),
             "jsonl": result.jsonl_path.read_text(encoding="utf-8"),
+            "markdown": result.markdown_path.read_text(encoding="utf-8"),
         }
     finally:
         export_mod.OverleafClient = real
@@ -341,3 +343,24 @@ def test_both_summarise_the_changes_the_same_way(python_run, extension_run):
 
     got = compare(python_run["payload"], extension_run["mutated"])
     assert got.summary() == extension_run["since"]["summary"]
+
+
+# --- the Markdown people actually read --------------------------------------
+
+_MESSAGE = re.compile(r"\*\*(?P<who>[^*]+)\*\* · (?P<when>\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC|\?)"
+                      r"(?P<edited> _\(edited\)_)?:(?: (?P<body>.*))?$")
+
+
+def _messages(markdown):
+    return sorted(m.group("who", "when", "edited", "body")
+                  for m in map(_MESSAGE.search, markdown.splitlines()) if m)
+
+
+def test_both_show_every_message_with_the_same_author_and_time(python_run, extension_run):
+    """The extension printed "?" for the time of every message, because its
+    Markdown read a field the serialized threads do not have. Nothing compared
+    the lines people read, only the JSON under them."""
+    python, extension = _messages(python_run["markdown"]), _messages(extension_run["markdown"])
+    if not python:
+        pytest.skip("no anchored comment messages in this scenario")
+    assert extension == python

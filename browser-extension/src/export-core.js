@@ -719,15 +719,20 @@
   }
 
   function emitMessages(lines, thread, indent = "") {
-    const messages = [...(thread?.messages || [])].sort((left, right) => left.timestampMs - right.timestampMs);
+    // These are serialized threads, whose times are ISO strings under
+    // timestamp and edited_at. Reading timestampMs here, which only the raw
+    // threads have, printed "?" for the time of every message in every export
+    // and never once said "(edited)".
+    const at = (message) => toMilliseconds(message.timestamp) || 0;
+    const messages = [...(thread?.messages || [])].sort((left, right) => at(left) - at(right));
     if (!messages.length) {
       lines.push(`${indent}- _(no messages)_`);
       return;
     }
     messages.forEach((message, index) => {
       const who = humanizeUser(message.user);
-      const when = displayTimestamp(message.timestampMs);
-      const edited = message.editedAtMs ? " _(edited)_" : "";
+      const when = displayTimestamp(message.timestamp);
+      const edited = message.edited_at ? " _(edited)_" : "";
       const prefix = index === 0 ? `${indent}- ` : `${indent}  - ↳ `;
       const body = String(message.content || "").trim();
       if (body.includes("\n")) {
