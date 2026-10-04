@@ -54,3 +54,7 @@ cws.json
 
 # Unposted drafts and competitor notes. Local only.
 growth/
+
+# The end-to-end harness installs Puppeteer here.
+browser-extension/e2e/node_modules/
+browser-extension/e2e/package-lock.json

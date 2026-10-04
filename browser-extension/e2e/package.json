@@ -1,0 +1,11 @@
+{
+  "name": "overleaf-comments-export-e2e",
+  "private": true,
+  "description": "Drives the extension in Chrome for Testing against a fake overleaf.com. Not part of the extension.",
+  "scripts": {
+    "e2e": "node run.js"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.0.0"
+  }
+}

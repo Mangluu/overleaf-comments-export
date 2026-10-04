@@ -1,5 +1,41 @@
 # Submission record
 
+## Update 5, ready to upload
+
+Replaces 1.8.1. If 1.8.1 was never uploaded, skip it: 1.9.0 contains it.
+
+| | |
+|---|---|
+| extension version | 1.9.0 |
+| package | chrome-store/extension.zip |
+| package sha256 | `34d49493bf416d92c8ef3a8b8081cef05e2986423ff60f0a30c44bac09a59aae` |
+| package size | 52K |
+| minimum Chrome | 116, for chrome.runtime.getContexts |
+| permissions | activeTab, downloads, offscreen, scripting. offscreen is new and shows no warning |
+| screenshots | unchanged |
+
+What it changes.
+
+- The export runs in the background, so clicking away no longer cancels it,
+  and a popup reopened mid-export shows it running, with Stop.
+- Failures reach the reader in words. Chrome drops anything thrown inside an
+  injected script, so every error, "not signed in" among them, used to arrive
+  as "did not return a valid result".
+- Titles Chrome refuses as folder names now export: a 90th character that is
+  a space, emoji with a zero-width joiner, soft hyphens, right-to-left marks,
+  a leading dot or tilde, and Windows device names.
+- Each message in the Markdown shows its time. It showed "?".
+- The spreadsheet stays readable whatever characters a comment contains.
+
+If review asks about offscreen, the justification is in LISTING.md. It turns
+finished exports into blob URLs for chrome.downloads, which a service worker
+cannot do, and keeps the last-export summaries in localStorage.
+
+Checked before upload with `browser-extension/e2e`, all 25 checks passing,
+including the shipped manifest through the real toolbar action.
+
+---
+
 ## Update 4, ready to upload
 
 A one-fix release on top of 1.8.0, which is live.
