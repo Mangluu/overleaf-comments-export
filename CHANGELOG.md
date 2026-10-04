@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.22.3] — 2026-10-04
+
 ### Fixed
 - **A self-hosted project link now talks to its own server.** Unless
   `--base-url` was passed as well, every request went to overleaf.com, where
