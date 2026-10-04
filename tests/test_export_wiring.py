@@ -73,11 +73,20 @@ class FakeClient:
             }
         ]
 
+    # What each download's Content-Disposition names the document, and what
+    # /entities lists. Empty by default, so a test opts in to names.
+    doc_names: dict = {}
+    doc_paths: list = []
+
     def download_doc_text(self, project_id, doc_id):
         return DOC_TEXT
 
-    def download_project_zip(self, project_id):
-        return None
+    def download_doc(self, project_id, doc_id):
+        # Text from download_doc_text, which many fakes override.
+        return self.download_doc_text(project_id, doc_id), self.doc_names.get(doc_id)
+
+    def get_doc_paths(self, project_id):
+        return list(self.doc_paths)
 
 
 @pytest.fixture()
@@ -154,26 +163,19 @@ def test_gui_defaults_match(tmp_path, fake_overleaf):
 
 
 # --- naming documents when the file tree is unavailable (issue #4) ---
+#
+# Each document's download names its file, and /entities lists the paths. The
+# project zip used to be downloaded whole to match files by content, which on
+# a paper with large figures meant hundreds of megabytes to learn a few names.
 
-def _zip_of(files):
-    import io
-    import zipfile
+def test_the_filename_comes_from_the_download_when_the_tree_is_empty(tmp_path, monkeypatch):
+    """A pasted cookie gets no file tree, and today's overleaf.com page carries
+    none either. Every comment used to file under <unknown-...>."""
+    class Named(FakeClient):
+        doc_names = {DOC_ID: "main.tex"}
+        doc_paths = ["paper/main.tex", "paper/refs.bib"]
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        for name, content in files.items():
-            archive.writestr(name, content)
-    return buffer.getvalue()
-
-
-def test_the_filename_comes_from_the_zip_when_the_tree_is_empty(tmp_path, monkeypatch):
-    """The whole point of issue #4: a pasted cookie gets no file tree, and every
-    comment used to file under <unknown-...>."""
-    class WithZip(FakeClient):
-        def download_project_zip(self, project_id):
-            return _zip_of({"paper/main.tex": DOC_TEXT})
-
-    monkeypatch.setattr(export_mod, "OverleafClient", WithZip)
+    monkeypatch.setattr(export_mod, "OverleafClient", Named)
     result = _run(tmp_path)
     import json
 
@@ -182,8 +184,19 @@ def test_the_filename_comes_from_the_zip_when_the_tree_is_empty(tmp_path, monkey
     assert "<unknown-" not in result.markdown_path.read_text(encoding="utf-8")
 
 
-def test_the_placeholder_is_still_used_when_the_zip_cannot_help(tmp_path, fake_overleaf):
-    """FakeClient returns no zip. An honest placeholder beats a wrong name."""
+def test_a_bare_name_is_used_when_the_path_list_is_unavailable(tmp_path, monkeypatch):
+    class NameOnly(FakeClient):
+        doc_names = {DOC_ID: "main.tex"}
+
+    monkeypatch.setattr(export_mod, "OverleafClient", NameOnly)
+    import json
+
+    data = json.loads(_run(tmp_path).json_path.read_text(encoding="utf-8"))
+    assert data["comments"][0]["pathname"] == "main.tex"
+
+
+def test_the_placeholder_is_still_used_when_no_name_comes_back(tmp_path, fake_overleaf):
+    """FakeClient names nothing. An honest placeholder beats a wrong name."""
     result = _run(tmp_path)
     import json
 
@@ -191,8 +204,7 @@ def test_the_placeholder_is_still_used_when_the_zip_cannot_help(tmp_path, fake_o
     assert data["comments"][0]["pathname"].startswith("<unknown-")
 
 
-def test_the_zip_is_not_fetched_when_the_tree_already_named_everything(tmp_path, monkeypatch):
-    """It is a whole project download. It must not happen for nothing."""
+def test_nothing_more_is_asked_when_the_tree_already_named_everything(tmp_path, monkeypatch):
     asked = []
 
     class Named(FakeClient):
@@ -203,17 +215,16 @@ def test_the_zip_is_not_fetched_when_the_tree_already_named_everything(tmp_path,
         def flatten_files(self, files_root, debug_logger=None):
             return [{"doc_id": DOC_ID, "pathname": "main.tex"}]
 
-        def download_project_zip(self, project_id):
+        def get_doc_paths(self, project_id):
             asked.append(project_id)
-            return _zip_of({"main.tex": DOC_TEXT})
+            return []
 
     monkeypatch.setattr(export_mod, "OverleafClient", Named)
     result = _run(tmp_path)
-    assert not asked, "downloaded the whole project for nothing"
+    assert not asked, "asked for the path list for nothing"
     import json
 
     assert json.loads(result.json_path.read_text(encoding="utf-8"))["comments"][0]["pathname"] == "main.tex"
-
 
 def test_a_folder_that_cannot_be_written_says_so_plainly(tmp_path, fake_overleaf, monkeypatch):
     """Picking an unwritable folder is an ordinary mistake, not a crash. It used
@@ -284,13 +295,13 @@ def test_the_agent_brief_says_whether_the_source_is_there(tmp_path, fake_overlea
 
 
 def test_a_project_path_cannot_escape_the_export_folder(tmp_path, monkeypatch):
-    """Since the zip fallback, a filename can come from a zip member name, and
-    those are allowed to say ../../elsewhere."""
+    """Names come from the server, in a download header and a path list, and
+    nothing checks them before they reach the disk."""
     from overleaf_comments_export.export import safe_relative
 
     class Escaping(FakeClient):
-        def download_project_zip(self, project_id):
-            return _zip_of({"../../../etc/passwd.tex": DOC_TEXT})
+        doc_names = {DOC_ID: "passwd.tex"}
+        doc_paths = ["../../../etc/passwd.tex"]
 
     monkeypatch.setattr(export_mod, "OverleafClient", Escaping)
     _run(tmp_path, include_source=True)

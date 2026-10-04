@@ -217,10 +217,8 @@ def test_a_single_file_paper_is_unaffected(tmp_path, monkeypatch):
 # _apply_document_order always returned at its first line, and every multi-file
 # paper had its figures counted per file, while these tests stayed green.
 
-import io
 import shutil
 import subprocess
-import zipfile
 from pathlib import Path
 
 from overleaf_comments_export.docorder import pick_root_path
@@ -239,11 +237,18 @@ class NoRootGiven(MultiFile):
         return {"files": {"docs": []}, "name": "Paper", "rootDocId": None, "raw_meta": {}}
 
     def get_project_ranges(self, project_id):
-        return _without_main_anchor(super().get_project_ranges(project_id))
+        # Every document, commented or not, the way docstore's getAllRanges
+        # answers. That is what lets the rest of a paper be read with no tree.
+        anchored = {r["id"]: r for r in _without_main_anchor(super().get_project_ranges(project_id))}
+        return [anchored.get(d, {"id": d, "ranges": {"comments": [], "changes": []}}) for d in FILES]
 
 
 class NoTreeNoRoot(NoRootGiven):
-    """What a pasted cookie gets: no tree and no root, only the project zip."""
+    """No tree and no root, as with a pasted cookie on today's overleaf.com.
+    Each download names its file, and /entities lists the paths."""
+
+    doc_names = {d: path.rsplit("/", 1)[-1] for d, (path, _) in FILES.items()}
+    doc_paths = [path for path, _ in FILES.values()]
 
     def get_project_metadata(self, project_id):
         return {"files": None, "name": "Paper", "rootDocId": None, "raw_meta": {}}
@@ -251,17 +256,9 @@ class NoTreeNoRoot(NoRootGiven):
     def flatten_files(self, files_root, debug_logger=None):
         return []
 
-    def download_project_zip(self, project_id):
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-            for path, text in FILES.values():
-                z.writestr(path, text)
-            z.writestr("figures/plot.png", b"\x89PNG not text")
-        return buf.getvalue()
-
 
 @pytest.mark.parametrize("client", [NoRootGiven, NoTreeNoRoot],
-                         ids=["tree-without-root", "zip-only"])
+                         ids=["tree-without-root", "names-from-downloads"])
 def test_the_paper_is_found_when_overleaf_does_not_name_it(tmp_path, monkeypatch, client):
     client.unreadable = set()
     monkeypatch.setattr(export_mod, "OverleafClient", client)

@@ -12,6 +12,8 @@ from urllib.parse import unquote, urlparse
 
 import requests
 
+from .filenames import name_from_disposition
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,12 +64,6 @@ SESSION_COOKIE_NAMES = ("overleaf_session2", "overleaf.sid", "sharelatex.sid")
 # to keep, and there never will be, so match the shape instead. Anyone whose
 # cookie does not fit can name it with --cookie-name.
 SESSION_COOKIE_SUFFIX = ".sid"
-
-# The project zip is only fetched when filenames could not be had any other
-# way, and it is read into memory to be opened. Papers carry figures, so this
-# is bounded rather than trusted.
-MAX_PROJECT_ZIP_BYTES = 250 * 1024 * 1024
-
 
 def is_session_cookie(name: str, override: str | None = None) -> bool:
     """Whether a cookie of this name could be an Overleaf session."""
@@ -482,6 +478,22 @@ class OverleafClient:
             waited += 0.25
 
     def _get(self, path: str, expect_json: bool = True) -> Any:
+        r = self._checked(path)
+        if not expect_json:
+            return r.text
+        ctype = r.headers.get("Content-Type", "")
+        if "application/json" not in ctype:
+            raise UserFacingError(
+                "Overleaf returned a web page instead of data.\n\n"
+                "This usually means you were signed out. Open Overleaf in your "
+                "browser, sign in, and try again. If you are already signed in, "
+                "Overleaf may have changed its internal API — please report this "
+                "at https://github.com/Mangluu/overleaf-comments-export/issues"
+            )
+        return r.json()
+
+    def _checked(self, path: str):
+        """A GET that has passed the checks every caller needs."""
         url = f"{self.base_url}{path}"
         r = self._request(url)
         if r.status_code in (401, 403):
@@ -499,18 +511,7 @@ class OverleafClient:
                 "address from the address bar."
             )
         r.raise_for_status()
-        if not expect_json:
-            return r.text
-        ctype = r.headers.get("Content-Type", "")
-        if "application/json" not in ctype:
-            raise UserFacingError(
-                "Overleaf returned a web page instead of data.\n\n"
-                "This usually means you were signed out. Open Overleaf in your "
-                "browser, sign in, and try again. If you are already signed in, "
-                "Overleaf may have changed its internal API — please report this "
-                "at https://github.com/Mangluu/overleaf-comments-export/issues"
-            )
-        return r.json()
+        return r
 
     def get_threads(self, project_id: str) -> dict[str, Any]:
         """GET /project/:id/threads -> dict keyed by thread_id."""
@@ -561,62 +562,38 @@ class OverleafClient:
             logger.warning("ranges fetch failed: %s", e)
             return None
 
-    def download_project_zip(self, project_id: str) -> bytes | None:
-        """The whole project as a zip, or None if it cannot be had.
+    def download_doc(self, project_id: str, doc_id: str) -> tuple[str, str | None]:
+        """A document's text, and the file name Overleaf sends with it.
 
-        This is the "Download as zip" the editor offers, over ordinary cookie
-        authenticated HTTP. It is the only route to real filenames that works
-        whichever way the user signed in, which is why it is here: the socket
-        call needs pyoverleaf, which needs a browser, and the project page no
-        longer reliably carries the file tree.
+        DocumentUpdaterController.getDoc names the file in Content-Disposition,
+        and has since that download route was added, so wherever this works at
+        all the name comes with it.
         """
-        try:
-            r = self._request(f"{self.base_url}/project/{project_id}/download/zip",
-                              timeout=120, stream=True)
-        except UserFacingError:
-            raise
-        except Exception as e:
-            logger.warning("Could not download the project zip: %s", e)
-            return None
-        if not r.ok:
-            logger.warning("The project zip came back as %s.", r.status_code)
-            r.close()
-            return None
-        # Streamed and capped. A paper carrying large figures can run to
-        # hundreds of megabytes, and this is a fallback that only runs when
-        # something has already gone wrong, so it must not be the thing that
-        # takes the machine down.
-        chunks: list[bytes] = []
-        total = 0
-        try:
-            for chunk in r.iter_content(64 * 1024):
-                total += len(chunk)
-                if total > MAX_PROJECT_ZIP_BYTES:
-                    logger.warning(
-                        "The project zip is larger than %d MB, so filenames are "
-                        "left as document ids rather than reading all of it.",
-                        MAX_PROJECT_ZIP_BYTES // (1024 * 1024),
-                    )
-                    return None
-                chunks.append(chunk)
-        except Exception as e:
-            logger.warning("The project zip download was interrupted: %s", e)
-            return None
-        finally:
-            r.close()
-        data = b"".join(chunks)
-        if data[:2] != b"PK":
-            logger.warning("The project zip is not a zip: %d bytes starting %r.",
-                           len(data), data[:16])
-            return None
-        logger.info("Downloaded the project zip (%d KB).", len(data) // 1024)
-        return data
+        r = self._checked(f"/Project/{project_id}/doc/{doc_id}/download")
+        return r.text, name_from_disposition(r.headers.get("Content-Disposition"))
 
     def download_doc_text(self, project_id: str, doc_id: str) -> str:
         """GET /Project/:id/doc/:doc_id/download -> plain text body."""
-        return self._get(
-            f"/Project/{project_id}/doc/{doc_id}/download", expect_json=False
-        )
+        return self.download_doc(project_id, doc_id)[0]
+
+    def get_doc_paths(self, project_id: str) -> list[str]:
+        """Every document's path in the project, from /project/:id/entities.
+
+        The list names no ids, which is why it is only used to put folders on
+        names the downloads already gave. Empty when it cannot be had, which
+        costs the folders and nothing else.
+        """
+        try:
+            r = self._request(f"{self.base_url}/project/{project_id}/entities")
+            if not r.ok:
+                return []
+            return [str(e["path"]).lstrip("/") for e in r.json().get("entities", [])
+                    if isinstance(e, dict) and e.get("type") == "doc" and e.get("path")]
+        except UserFacingError:
+            raise
+        except Exception as e:
+            logger.warning("Could not list the project's paths: %s", e)
+            return []
 
     def download_compiled_pdf(
         self, project_id: str, root_doc_id: str | None = None

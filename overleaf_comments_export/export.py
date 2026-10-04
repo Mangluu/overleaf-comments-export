@@ -15,7 +15,7 @@ from . import __version__
 from .anchors import build_line_starts, resolve_anchor
 from .annotate import ANNOTATE_STYLES, annotate_document
 from .client import OVERLEAF_BASE, OverleafClient, UserFacingError, base_url_for, parse_project_id
-from .filenames import index_texts, name_for, read_zip_texts
+from .filenames import place_docs
 from .model import (
     AnchoredComment,
     DocText,
@@ -195,10 +195,10 @@ def safe_relative(pathname: str, doc_id: str) -> Path:
     """A project path turned into something safe to write inside the export.
 
     The name reaches us from Overleaf's file tree or, when that is unavailable,
-    from a member name inside the project zip. Zip entries are allowed to say
-    `../../elsewhere`, and a path like that would write outside the folder the
-    user chose. Overleaf is not hostile, but writing files is not the place to
-    rely on that.
+    from a download's Content-Disposition and the project's path list. None of
+    those is checked by anyone before it arrives here, and a name like
+    `../../elsewhere` would write outside the folder the user chose. Overleaf
+    is not hostile, but writing files is not the place to rely on that.
     """
     if pathname.startswith("<unknown-"):
         return Path(f"unknown-{doc_id}.tex")
@@ -375,8 +375,8 @@ def _apply_document_order(client, project_id, doc_texts, doc_id_to_path,
     missing number sends nobody anywhere. A wrong one sends them to the wrong
     figure.
 
-    `extra_texts` is the project zip's text files by path, when it was read for
-    names. It stands in for documents whose ids are unknown.
+    `extra_texts` is text already read, by path, for files with no comments
+    in them, so they are not downloaded twice.
     """
     by_path = {d.pathname: d for d in doc_texts.values()}
     path_to_doc_id = {v: k for k, v in doc_id_to_path.items()}
@@ -662,10 +662,8 @@ def run_export(
             for entry in client.flatten_files(metadata["files"], debug_logger=logger.info):
                 doc_id_to_path[entry["doc_id"]] = entry["pathname"]
         if not doc_id_to_path:
-            progress(
-                "File tree empty — comments will be grouped by section in each "
-                "doc instead of by filename."
-            )
+            progress("The project page lists no files, so each file's own "
+                     "download will name it.")
         project_display_name = metadata.get("name") or project_title or project_id
         progress(f"Mapped {len(doc_id_to_path)} doc(s) to paths. Project: {project_display_name}")
 
@@ -683,47 +681,61 @@ def run_export(
         changes: list[TrackedChange] = []
         referenced_thread_ids: set[str] = set()
         doc_texts: dict[str, DocText] = {}
-        # Every text file in the project zip, when one had to be read for names.
-        # Document order uses it for the files that carry no comments.
-        zip_texts: dict[str, str] = {}
+        # Text read only to put the paper in order, by path: the files with no
+        # comments in them, which document order needs as much as the rest.
+        extra_texts: dict[str, str] = {}
 
         if ranges_payload:
+            # One entry per document in the project, whether or not anything
+            # in it is commented on, which is what makes reading the rest of a
+            # paper possible without a file tree.
             docs_with_anchors = list(_iter_doc_ranges(ranges_payload))
-            anchor_doc_count = sum(1 for _, c, ch in docs_with_anchors if c or ch)
-            progress(f"Downloading text for {anchor_doc_count} doc(s) with anchors…")
-            # Fetched only if the file tree came up short, and only once. See
-            # filenames.py for why the zip is the route that works for everyone.
-            zip_index: dict[str, list[str]] | None = None
+            commented = [(d, c, ch) for d, c, ch in docs_with_anchors if c or ch]
+            progress(f"Downloading text for {len(commented)} doc(s) with anchors…")
 
-            for doc_id, comments_list, changes_list in docs_with_anchors:
+            texts: dict[str, str] = {}
+            names: dict[str, str | None] = {}
+            for doc_id, _comments, _changes in commented:
                 _stop_if_asked(should_cancel)
-                if not comments_list and not changes_list:
-                    continue
-                pathname = doc_id_to_path.get(doc_id)
                 try:
-                    text = client.download_doc_text(project_id, doc_id)
+                    texts[doc_id], names[doc_id] = client.download_doc(project_id, doc_id)
                 except Exception as e:
-                    logger.warning("Could not download doc %s (%s): %s",
-                                   doc_id, pathname or doc_id, e)
-                    progress(f"  skipped {pathname or doc_id}: {e}")
-                    continue
+                    label = doc_id_to_path.get(doc_id) or doc_id
+                    logger.warning("Could not download doc %s (%s): %s", doc_id, label, e)
+                    progress(f"  skipped {label}: {e}")
 
-                if pathname is None:
-                    if zip_index is None:
-                        progress("Filenames were not in the file tree, asking for the "
-                                 "project zip instead…")
-                        data = client.download_project_zip(project_id)
-                        zip_texts = read_zip_texts(data) if data else {}
-                        zip_index = index_texts(zip_texts)
-                        logger.info("Read %d text file(s) from the project zip.",
-                                    len(zip_index))
-                    pathname = name_for(zip_index, text)
-                    if pathname:
-                        doc_id_to_path[doc_id] = pathname
-                        logger.info("Named %s from the project zip: %s", doc_id, pathname)
-                if pathname is None:
-                    pathname = f"<unknown-{doc_id}>"
-                doc = _build_doc_text(doc_id, pathname, text)
+            # Names for whatever the file tree did not cover. Each download
+            # named its own file, and the project's path list supplies folders.
+            if any(doc_id not in doc_id_to_path for doc_id in texts):
+                doc_paths = client.get_doc_paths(project_id)
+                read_for_order: dict[str, str] = {}
+                # A paper in several files is only put in order if every part
+                # is read, the parts with no comments included, and nothing else
+                # says which one is the paper. They are small text files.
+                if (not metadata.get("rootDocId")
+                        and sum(p.lower().endswith(".tex") for p in doc_paths) > 1):
+                    rest = [d for d, _, _ in docs_with_anchors if d not in texts]
+                    if rest:
+                        progress(f"Reading {len(rest)} more file(s) to put the paper in order…")
+                    for doc_id in rest:
+                        _stop_if_asked(should_cancel)
+                        try:
+                            read_for_order[doc_id], names[doc_id] = client.download_doc(project_id, doc_id)
+                        except Exception as e:
+                            logger.warning("Could not read %s for numbering: %s", doc_id, e)
+                placed = place_docs({d: n for d, n in names.items() if d not in doc_id_to_path},
+                                    doc_paths)
+                doc_id_to_path.update(placed)
+                for doc_id, text in read_for_order.items():
+                    if doc_id in doc_id_to_path:
+                        extra_texts[doc_id_to_path[doc_id]] = text
+                logger.info("Named %d file(s) from their downloads.", len(placed))
+
+            for doc_id, comments_list, changes_list in commented:
+                if doc_id not in texts:
+                    continue
+                pathname = doc_id_to_path.get(doc_id) or f"<unknown-{doc_id}>"
+                doc = _build_doc_text(doc_id, pathname, texts[doc_id])
                 doc_texts[doc_id] = doc
 
                 for c in comments_list:
@@ -810,7 +822,7 @@ def run_export(
         _apply_document_order(
             client, project_id, doc_texts, doc_id_to_path,
             metadata.get("rootDocId"), anchored, changes, progress,
-            extra_texts=zip_texts)
+            extra_texts=extra_texts)
 
         orphan_threads = [
             thread for tid, thread in threads.items() if tid not in referenced_thread_ids

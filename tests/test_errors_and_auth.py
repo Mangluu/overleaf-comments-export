@@ -353,51 +353,36 @@ def test_the_error_names_the_cookies_it_actually_found(monkeypatch):
     assert "--cookie-name" in message
 
 
-def test_an_enormous_project_zip_is_refused_rather_than_read(monkeypatch):
-    """It is fetched only when something has already gone wrong, so it must not
-    be the thing that takes the machine down."""
-    from overleaf_comments_export import client as client_mod
-    from overleaf_comments_export.client import OverleafClient
-
-    monkeypatch.setattr(client_mod, "MAX_PROJECT_ZIP_BYTES", 1024)
-
-    class Streamed(_Resp):
-        def iter_content(self, size):
-            for _ in range(10):
-                yield b"PK" + b"\x00" * 500
-
-        def close(self):
-            pass
-
-    c = _client(monkeypatch, lambda method, url, **kw: Streamed())
-    assert c.download_project_zip("abc") is None
+def test_a_download_names_its_file(monkeypatch):
+    """Overleaf names each document in Content-Disposition. That replaced
+    downloading the whole project zip to learn the names."""
+    resp = _Resp(content=b"\\section{A}\n")
+    resp.headers = {"Content-Disposition": 'attachment; filename="main.tex"'}
+    c = _client(monkeypatch, lambda method, url, **kw: resp)
+    assert c.download_doc("abc", "d1") == ("\\section{A}\n", "main.tex")
+    assert c.download_doc_text("abc", "d1") == "\\section{A}\n"
 
 
-def test_a_normal_project_zip_comes_back_whole(monkeypatch):
-    from overleaf_comments_export.client import OverleafClient
-
-    class Streamed(_Resp):
-        def iter_content(self, size):
-            yield b"PK\x03\x04"
-            yield b"rest of the archive"
-
-        def close(self):
-            pass
-
-    c = _client(monkeypatch, lambda method, url, **kw: Streamed())
-    assert c.download_project_zip("abc") == b"PK\x03\x04rest of the archive"
+def test_the_exact_name_wins_when_both_forms_are_sent(monkeypatch):
+    """What Overleaf sends for any name that is not plain ASCII. The plain form
+    is lossy, and the standard library's email parser picks it."""
+    resp = _Resp(content=b"x")
+    resp.headers = {"Content-Disposition":
+                    "attachment; filename=\"r?sum?.tex\"; filename*=UTF-8''r%C3%A9sum%C3%A9.tex"}
+    c = _client(monkeypatch, lambda method, url, **kw: resp)
+    assert c.download_doc("abc", "d1")[1] == "résumé.tex"
 
 
-def test_something_that_is_not_a_zip_is_not_returned(monkeypatch):
-    class Streamed(_Resp):
-        def iter_content(self, size):
-            yield b"<!DOCTYPE html><title>Sign in</title>"
-
-        def close(self):
-            pass
-
-    c = _client(monkeypatch, lambda method, url, **kw: Streamed())
-    assert c.download_project_zip("abc") is None
+def test_the_path_list_lists_documents_only_and_failing_costs_only_folders(monkeypatch):
+    listing = _Resp(payload={"entities": [
+        {"path": "/main.tex", "type": "doc"}, {"path": "/sections/a.tex", "type": "doc"},
+        {"path": "/figures/plot.png", "type": "file"}]})
+    c = _client(monkeypatch, lambda method, url, **kw: listing)
+    assert c.get_doc_paths("abc") == ["main.tex", "sections/a.tex"]
+    # A server too old to have the list. 404, because a 5xx is retried with
+    # backoff, which is right for a real request and slow for a test.
+    c = _client(monkeypatch, lambda method, url, **kw: _Resp(status=404))
+    assert c.get_doc_paths("abc") == []
 
 
 def test_the_cookie_failure_offers_a_route_that_needs_no_permission(monkeypatch):

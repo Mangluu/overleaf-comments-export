@@ -1,90 +1,85 @@
-"""Naming a document from the project zip when the file tree is unavailable.
+"""Naming a document when the file tree is unavailable.
 
 Issue #4. The socket call needs a browser, so anyone who pasted a cookie never
-had a file tree, and the project page no longer reliably carries one. Every
-comment then files under `<unknown-...>`, which on a multi-file paper loses the
-grouping completely.
+had a file tree, and today's project page carries none for anybody. Every
+comment then filed under `<unknown-...>`, which on a multi-file paper loses the
+grouping completely. Each download names its file, and /entities lists the
+paths, so neither the zip nor a guess is needed.
 """
 
 from __future__ import annotations
 
-import io
-import zipfile
+import json
+import shutil
+import subprocess
+from pathlib import Path
 
-from overleaf_comments_export.filenames import index_texts, name_for, read_zip_texts
+import pytest
 
+from overleaf_comments_export.filenames import name_from_disposition, place_docs
 
-def index_zip(data):
-    return index_texts(read_zip_texts(data))
-
-MAIN = "\\documentclass{article}\n\\begin{document}\nThe opening claim.\n\\end{document}\n"
-INTRO = "\\section{Introduction}\nParticipants completed three blocks.\n"
-
-
-def _zip(files: dict[str, bytes | str]) -> bytes:
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w") as archive:
-        for name, content in files.items():
-            archive.writestr(name, content)
-    return buffer.getvalue()
-
-
-def test_a_document_is_named_by_what_is_in_it():
-    index = index_zip(_zip({"main.tex": MAIN, "sections/intro.tex": INTRO}))
-    assert name_for(index, MAIN) == "main.tex"
-    assert name_for(index, INTRO) == "sections/intro.tex"
+HEADERS = [
+    'attachment; filename="main.tex"',
+    "attachment; filename=main.tex",
+    # What Overleaf sends for a name that is not plain ASCII. The exact form wins.
+    "attachment; filename=\"r?sum?.tex\"; filename*=UTF-8''r%C3%A9sum%C3%A9.tex",
+    "attachment; filename*=UTF-8''%E4%B8%AD%E6%96%87.tex",
+    'attachment; filename="say \\"hi\\".tex"',
+    "attachment; filename*=UTF-8''%E0%A4.tex; filename=\"fallback.tex\"",   # malformed escape
+    "",
+    "attachment",
+]
 
 
-def test_line_endings_and_a_missing_final_newline_do_not_matter():
-    """The zip and the document download disagree about both, and neither
-    difference means the two are different files."""
-    index = index_zip(_zip({"main.tex": MAIN.replace("\n", "\r\n")}))
-    assert name_for(index, MAIN) == "main.tex"
-    assert name_for(index, MAIN.rstrip("\n")) == "main.tex"
-    assert name_for(index, MAIN + "\n\n") == "main.tex"
+def test_a_name_is_read_from_every_form_the_header_takes():
+    assert [name_from_disposition(h) for h in HEADERS] == [
+        "main.tex", "main.tex", "résumé.tex", "中文.tex", 'say "hi".tex',
+        "fallback.tex", None, None]
+    assert name_from_disposition(None) is None
 
 
-def test_trailing_whitespace_does_not_matter():
-    index = index_zip(_zip({"main.tex": MAIN}))
-    padded = "\n".join(line + "   " for line in MAIN.split("\n"))
-    assert name_for(index, padded) == "main.tex"
+PLACE_CASES = [
+    # Names and paths line up one to one.
+    ({"a": "main.tex", "b": "method.tex"}, ["main.tex", "sections/method.tex"]),
+    # Two files called intro.tex: kept apart by id, never merged or guessed.
+    ({"c": "intro.tex", "d": "intro.tex"}, ["sections/intro.tex", "appendix/intro.tex"]),
+    # No path list at all: the bare name.
+    ({"e": "method.tex"}, []),
+    # A name the list does not know: still the bare name.
+    ({"f": "notes.tex"}, ["main.tex"]),
+    # A download that named nothing is left out, for the placeholder to cover.
+    ({"g": None, "h": "main.tex"}, ["main.tex"]),
+]
 
 
-def test_two_identical_files_are_left_unnamed():
-    """Which document id belongs to which is unknowable from here, and a wrong
-    filename is worse than an honest placeholder."""
-    index = index_zip(_zip({"a.tex": MAIN, "copies/b.tex": MAIN}))
-    assert name_for(index, MAIN) is None
+def test_a_name_is_given_its_folder_when_only_one_path_ends_in_it():
+    placed = place_docs(*PLACE_CASES[0])
+    assert placed == {"a": "main.tex", "b": "sections/method.tex"}
 
 
-def test_text_that_is_in_no_file_is_unnamed():
-    index = index_zip(_zip({"main.tex": MAIN}))
-    assert name_for(index, "something else entirely") is None
+def test_two_files_with_one_name_are_kept_apart():
+    placed = place_docs(*PLACE_CASES[1])
+    assert placed["c"] != placed["d"]
+    assert placed["c"].startswith("intro.tex [") and placed["d"].startswith("intro.tex [")
 
 
-def test_binary_and_oversized_members_are_skipped_not_fatal():
-    index = index_zip(_zip({
-        "main.tex": MAIN,
-        "figures/plot.png": b"\x89PNG\r\n\x1a\n" + b"\x00" * 4096,
-        "data.csv": "a,b,c\n1,2,3\n",
-    }))
-    assert name_for(index, MAIN) == "main.tex"
-    assert all(not p.endswith(".png") for paths in index.values() for p in paths)
+def test_without_a_path_list_the_bare_name_is_kept():
+    assert place_docs(*PLACE_CASES[2]) == {"e": "method.tex"}
+    assert place_docs(*PLACE_CASES[4]) == {"h": "main.tex"}
 
 
-def test_a_file_that_is_not_utf8_does_not_stop_the_rest():
-    index = index_zip(_zip({"legacy.tex": "caf\xe9".encode("latin-1"), "main.tex": MAIN}))
-    assert name_for(index, MAIN) == "main.tex"
-
-
-def test_a_corrupt_zip_gives_nothing_rather_than_raising():
-    assert index_zip(b"not a zip at all") == {}
-    assert name_for({}, MAIN) is None
-
-
-def test_the_bib_and_class_files_are_indexed_too():
-    """A comment cannot live in them, but naming them costs nothing and a
-    project that keeps its text in an .Rnw should still work."""
-    index = index_zip(_zip({"refs.bib": "@article{a,title={T}}", "paper.Rnw": INTRO}))
-    assert name_for(index, "@article{a,title={T}}") == "refs.bib"
-    assert name_for(index, INTRO) == "paper.Rnw"
+@pytest.mark.skipif(shutil.which("node") is None, reason="node runs the extension's own code")
+def test_the_extension_and_the_cli_name_files_the_same_way():
+    """Two copies of one rule drift apart unless something holds them together."""
+    core = Path(__file__).resolve().parent.parent / "browser-extension" / "src" / "export-core.js"
+    script = ("const core = require(process.argv[1]);"
+              "const { headers, places } = JSON.parse(require('fs').readFileSync(0, 'utf8'));"
+              "process.stdout.write(JSON.stringify({"
+              "  names: headers.map((h) => core.fileNameFromDisposition(h)),"
+              "  placed: places.map(([names, paths]) => core.placeDocs(names, paths)) }));")
+    out = json.loads(subprocess.run(
+        ["node", "-e", script, str(core)],
+        input=json.dumps({"headers": HEADERS, "places": PLACE_CASES}),
+        capture_output=True, text=True, encoding="utf-8", check=True).stdout)
+    assert out["names"] == [name_from_disposition(h) for h in HEADERS]
+    assert out["placed"] == [place_docs(names, paths) for names, paths in PLACE_CASES]

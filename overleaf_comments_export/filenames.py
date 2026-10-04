@@ -1,96 +1,77 @@
-"""Work out what a document is called when Overleaf will not say.
+"""Work out what a document is called when the file tree does not say.
 
 Comments arrive attached to a document id. Turning that into `main.tex` needs
-the project's file tree, and there are two ways to get one. The socket call
-needs pyoverleaf, which needs a browser, so it is unavailable to anyone who
-pasted a cookie. The project page used to carry the tree in a meta tag and no
-longer reliably does. When both come up empty every comment is filed under
-`<unknown-6a21dec…>`, which on a multi-file paper loses the grouping entirely.
+names, and the file tree that used to carry them is no longer on the project
+page. Two things Overleaf does still send are enough.
 
-The zip Overleaf will hand over on request has the real names in it. It does
-not say which document id each file came from, but we have already downloaded
-the text of every document that carries a comment, and a file is identified
-perfectly well by what is in it.
+Every document download names its file, in Content-Disposition. That has been
+true since the download route itself was added, in Overleaf's
+DocumentUpdaterController.getDoc, so wherever the tool can read a document at
+all, the name comes with it. And /project/:id/entities lists every path in the
+project, without saying which id is which. A name that ends only one path is
+that path.
+
+This replaced downloading the whole project zip to match files by content,
+which on a paper with large figures meant hundreds of megabytes to learn a few
+names. The browser extension does the same, in placeDocs and
+fileNameFromDisposition, and a test runs both over the same cases.
 """
 
 from __future__ import annotations
 
-import io
-import logging
-import zipfile
+import re
+from collections import Counter, defaultdict
+from urllib.parse import unquote
 
-logger = logging.getLogger(__name__)
-
-# Only worth reading out of the zip. A figure cannot hold a comment, and some
-# projects carry a hundred megabytes of them.
-TEXT_SUFFIXES = (".tex", ".bib", ".txt", ".cls", ".sty", ".bst", ".md", ".Rnw")
-# A file larger than this is not a document somebody is commenting on, and
-# reading it would only cost memory.
-MAX_MEMBER_BYTES = 8 * 1024 * 1024
+_ENCODED = re.compile(r"filename\*\s*=\s*([^']*)'[^']*'([^;\s]+)", re.I)
+_QUOTED = re.compile(r'filename\s*=\s*"((?:[^"\\]|\\.)*)"', re.I)
+_BARE = re.compile(r"filename\s*=\s*([^;\s]+)", re.I)
 
 
-def _canonical(text: str) -> str:
-    """Content with the differences that do not matter taken out.
+def name_from_disposition(header: str | None) -> str | None:
+    """The file name a Content-Disposition header gives, or None.
 
-    The zip and the document download disagree about line endings and about
-    whether the file ends in a newline, and neither difference means the two
-    are different files.
+    The encoded form is the exact name, so it wins when both are sent, which
+    is what Overleaf does for any name that is not plain ASCII. The standard
+    library's email parser prefers the plain form, which turns résumé.tex into
+    r?sum?.tex.
     """
-    return "\n".join(line.rstrip() for line in text.replace("\r\n", "\n").split("\n")).strip()
-
-
-def read_zip_texts(data: bytes) -> dict[str, str]:
-    """Every text file in the project zip, by path.
-
-    Kept whole, not only indexed, because the files with no comments in them
-    are what put a multi-file paper in order, and the zip is the only place a
-    pasted-cookie session can read them from without their document ids.
-    """
-    texts: dict[str, str] = {}
-    try:
-        archive = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile as e:
-        logger.warning("The project zip could not be opened: %s", e)
-        return {}
-    for info in archive.infolist():
-        if info.is_dir() or not info.filename.lower().endswith(tuple(
-                s.lower() for s in TEXT_SUFFIXES)):
-            continue
-        if info.file_size > MAX_MEMBER_BYTES:
-            continue
+    value = header or ""
+    encoded = _ENCODED.search(value)
+    if encoded:
         try:
-            raw = archive.read(info)
-        except Exception as e:  # a corrupt member must not lose the rest
-            logger.warning("Skipped %s in the project zip: %s", info.filename, e)
-            continue
-        try:
-            texts[info.filename] = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            texts[info.filename] = raw.decode("latin-1")
-    return texts
+            return unquote(encoded.group(2), encoding=encoded.group(1) or "utf-8",
+                           errors="strict")
+        except (LookupError, UnicodeDecodeError):
+            pass                              # malformed: the plain form may still do
+    quoted = _QUOTED.search(value)
+    if quoted:
+        return re.sub(r"\\(.)", r"\1", quoted.group(1)) or None
+    bare = _BARE.search(value)
+    return bare.group(1) if bare else None
 
 
-def index_texts(texts: dict[str, str]) -> dict[str, list[str]]:
-    """Map canonical content to the paths holding it.
+def place_docs(names: dict[str, str | None], doc_paths: list[str]) -> dict[str, str]:
+    """Each document's path, from its file name and the project's path list.
 
-    A list, because a project can genuinely contain two identical files, and
-    guessing between them is worse than admitting we cannot tell.
+    A name that ends exactly one path is that path. With no path list the bare
+    name is kept, which still beats an id. Two files with one name are kept
+    apart by id, not guessed between, since nothing here says which id lives in
+    which folder.
     """
-    index: dict[str, list[str]] = {}
-    for path, text in texts.items():
-        index.setdefault(_canonical(text), []).append(path)
-    return index
-
-
-def name_for(index: dict[str, list[str]], text: str) -> str | None:
-    """The path whose contents are this text, if exactly one file matches."""
-    matches = index.get(_canonical(text))
-    if not matches:
-        return None
-    if len(matches) > 1:
-        # Two files with identical contents. Which document id belongs to which
-        # is genuinely unknowable from here, and a wrong filename is worse than
-        # an honest placeholder.
-        logger.info("Several files share this content, so it is left unnamed: %s", matches)
-        return None
-    return matches[0]
+    paths_by_name: dict[str, list[str]] = defaultdict(list)
+    for path in doc_paths:
+        paths_by_name[path.rsplit("/", 1)[-1]].append(path)
+    times_seen = Counter(name for name in names.values() if name)
+    placed: dict[str, str] = {}
+    for doc_id, name in names.items():
+        if not name:
+            continue
+        paths = paths_by_name.get(name, [])
+        if len(paths) == 1:
+            placed[doc_id] = paths[0]
+        elif len(paths) > 1 or times_seen[name] > 1:
+            placed[doc_id] = f"{name} [{doc_id[-6:]}]"
+        else:
+            placed[doc_id] = name
+    return placed

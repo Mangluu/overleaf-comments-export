@@ -4,6 +4,32 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **A self-hosted project link now talks to its own server.** Unless
+  `--base-url` was passed as well, every request went to overleaf.com, where
+  the project does not exist. The window did the same with its self-hosted
+  box unticked, and with it ticked, the address box's starting value of
+  overleaf.com overrode the link. The server is now read from the link, and
+  `--base-url` only overrides it.
+- **The spreadsheet no longer ends the whole export.** One comment holding a
+  control character, which text pasted from Word can carry, made openpyxl
+  refuse the cell, and no files were written at all.
+- **One comment can no longer blank the page sent to co-authors.** A comment
+  containing `<!--<script` kept the page's data block from ever closing, and
+  the page opened with no comments and no error.
+- **Per-reviewer files no longer fail on Windows for a reviewer named Con, Aux
+  or Nul**, which Windows refuses as file names whatever the extension.
+
+### Changed
+- **File names no longer cost a download of the whole project.** Where the
+  file tree is unavailable, which on today's overleaf.com is always unless the
+  browser route supplies it, the project zip was fetched and every document
+  matched by its contents. On a paper with large figures that meant hundreds
+  of megabytes to learn a few names. Each document's own download now names
+  its file, and /project/:id/entities gives the folders, the same way the
+  browser extension does. A paper in several files also has its other parts
+  read by id for document order, so the zip is not needed for that either.
+
 ## [0.22.2] — 2026-09-28
 
 ### Fixed
