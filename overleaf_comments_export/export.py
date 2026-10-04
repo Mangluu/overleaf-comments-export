@@ -337,6 +337,9 @@ def _change_matches_reviewer(change: TrackedChange, reviewer_filter: list[str]) 
     return any(n in hay for n in needles)
 
 
+_WINDOWS_DEVICE = re.compile(r"con|prn|aux|nul|com[1-9]|lpt[1-9]|clock\$")
+
+
 def _slug_reviewer(name: str) -> str:
     """Filesystem-safe slug for a reviewer name."""
     out = []
@@ -348,7 +351,10 @@ def _slug_reviewer(name: str) -> str:
     s = "".join(out).strip("-")
     while "--" in s:
         s = s.replace("--", "-")
-    return s[:60] or "reviewer"
+    s = s[:60] or "reviewer"
+    # Windows will not create con.md or nul.md, whatever the extension, and
+    # the failed write ended the whole export. Con is a real first name.
+    return f"{s}-reviewer" if _WINDOWS_DEVICE.fullmatch(s) else s
 
 
 def _apply_document_order(client, project_id, doc_texts, doc_id_to_path,

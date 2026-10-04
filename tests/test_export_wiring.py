@@ -361,3 +361,14 @@ def test_the_window_can_ask_for_the_viewer(tmp_path, fake_overleaf):
     import inspect
     from overleaf_comments_export import gui
     assert "write_viewer=" in inspect.getsource(gui.App), "the window never passes it on"
+
+
+def test_a_reviewer_named_like_a_windows_device_still_gets_a_file():
+    """Windows refuses con.md and nul.md whatever the extension, and the failed
+    write ended the whole export. Con is a real first name."""
+    from overleaf_comments_export.export import _slug_reviewer
+    for name in ("Con", "aux", "NUL", "com1", "Lpt9"):
+        slug = _slug_reviewer(name)
+        assert slug.endswith("-reviewer"), (name, slug)
+    assert _slug_reviewer("Con O'Brien") == "con-obrien"
+    assert _slug_reviewer("Connor") == "connor"
