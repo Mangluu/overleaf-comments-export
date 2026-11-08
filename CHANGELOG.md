@@ -4,6 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+## [0.22.4] — 2026-11-09
+
 ### Fixed
 - **`--browser auto`, the command line's default, signs in again.** It has
   never worked. It handed the search to pyoverleaf, which reads every browser
