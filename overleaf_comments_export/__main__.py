@@ -82,7 +82,10 @@ def main(argv: list[str] | None = None) -> int:
         "--browser",
         default="auto",
         choices=list(OverleafClient.SUPPORTED_BROWSERS),
-        help="Which browser to read cookies from. Default: auto-detect.",
+        help="Which browser to read your Overleaf sign-in from. The default, "
+             "auto, tries firefox, safari, chrome, edge, brave and chromium in "
+             "turn and uses the first one signed in to Overleaf. manual means "
+             "you pass the cookie yourself with --cookie.",
     )
     parser.add_argument(
         "--cookie",

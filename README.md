@@ -232,6 +232,7 @@ change.
 --no-changes               # skip tracked changes
 --render-mode detailed     # more source context around each comment
 --stable                   # output that only changes when the comments change
+--browser firefox          # read the sign-in from this browser, or auto, the default
 --cookie "PASTE"           # sign in with a pasted cookie
 --base-url https://...     # a server other than the one in the link
 --since ../january         # compare against a different earlier export
@@ -449,6 +450,28 @@ nothing else, and it only ever reads.
 | Paste it yourself | Works on every computer and browser. The window shows you how, step by step. |
 | Chrome, Edge, Brave | Works on macOS but asks for your Keychain password every run. Chrome 127 and newer on Windows cannot be read at all. Use the browser extension there, or paste the cookie. |
 | The browser extension | Nothing to sign in to. It uses the tab you already have open and never reads the cookie at all. |
+
+### On the command line
+
+By default the tool works out which browser to use. It tries Firefox, Safari,
+Chrome, Edge, Brave and Chromium in turn, and uses the first one signed in to
+Overleaf. It says which one it picked as it starts. To name the browser
+instead, which skips the search, pass `--browser`.
+
+```bash
+overleaf-comments-export --project-url <link> --out ./out --browser firefox
+```
+
+The choices are `auto`, `firefox`, `safari`, `chrome`, `chromium`, `edge`,
+`brave`, and `manual`, which means you pass the cookie yourself. In a script,
+naming the browser is the reliable choice. If it cannot sign in, the tool lists
+every browser it tried and why each one did not work.
+
+If no browser can be read, pass the cookie itself. The tool also reads it from
+the `OVERLEAF_SESSION` environment variable, which keeps it out of your shell
+history.
+
+### Pasting the cookie
 
 To paste it, open Overleaf, press F12, go to Application or Storage, then
 Cookies, then `https://www.overleaf.com`, and copy the value of

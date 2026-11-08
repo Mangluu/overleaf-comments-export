@@ -87,6 +87,25 @@ def _pick_session_cookie(names, override: str | None = None):
     return next((n for n in names if n.endswith(SESSION_COOKIE_SUFFIX)), None)
 
 
+class _NoSessionInBrowser(Exception):
+    """A browser's cookies were read, and none of them is an Overleaf session."""
+
+    def __init__(self, found: list[str]):
+        super().__init__("no session")
+        self.found = found
+
+
+def _why_unreadable(error: Exception) -> str:
+    """A few words on why one browser was skipped, for the auto-detect report."""
+    text = str(error)
+    if re.search(r"(?i)\b(fail(ed)? to find|could not find|can ?not find)\b", text):
+        return "not installed"
+    if isinstance(error, PermissionError) or "Operation not permitted" in text:
+        return "no permission to read its cookies"
+    first = text.splitlines()[0][:120] if text else ""
+    return f"could not read its cookies ({type(error).__name__}{': ' + first if first else ''})"
+
+
 def _cookie_read_failed(browser: str) -> str:
     """Why a browser's cookie store could not be read, and what to do instead.
 
@@ -234,6 +253,8 @@ class OverleafClient:
         self.should_cancel = None
         self._api = None
         self._session: Optional[requests.Session] = None
+        # Which browser the session came from, once connect() has found one.
+        self.browser_used: str | None = None
 
     SUPPORTED_BROWSERS = (
         "safari", "firefox", "auto", "chrome", "chromium", "edge", "brave", "manual",
@@ -267,7 +288,7 @@ class OverleafClient:
                 "choose a browser to read it from automatically."
             )
         elif browser == "auto":
-            session = self._connect_via_pyoverleaf()
+            session = self._connect_auto()
         else:
             session = self._connect_via_browser_cookie3(browser)
 
@@ -315,29 +336,86 @@ class OverleafClient:
         self._api = None  # no pyoverleaf; file tree comes from the HTML scrape
         return session
 
-    def _connect_via_pyoverleaf(self) -> requests.Session:
+    # Tried in this order by --browser auto. The two that read without a
+    # Keychain prompt on a Mac come first, and the search stops at the first
+    # browser signed in to Overleaf, so no more prompts appear than needed.
+    AUTO_BROWSERS = ("firefox", "safari", "chrome", "edge", "brave", "chromium")
+
+    def _connect_auto(self) -> requests.Session:
+        """The session from the first browser on this computer signed in to Overleaf.
+
+        This used to be pyoverleaf's login_from_browser, which calls
+        browser_cookie3.load(). That reads every browser browser_cookie3 knows
+        and gives up on all of them if any one raises anything but its own
+        error type. On Linux its Arc reader raises TypeError, Arc having only a
+        macOS path, so Firefox was never reached (issue #15). And pyoverleaf
+        keeps no session to hand back, so even a successful read failed when
+        _extract_session went looking for one. Auto has never worked; this
+        tries each browser on its own and lets none of them stop the search.
+        """
+        host = urlparse(self.base_url).hostname or "www.overleaf.com"
+        tried: list[str] = []
+        for browser in self.AUTO_BROWSERS:
+            try:
+                jar = self._read_session_jar(browser)
+            except _NoSessionInBrowser:
+                tried.append(f"{browser}: not signed in to {host}")
+            except Exception as e:  # one browser's failure must not end the search
+                tried.append(f"{browser}: {_why_unreadable(e)}")
+            else:
+                logger.info("Using the Overleaf session from %s.", browser)
+                self.browser_used = browser
+                return self._session_from(jar)
+        raise UserFacingError(
+            f"No browser on this computer is signed in to {host}.\n\n"
+            "Tried:\n  " + "\n  ".join(tried) + "\n\n"
+            f"Sign in to Overleaf in one of them and run this again. Or name the "
+            f"browser, with --browser firefox on the command line or the Sign in "
+            f"using list in the window. Or paste the session cookie with --cookie, "
+            f"which is also read from the OVERLEAF_SESSION environment variable."
+        )
+
+    def _read_session_jar(self, browser: str):
+        """One browser's cookies for this server, if they hold a session.
+
+        Raises _NoSessionInBrowser when the cookies were read but none of them
+        is the session, and whatever browser_cookie3 raised when they could not
+        be read at all.
+        """
+        import browser_cookie3  # type: ignore
+
+        loader = getattr(browser_cookie3, browser, None)
+        if loader is None:
+            raise RuntimeError(f"browser-cookie3 has no loader for {browser!r}")
+        # Derive the domain from base_url. Hardcoding overleaf.com means a
+        # self-hosted instance returns no cookies at all.
+        host = urlparse(self.base_url).hostname or "overleaf.com"
+        jar = loader(domain_name=_cookie_domain_for(host))
+        if not _pick_session_cookie((c.name for c in jar), self.cookie_name):
+            raise _NoSessionInBrowser(sorted({c.name for c in jar}))
+        return jar
+
+    def _session_from(self, jar) -> requests.Session:
+        session = requests.Session()
+        session.cookies.update(jar)
+        # pyoverleaf can read the file tree over its socket. It is handed these
+        # cookies rather than told to find its own, which would read every
+        # browser again: more Keychain prompts on a Mac, and on Linux the same
+        # crash as above.
         try:
             import pyoverleaf  # type: ignore
-        except ImportError as e:
-            raise RuntimeError(
-                "pyoverleaf is not installed. Install it with `pip install pyoverleaf`."
-            ) from e
-
-        api = pyoverleaf.Api()
-        try:
-            api.login_from_browser()
+            api = pyoverleaf.Api(host=urlparse(self.base_url).hostname or "www.overleaf.com")
+            api.login_from_cookies(jar)
+            self._api = api
         except Exception as e:
-            raise RuntimeError(
-                "Could not read an Overleaf session cookie from any browser. "
-                "Open https://www.overleaf.com in Chrome or Firefox, sign in, then "
-                "re-run this tool. Or pick a specific browser in the dropdown."
-            ) from e
-        self._api = api
-        return self._extract_session(api)
+            logger.warning("pyoverleaf could not be set up, so the file tree comes "
+                           "from elsewhere: %s", e)
+            self._api = None
+        return session
 
     def _connect_via_browser_cookie3(self, browser: str) -> requests.Session:
         try:
-            import browser_cookie3  # type: ignore
+            import browser_cookie3  # type: ignore  # noqa: F401
         except ImportError as e:
             import sys
             raise RuntimeError(
@@ -347,28 +425,11 @@ class OverleafClient:
                 "the launcher will reinstall dependencies on the next start."
             ) from e
 
-        loader = getattr(browser_cookie3, browser, None)
-        if loader is None:
-            raise RuntimeError(
-                f"browser-cookie3 has no loader for {browser!r}. Available: "
-                + ", ".join(n for n in dir(browser_cookie3) if not n.startswith("_"))
-            )
-
-        # Derive the domain from base_url. Hardcoding overleaf.com means a
-        # self-hosted instance returns no cookies at all.
         host = urlparse(self.base_url).hostname or "overleaf.com"
-        domain_name = _cookie_domain_for(host)
         try:
-            jar = loader(domain_name=domain_name)
-        except Exception as e:
-            raise UserFacingError(
-                _cookie_read_failed(browser)
-            ) from e
-
-        wanted = _pick_session_cookie((c.name for c in jar), self.cookie_name)
-        session_cookie = next((c for c in jar if c.name == wanted), None) if wanted else None
-        if session_cookie is None:
-            found = sorted({c.name for c in jar})
+            jar = self._read_session_jar(browser)
+        except _NoSessionInBrowser as e:
+            found = e.found
             # Name what was actually there. A self-hosted server can call its
             # session anything, and without this the user has no way to find out
             # what to pass to --cookie-name.
@@ -387,43 +448,11 @@ class OverleafClient:
                    if self.cookie_name else "")
                 + f"\n\nOpen {self.base_url} in {browser}, sign in, and try again."
                 + listing
-            )
-
-        session = requests.Session()
-        session.cookies.update(jar)
-
-        try:
-            import pyoverleaf  # type: ignore
-            api = pyoverleaf.Api()
-            api.login_from_browser()
-            self._api = api
+            ) from e
         except Exception as e:
-            logger.warning(
-                "pyoverleaf init failed (file tree may be unavailable, paths will "
-                "fall back to <unknown-doc-id>): %s",
-                e,
-            )
-            self._api = None
-
-        return session
-
-    @staticmethod
-    def _extract_session(api: Any) -> requests.Session:
-        for attr in ("_session", "session", "_client", "client"):
-            candidate = getattr(api, attr, None)
-            if isinstance(candidate, requests.Session):
-                return candidate
-        for attr in dir(api):
-            try:
-                candidate = getattr(api, attr)
-            except Exception:
-                continue
-            if isinstance(candidate, requests.Session):
-                return candidate
-        raise RuntimeError(
-            "Could not find a requests.Session on the pyoverleaf Api object. "
-            "This tool may need to be updated for the installed pyoverleaf version."
-        )
+            raise UserFacingError(_cookie_read_failed(browser)) from e
+        self.browser_used = browser
+        return self._session_from(jar)
 
     @property
     def session(self) -> requests.Session:

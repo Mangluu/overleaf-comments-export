@@ -639,6 +639,9 @@ def run_export(
         else:
             progress(f"Authenticating via {browser} browser cookie…")
         client.connect(browser=browser, cookie_value=cookie_value)
+        used = getattr(client, "browser_used", None)
+        if browser == "auto" and used:
+            progress(f"Signed in with the Overleaf session from {used}.")
 
         _stop_if_asked(should_cancel)
         progress("Fetching threads…")

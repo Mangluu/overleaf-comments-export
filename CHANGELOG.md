@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **`--browser auto`, the command line's default, signs in again.** It has
+  never worked. It handed the search to pyoverleaf, which reads every browser
+  through browser_cookie3's `load()`, and that gives up on all of them when
+  any one crashes. On Linux its Arc reader always does, so a user signed in on
+  Firefox got a traceback asking them to report a bug (#15). And even when the
+  read worked, pyoverleaf keeps no session to hand back, so auto failed anyway.
+  Auto now tries Firefox, Safari, Chrome, Edge, Brave and Chromium one at a
+  time, skips any that fail, stops at the first signed in to Overleaf, and says
+  which one it used. If none is, it lists each browser and why. It also now
+  finds a self-hosted server's cookie, not only overleaf.com's.
+- **Naming a browser reads that browser only.** After reading it, the tool had
+  pyoverleaf read every browser again for the file tree, which on a Mac meant
+  more Keychain prompts and on Linux the same crash, silently.
+
+### Changed
+- **The sign-in options are documented** (#14). The README now explains
+  `--browser`, the order auto tries browsers in, and `OVERLEAF_SESSION`, and
+  `--help` says what auto does.
+
 ## [0.22.3] — 2026-10-04
 
 ### Fixed
