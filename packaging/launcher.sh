@@ -66,7 +66,7 @@ NEEDED="import browser_cookie3, pyoverleaf, requests, tkinter, pymupdf, overleaf
 if ! /usr/bin/arch -"$NATIVE_ARCH" "$VENV_PYTHON" -c "$NEEDED" >>"$LOG_FILE" 2>&1; then
     echo "[$(ts)] dependency check failed; attempting reinstall..." >>"$LOG_FILE"
     /usr/bin/arch -"$NATIVE_ARCH" "$VENV_PYTHON" -m pip install --quiet --upgrade pip >>"$LOG_FILE" 2>&1 || true
-    /usr/bin/arch -"$NATIVE_ARCH" "$VENV_PYTHON" -m pip install --quiet -e "$APP_HOME[gui,pdf]" >>"$LOG_FILE" 2>&1
+    /usr/bin/arch -"$NATIVE_ARCH" "$VENV_PYTHON" -m pip install --quiet -e "$APP_HOME[all]" >>"$LOG_FILE" 2>&1
     if ! /usr/bin/arch -"$NATIVE_ARCH" "$VENV_PYTHON" -c "$NEEDED" >>"$LOG_FILE" 2>&1; then
         echo "[$(ts)] FATAL: reinstall failed" >>"$LOG_FILE"
         show_alert "Required Python packages could not be installed.
@@ -75,7 +75,7 @@ See log at:
 ~/Library/Logs/OverleafCommentsExport/launcher.log
 
 You can install them manually:
-\"$VENV_PYTHON\" -m pip install -e \"$APP_HOME\""
+\"$VENV_PYTHON\" -m pip install -e \"$APP_HOME[all]\""
         exit 1
     fi
     echo "[$(ts)] reinstall succeeded" >>"$LOG_FILE"

@@ -69,3 +69,13 @@ def test_the_apps_are_built_with_everything_the_window_offers():
     line = next(l for l in workflow.splitlines() if "pip install" in l and "pyinstaller" in l)
     installed = set(re.search(r"\.\[([^\]]*)\]", line).group(1).split(","))
     assert {"gui", "pdf", "xlsx"} <= installed, line
+
+
+
+def test_the_mac_app_installs_everything_the_window_offers():
+    """The launcher reinstalled with [gui,pdf] when its packages broke, so the
+    Mac app's window offered a spreadsheet it could not write, the same gap
+    the Windows and Linux apps had."""
+    launcher = (ROOT / "packaging" / "launcher.sh").read_text(encoding="utf-8")
+    installs = [line for line in launcher.splitlines() if "pip install" in line and "-e" in line]
+    assert installs and all("[all]" in line for line in installs), installs

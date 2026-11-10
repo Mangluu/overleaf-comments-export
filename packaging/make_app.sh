@@ -17,7 +17,7 @@ APP="$DEST/Overleaf Comments Export.app"
 
 if [ ! -x "$APP_HOME/.venv/bin/python" ]; then
     echo "warning: no virtualenv at $APP_HOME/.venv" >&2
-    echo "         create one with: python3 -m venv .venv && .venv/bin/python -m pip install -e '.[gui,pdf]'" >&2
+    echo "         create one with: python3 -m venv .venv && .venv/bin/python -m pip install -e '.[all]'" >&2
 fi
 
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

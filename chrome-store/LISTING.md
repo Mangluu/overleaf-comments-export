@@ -105,7 +105,7 @@ THERE IS ALSO A COMMAND LINE VERSION
 
 The same project ships a Python tool that does more, including writing the comments into your compiled PDF as highlights and producing a single self-contained web page you can email to a co-author.
 
-    pip install "overleaf-comments-export[gui,pdf]"
+    pip install "overleaf-comments-export[all]"
 
 OPEN SOURCE
 

@@ -9,7 +9,7 @@ then starts the window.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e ".[gui,pdf]"
+.venv/bin/python -m pip install -e ".[all]"
 bash packaging/make_app.sh
 ```
 

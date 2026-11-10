@@ -74,7 +74,7 @@ open is worse than not shipping it.
 On a Mac, use either of these instead. Both work, and neither is gated.
 
 - The browser extension below, if you would rather not touch a terminal.
-- `pip install "overleaf-comments-export[gui,pdf]"`, then run
+- `pip install "overleaf-comments-export[all]"`, then run
   `overleaf-comments-export --gui` for the same window.
 
 **If you prefer a browser extension**, Chrome, Edge, and other Chromium
