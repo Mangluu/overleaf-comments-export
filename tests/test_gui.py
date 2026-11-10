@@ -429,3 +429,22 @@ def test_the_server_comes_from_the_link_unless_another_is_named(app):
     assert app._server_override() == ""
     app.base_var.set("https://latex.example.edu/")
     assert app._server_override() == "https://latex.example.edu"
+
+
+def test_safari_is_offered_only_on_a_mac():
+    """Safari was preselected on every system, so a first export on Windows or
+    Linux failed until someone changed it."""
+    from overleaf_comments_export.gui import _browser_choices
+    for platform in ("win32", "linux"):
+        default, short, advanced, everything = _browser_choices(platform)
+        assert default == "auto", platform
+        assert "safari" not in short + advanced + everything, platform
+        assert default in short, "the default must be in the list shown first"
+    default, short, _, everything = _browser_choices("darwin")
+    assert default == "safari" and "safari" in short and "safari" in everything
+
+
+def test_a_share_link_pasted_in_the_window_says_what_to_do(app):
+    app.url_var.set("https://www.overleaf.com/read/abcdefghijkl")
+    app._validate_url()
+    assert "share link" in app.url_status.cget("text")

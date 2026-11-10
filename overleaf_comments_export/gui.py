@@ -134,8 +134,23 @@ BROWSER_NOTES = {
     "brave": "Asks for your computer's login password every time.",
 }
 
-PRIVACY_FRIENDLY = ("safari", "firefox", "manual")
-ADVANCED_BROWSERS = ("auto", "chrome", "chromium", "edge", "brave")
+def _browser_choices(platform: str) -> tuple[str, tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """The default browser, the short list, the password-needing list, and all
+    of them, for this operating system.
+
+    Safari exists only on a Mac, yet it was preselected everywhere, so a first
+    export on Windows or Linux failed until the setting was changed. Elsewhere
+    the default is to work it out, which tries each browser in turn.
+    """
+    if platform == "darwin":
+        return ("safari", ("safari", "firefox", "manual"),
+                ("auto", "chrome", "chromium", "edge", "brave"), tuple(BROWSER_LABELS))
+    return ("auto", ("auto", "firefox", "manual"),
+            ("chrome", "chromium", "edge", "brave"),
+            tuple(k for k in BROWSER_LABELS if k != "safari"))
+
+
+DEFAULT_BROWSER, PRIVACY_FRIENDLY, ADVANCED_BROWSERS, ALL_BROWSERS = _browser_choices(sys.platform)
 
 COOKIE_HELP_TEXT = """\
 How to copy your Overleaf session cookie
@@ -713,10 +728,13 @@ class App:
             return
         try:
             parse_project_id(raw)
-        except ValueError:
+        except ValueError as e:
+            share = "link-sharing" in str(e)
             self.url_status.configure(
-                text="This does not look like a project link yet. It should "
-                     "contain /project/ followed by a long code.",
+                text=("That is a share link. Open it in your browser, then copy "
+                      "the address once the project is open." if share else
+                      "This does not look like a project link yet. It should "
+                      "contain /project/ followed by a long code."),
                 style="Bad.TLabel")
         else:
             self.url_status.configure(text="Looks right.", style="Ok.TLabel")
@@ -727,9 +745,9 @@ class App:
         box = self._step_box(parent, 2, "Let it see your Overleaf")
 
         self._field_label(box, "Sign in using", 0)
-        default_browser = self.config.get("browser", "safari")
-        if default_browser not in BROWSER_LABELS:
-            default_browser = "safari"
+        default_browser = self.config.get("browser", DEFAULT_BROWSER)
+        if default_browser not in ALL_BROWSERS:     # Safari remembered off a Mac
+            default_browser = DEFAULT_BROWSER
         self.browser_var = tk.StringVar(value=default_browser)
         self.browser_box = ttk.Combobox(box, state="readonly", width=26)
         self.browser_box.grid(row=0, column=1, sticky="w", pady=4)
@@ -774,11 +792,11 @@ class App:
         self._refresh_browser_choices()
 
     def _refresh_browser_choices(self) -> None:
-        keys = list(BROWSER_LABELS) if self.show_advanced_var.get() else list(PRIVACY_FRIENDLY)
+        keys = list(ALL_BROWSERS) if self.show_advanced_var.get() else list(PRIVACY_FRIENDLY)
         self.browser_box.configure(values=[BROWSER_LABELS[k] for k in keys])
         self._browser_keys = keys
         current = self.browser_var.get()
-        key = current if current in BROWSER_LABELS else "safari"
+        key = current if current in ALL_BROWSERS else DEFAULT_BROWSER
         if key not in keys:
             key = keys[0]
         self.browser_var.set(key)
