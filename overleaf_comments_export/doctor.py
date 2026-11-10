@@ -71,7 +71,7 @@ def _latest_release() -> Check:
         return Check("Newest release", OK, f"{latest}, which is what you have")
     return Check(
         "Newest release", WARN, f"{latest}, and you have {__version__}",
-        'Update with:  pip install --upgrade "overleaf-comments-export[gui,pdf]"\n'
+        'Update with:  pip install --upgrade "overleaf-comments-export[all]"\n'
         "         Without --upgrade pip leaves the old one in place and says "
         '"Requirement already satisfied".',
     )
@@ -138,13 +138,15 @@ def _signed_in(base_url: str, browser: str, cookie_value: str | None,
     try:
         client.connect(browser=browser, cookie_value=cookie_value)
     except UserFacingError as e:
-        where = "the cookie you pasted" if cookie_value else f"{browser}"
+        where = ("the cookie you pasted" if cookie_value
+                 else "any browser" if browser == "auto" else browser)
         return [Check("Signing in", BAD, f"no Overleaf session found in {where}", str(e))]
     except Exception as e:
         return [Check("Signing in", BAD, f"{type(e).__name__}: {e}",
                       "That is unexpected. Please report it with this output.")]
 
-    checks = [Check("Signing in", OK, "found a session")]
+    found_in = f" in {client.browser_used}" if client.browser_used else ""
+    checks = [Check("Signing in", OK, f"found a session{found_in}")]
     try:
         r = client.session.get(f"{client.base_url}/project", timeout=20,
                                allow_redirects=False)

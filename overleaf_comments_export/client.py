@@ -87,6 +87,68 @@ def _pick_session_cookie(names, override: str | None = None):
     return next((n for n in names if n.endswith(SESSION_COOKIE_SUFFIX)), None)
 
 
+# Where Firefox keeps profiles on Linux that browser-cookie3 0.20 does not look.
+# Firefox 147, January 2026, puts new profiles under the XDG config directory,
+# and the Flatpak build has always lived under ~/.var/app. browser-cookie3
+# checks only ~/.mozilla and the Snap location, so a fresh Linux install, or any
+# Flatpak Firefox, read as "not installed" while signed in.
+def _linux_firefox_dirs() -> list[str]:
+    config = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    flatpak = os.path.expanduser("~/.var/app/org.mozilla.firefox")
+    return [os.path.join(config, "mozilla", "firefox"),
+            os.path.join(flatpak, "config", "mozilla", "firefox"),
+            os.path.join(flatpak, ".mozilla", "firefox")]
+
+
+def _linux_firefox_cookie_file() -> str | None:
+    """cookies.sqlite of the default Firefox profile in those places, if any."""
+    import sys
+    if not sys.platform.startswith("linux"):
+        return None
+    try:
+        import browser_cookie3  # type: ignore
+        default_profile = browser_cookie3.FirefoxBased.get_default_profile
+    except Exception:
+        return None
+    import glob
+    for root in _linux_firefox_dirs():
+        if not os.path.isdir(root):
+            continue
+        found = glob.glob(os.path.join(default_profile(root), "cookies.sqlite"))
+        if found:
+            return found[0]
+    return None
+
+
+# pyoverleaf reads the file tree over a socket with no timeout at all, in a
+# loop that waits for one particular message. If Overleaf never sends it, the
+# export would wait for ever, and the Stop button cannot reach inside it.
+PYOVERLEAF_SECONDS = 20
+
+
+def _within(seconds: float, fn, *args):
+    """fn(*args), or TimeoutError if it has not returned in time."""
+    import threading
+    outcome: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            outcome["value"] = fn(*args)
+        except BaseException as e:      # handed back to the caller below
+            outcome["error"] = e
+
+    # ponytail: on a timeout the thread is left blocked on its socket until the
+    # process ends. Closing pyoverleaf's socket from here would need its handle.
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no answer within {seconds} seconds")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome.get("value")
+
+
 class _NoSessionInBrowser(Exception):
     """A browser's cookies were read, and none of them is an Overleaf session."""
 
@@ -228,13 +290,36 @@ def base_url_for(project_url: str | None) -> str:
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
+class NotAProjectLink(UserFacingError, ValueError):
+    """A link that does not name a project.
+
+    A ValueError too, so callers that checked for one still work. It used to be
+    a plain ValueError, which the command line reports as a bug, traceback and
+    all, for what is nearly always a link-sharing link from a co-author.
+    """
+
+
+# Overleaf's link-sharing addresses: /read/<letters> for view-only, and digits
+# then letters for edit access.
+_SHARE_LINK_RE = re.compile(r"^/(read/[a-z]{8,}|\d{6,}[a-z]{6,})/?$", re.I)
+
+
 def parse_project_id(project_url: str) -> str:
-    parsed = urlparse(project_url)
+    parsed = urlparse(project_url if "://" in (project_url or "") else f"https://{project_url}")
     m = PROJECT_URL_RE.search(parsed.path)
     if not m:
-        raise ValueError(
-            f"Could not extract a 24-char project id from URL: {project_url!r}. "
-            "Expected something like https://www.overleaf.com/project/<24-hex-chars>."
+        if _SHARE_LINK_RE.match(parsed.path or ""):
+            raise NotAProjectLink(
+                "That is a link-sharing link, not the project's own address.\n\n"
+                "Open it in your browser, join the project if asked, and once the "
+                "editor is open, copy the address from the address bar. It "
+                "contains /project/ followed by a 24-character code."
+            )
+        raise NotAProjectLink(
+            f"That does not look like an Overleaf project link: {project_url!r}\n\n"
+            "Open the project in your browser and copy the address from the "
+            "address bar. It looks like https://www.overleaf.com/project/ "
+            "followed by a 24-character code."
         )
     return m.group("id")
 
@@ -360,12 +445,19 @@ class OverleafClient:
                 jar = self._read_session_jar(browser)
             except _NoSessionInBrowser:
                 tried.append(f"{browser}: not signed in to {host}")
+                continue
             except Exception as e:  # one browser's failure must not end the search
                 tried.append(f"{browser}: {_why_unreadable(e)}")
-            else:
-                logger.info("Using the Overleaf session from %s.", browser)
-                self.browser_used = browser
-                return self._session_from(jar)
+                continue
+            # A browser used once, months ago, still holds a session cookie
+            # the server has long forgotten. Firefox is tried first, so that
+            # stale cookie used to beat the browser actually in use.
+            if self._session_is_live(jar) is False:
+                tried.append(f"{browser}: signed out, its saved session has expired")
+                continue
+            logger.info("Using the Overleaf session from %s.", browser)
+            self.browser_used = browser
+            return self._session_from(jar)
         raise UserFacingError(
             f"No browser on this computer is signed in to {host}.\n\n"
             "Tried:\n  " + "\n  ".join(tried) + "\n\n"
@@ -374,6 +466,27 @@ class OverleafClient:
             f"using list in the window. Or paste the session cookie with --cookie, "
             f"which is also read from the OVERLEAF_SESSION environment variable."
         )
+
+    def _session_is_live(self, jar) -> bool | None:
+        """Whether the server still accepts this session. None when unsure.
+
+        A signed-out request for the project list is sent to the login page.
+        Anything that is not a clear answer counts as unsure, so a network
+        problem is left for the export itself to report, in its own words.
+        """
+        probe = requests.Session()
+        probe.cookies.update(jar)
+        probe.headers["User-Agent"] = (
+            f"overleaf-comments-export/{_tool_version()} (Mozilla/5.0 compatible)")
+        try:
+            r = probe.get(f"{self.base_url}/project", timeout=15, allow_redirects=False)
+        except Exception as e:
+            logger.info("Could not check the session with %s: %s", self.base_url, e)
+            return None
+        if r.status_code in (401, 403) or (
+                r.is_redirect and "login" in r.headers.get("Location", "").lower()):
+            return False
+        return True if r.ok else None
 
     def _read_session_jar(self, browser: str):
         """One browser's cookies for this server, if they hold a session.
@@ -390,7 +503,16 @@ class OverleafClient:
         # Derive the domain from base_url. Hardcoding overleaf.com means a
         # self-hosted instance returns no cookies at all.
         host = urlparse(self.base_url).hostname or "overleaf.com"
-        jar = loader(domain_name=_cookie_domain_for(host))
+        domain_name = _cookie_domain_for(host)
+        try:
+            jar = loader(domain_name=domain_name)
+        except Exception as e:
+            cookie_file = _linux_firefox_cookie_file() if browser == "firefox" else None
+            if not cookie_file:
+                raise
+            logger.info("Firefox was not where browser-cookie3 looks, but is at %s (%s)",
+                        cookie_file, e)
+            jar = loader(cookie_file=cookie_file, domain_name=domain_name)
         if not _pick_session_cookie((c.name for c in jar), self.cookie_name):
             raise _NoSessionInBrowser(sorted({c.name for c in jar}))
         return jar
@@ -526,11 +648,14 @@ class OverleafClient:
         url = f"{self.base_url}{path}"
         r = self._request(url)
         if r.status_code in (401, 403):
+            # It said www.overleaf.com whatever the server, and "your browser"
+            # whichever one the session came from.
+            where = self.browser_used.capitalize() if self.browser_used else "your browser"
             raise UserFacingError(
                 "Overleaf refused the request (not signed in).\n\n"
-                "Your saved session has expired. Open https://www.overleaf.com in "
-                "your browser, make sure you are signed in and can see this "
-                "project, then run the export again."
+                f"The session has expired, or this account cannot see the "
+                f"project. Open {self.base_url} in {where}, make sure you are "
+                "signed in and can see this project, then run the export again."
             )
         if r.status_code == 404:
             raise UserFacingError(
@@ -629,24 +754,30 @@ class OverleafClient:
     ) -> bytes | None:
         """The PDF Overleaf itself built, or None if it cannot be had.
 
-        Tries the last build first, because that costs nothing and is what the
-        user is looking at in their browser. Only if there is no build on the
-        server does it ask for a compile, which is slow and uses their quota.
+        Tries the last build first, from Overleaf's build cache, because that
+        costs nothing and is what the user is looking at in their browser. Only
+        if there is none does it ask for a compile, which is slow and uses
+        their compile time.
+
+        The first try used to ask for /project/<id>/output/output.pdf, which is
+        not a route Overleaf has, so it always came back 404 and every export
+        compiled. The cache route answers in the same shape a compile does.
+        Self-hosted servers have no cache, so there it simply compiles.
         """
-        url = f"{self.base_url}/project/{project_id}/output/output.pdf"
         try:
-            r = self._request(url)
-            if r.ok and r.content[:4] == b"%PDF":
-                logger.info("Using the PDF from the last build (%d KB).", len(r.content) // 1024)
-                return r.content
-            logger.info(
-                "No PDF from the last build: %s returned %s, %s bytes starting %r.",
-                url, r.status_code, len(r.content), r.content[:16],
-            )
+            r = self._request(f"{self.base_url}/project/{project_id}/output/cached/output.overleaf.json")
+            cached = r.json() if r.ok and "json" in r.headers.get("Content-Type", "") else {}
         except UserFacingError:
             raise
         except Exception as e:
-            logger.info("No ready-made PDF (%s); asking for a compile.", type(e).__name__)
+            logger.info("No cached build (%s).", type(e).__name__)
+            cached = {}
+        if cached.get("status") == "success":
+            pdf = self._pdf_from(cached)
+            if pdf:
+                logger.info("Using the PDF from the last build (%d KB).", len(pdf) // 1024)
+                return pdf
+        logger.info("No usable cached build, so asking Overleaf to compile.")
 
         token = self._csrf_token(project_id)
         if not token:
@@ -673,21 +804,28 @@ class OverleafClient:
         if data.get("status") != "success":
             logger.warning("Overleaf did not compile the project: %s", data.get("status"))
             return None
-        files = data.get("outputFiles") or []
-        for f in files:
-            if f.get("path") == "output.pdf":
-                r = self._request(self._output_url(f.get("url") or "", data))
-                if r.ok and r.content[:4] == b"%PDF":
-                    logger.info("Compiled the project (%d KB).", len(r.content) // 1024)
-                    return r.content
-                logger.warning(
-                    "The built PDF could not be downloaded: %s returned %s. "
-                    "The compile reported: %s",
-                    f.get("url"), r.status_code, ", ".join(sorted(data)),
-                )
-                return None
-        logger.warning("The compile produced no output.pdf. It made: %s",
-                       ", ".join(str(f.get("path")) for f in files) or "nothing")
+        pdf = self._pdf_from(data)
+        if pdf:
+            logger.info("Compiled the project (%d KB).", len(pdf) // 1024)
+        return pdf
+
+    def _pdf_from(self, build: dict[str, Any]) -> bytes | None:
+        """output.pdf from a build, whether a compile or the cache reported it."""
+        files = build.get("outputFiles") or []
+        entry = next((f for f in files if f.get("path") == "output.pdf"), None)
+        if entry is None:
+            logger.warning("The build produced no output.pdf. It made: %s",
+                           ", ".join(str(f.get("path")) for f in files) or "nothing")
+            return None
+        # A cached build gives a download address on the site itself. Its plain
+        # url points at a compile server that may no longer hold that build.
+        url = (self.base_url + entry["downloadURL"] if entry.get("downloadURL")
+               else self._output_url(entry.get("url") or "", build))
+        r = self._request(url)
+        if r.ok and r.content[:4] == b"%PDF":
+            return r.content
+        logger.warning("The built PDF could not be downloaded: %s returned %s.",
+                       url, r.status_code)
         return None
 
     def _output_url(self, path: str, compile_response: dict[str, Any]) -> str:
@@ -764,7 +902,7 @@ class OverleafClient:
                 method = getattr(api, method_name, None)
                 if callable(method):
                     try:
-                        files = method(project_id)
+                        files = _within(PYOVERLEAF_SECONDS, method, project_id)
                         if files:
                             result["files"] = files
                             logger.info("pyoverleaf.%s returned file tree", method_name)

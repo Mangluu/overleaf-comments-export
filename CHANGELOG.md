@@ -4,6 +4,34 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **`--browser auto` passes over a browser whose saved session has expired.**
+  Firefox is tried first, so a session left there months ago won over the
+  browser actually in use, and the export failed as signed out. Auto now asks
+  the server whether each session is still good before using it.
+- **Firefox is found where newer Linux systems keep it.** Firefox 147, January
+  2026, puts new profiles in `~/.config/mozilla/firefox`, and the Flatpak build
+  lives under `~/.var/app`. browser-cookie3 looks in neither, so Firefox read
+  as not installed while signed in.
+- **`--pdf` reuses the last build instead of always compiling.** The first try
+  asked for a route Overleaf does not have, so every export compiled, which is
+  slower and uses compile time. It now asks Overleaf's build cache, and
+  compiles only when there is no cached build.
+- **A share link is explained, not reported as a bug.** A link from a
+  co-author's Share button printed a traceback asking for a bug report. It now
+  says to open the link and copy the project's own address.
+- **The window no longer preselects Safari on Windows and Linux**, where it
+  cannot exist, so a first export there failed. It works the browser out.
+- **The file tree request cannot hang an export.** pyoverleaf reads it over a
+  socket with no timeout, so an unanswered request could wait for ever, beyond
+  the reach of Stop. It now gives up after 20 seconds.
+- **An expired session names the right server and browser.** The message said
+  www.overleaf.com whatever the server.
+- **Every install instruction includes the spreadsheet.** The Mac app's
+  launcher, its setup notes, the README, the store listing and the doctor's
+  update advice said `[gui,pdf]`, which leaves out what writes `comments.xlsx`.
+  They now say `[all]`.
+
 ## [0.22.4] — 2026-11-09
 
 ### Fixed

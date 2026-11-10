@@ -191,14 +191,28 @@ def _client(monkeypatch, handler):
     return c
 
 
+CACHED = "/project/abc/output/cached/output.overleaf.json"
+
+
 def test_the_last_build_is_used_when_there_is_one(monkeypatch):
     """Reusing the existing build costs nothing and is what the user is
-    already looking at. Asking for a compile uses their quota."""
+    already looking at. Asking for a compile uses their compile time.
+
+    The first try used to be /project/<id>/output/output.pdf, which is not a
+    route Overleaf has, so every export compiled while this test, faking that
+    route, passed. This fakes the route that exists."""
     seen = []
 
     def handler(method, url, **kw):
         seen.append((method, url))
-        if url.endswith("/output/output.pdf"):
+        if url.endswith(CACHED):
+            r = _Resp(payload={"fromCache": True, "status": "success", "outputFiles": [{
+                "path": "output.pdf",
+                "url": "/project/abc/user/u1/build/e1-b1/output/output.pdf",
+                "downloadURL": "/download/project/abc/build/e1-b1/output/cached/output.pdf"}]})
+            r.headers = {"Content-Type": "application/json; charset=utf-8"}
+            return r
+        if url.endswith("/download/project/abc/build/e1-b1/output/cached/output.pdf"):
             return _Resp(content=b"%PDF-1.7 body")
         raise AssertionError(f"should not have been called: {url}")
 
@@ -207,11 +221,23 @@ def test_the_last_build_is_used_when_there_is_one(monkeypatch):
     assert not any("compile" in u for _, u in seen), "asked for a needless compile"
 
 
+def test_the_pdf_routes_are_ones_overleaf_has():
+    """A route this tool invents gets a 404 that reads like "no PDF", and a
+    test faking it passes for ever. These are copied from Overleaf's
+    services/web/app/src/router.mjs."""
+    import inspect
+    from overleaf_comments_export.client import OverleafClient
+    source = inspect.getsource(OverleafClient.download_compiled_pdf)
+    assert "/output/output.pdf\"" not in source and "output/output.pdf'" not in source
+    assert "/output/cached/output.overleaf.json" in source
+    assert "/compile" in source
+
+
 def test_a_compile_is_requested_when_there_is_no_build(monkeypatch):
     def handler(method, url, **kw):
         if "build/1" in url:                 # checked first: the built file's
             return _Resp(content=b"%PDF-1.7 fresh")   # URL also ends in output.pdf
-        if url.endswith("/output/output.pdf"):
+        if url.endswith(CACHED):
             return _Resp(status=404)
         if url.endswith("/project/abc"):
             return _Resp(content=b'<meta name="ol-csrfToken" content="tok123">')
@@ -227,7 +253,7 @@ def test_a_compile_is_requested_when_there_is_no_build(monkeypatch):
 
 def test_a_failed_compile_returns_nothing_rather_than_rubbish(monkeypatch):
     def handler(method, url, **kw):
-        if url.endswith("/output/output.pdf"):
+        if url.endswith(CACHED):
             return _Resp(status=404)
         if url.endswith("/project/abc"):
             return _Resp(content=b'<meta name="ol-csrfToken" content="tok">')
@@ -238,7 +264,7 @@ def test_a_failed_compile_returns_nothing_rather_than_rubbish(monkeypatch):
 
 def test_an_html_error_page_is_not_mistaken_for_a_pdf(monkeypatch):
     def handler(method, url, **kw):
-        if url.endswith("/output/output.pdf"):
+        if url.endswith(CACHED):
             return _Resp(content=b"<!DOCTYPE html><title>Not found</title>")
         if url.endswith("/project/abc"):
             return _Resp(content=b"<html>no token here</html>")
@@ -256,7 +282,7 @@ def test_the_build_is_fetched_from_the_machine_that_made_it(monkeypatch):
         asked.append(url)
         if "clsiserverid=clsi-7" in url:
             return _Resp(content=b"%PDF-1.7 built")
-        if url.endswith("/output/output.pdf"):
+        if url.endswith(CACHED):
             return _Resp(status=404, content=b"<!DOCTYPE html>")
         if url.endswith("/project/abc"):
             return _Resp(content=b'<meta name="ol-csrfToken" content="tok">')
@@ -282,7 +308,7 @@ def test_the_build_url_works_without_the_extra_fields(monkeypatch):
         if "build/b1" in url:
             assert "clsiserverid" not in url
             return _Resp(content=b"%PDF-1.7 built")
-        if url.endswith("/output/output.pdf"):
+        if url.endswith(CACHED):
             return _Resp(status=404)
         if url.endswith("/project/abc"):
             return _Resp(content=b'<meta name="ol-csrfToken" content="tok">')
